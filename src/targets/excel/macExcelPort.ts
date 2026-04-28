@@ -57,7 +57,7 @@ export class MacExcelPort implements ExcelDesktopPort {
       await this.execute("osascript", ["-e", pasteScript(workbookName, rowNumber)]);
       await this.delay(500);
     } finally {
-      await this.writeClipboard("");
+      await this.writeClipboard("").catch(() => undefined);
     }
   }
 
@@ -118,7 +118,8 @@ function pasteScript(workbookName: string, rowNumber: number): string {
       tell application "Microsoft Excel"
         activate
         tell workbook ${appleScriptString(workbookName)}
-          tell active sheet
+          activate object worksheet "Intake"
+          tell worksheet "Intake"
             select range "A${rowNumber}"
           end tell
         end tell

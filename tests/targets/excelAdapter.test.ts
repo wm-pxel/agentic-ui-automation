@@ -310,7 +310,33 @@ describe("MacExcelPort", () => {
     const pasteScript = executed.find((call) => call.command === "osascript" && call.args.join("\n").includes("A4"))?.args.join("\n");
     const closeScript = executed.at(-1)?.args.join("\n");
     expect(pasteScript).toContain('workbook "Intake Book.xlsx"');
+    expect(pasteScript).toContain('worksheet "Intake"');
     expect(closeScript).toContain('save workbook "Intake Book.xlsx"');
+    expect(clipboardValues).toEqual(["secret\trow", ""]);
+  });
+
+  it("does not fail a completed paste when clipboard cleanup fails", async () => {
+    const executed: Array<{ command: string; args: string[] }> = [];
+    const clipboardValues: string[] = [];
+    const port = new MacExcelPort({
+      execute: async (command, args) => {
+        executed.push({ command, args });
+      },
+      writeClipboard: async (value) => {
+        clipboardValues.push(value);
+        if (value === "") {
+          throw new Error("clipboard clear failed");
+        }
+      },
+      readFile: async () => Buffer.from("png"),
+      unlink: async () => {},
+      sleep: async () => {},
+    });
+
+    await port.openWorkbook("/tmp/Intake Book.xlsx");
+    await expect(port.pasteRow(4, "secret\trow")).resolves.toBeUndefined();
+
+    expect(executed.some((call) => call.command === "osascript" && call.args.join("\n").includes("A4"))).toBe(true);
     expect(clipboardValues).toEqual(["secret\trow", ""]);
   });
 });
