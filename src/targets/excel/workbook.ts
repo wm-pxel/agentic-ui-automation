@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { access, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import ExcelJS from "exceljs";
 import type { NormalizedIntakeRecord } from "../../domain/schema.js";
@@ -27,11 +27,18 @@ export async function ensureWorkbook(path: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
 
   const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet("Intake");
-  sheet.addRow([...INTAKE_COLUMNS]);
-  sheet.getRow(1).font = { bold: true };
-  sheet.views = [{ state: "frozen", ySplit: 1 }];
+  if (await fileExists(path)) {
+    await workbook.xlsx.readFile(path);
+    if (workbook.getWorksheet("Intake")) {
+      return;
+    }
 
+    addIntakeSheet(workbook);
+    await workbook.xlsx.writeFile(path);
+    return;
+  }
+
+  addIntakeSheet(workbook);
   await workbook.xlsx.writeFile(path);
 }
 
@@ -72,5 +79,31 @@ export function recordToTsv(record: NormalizedIntakeRecord): string {
 }
 
 function sanitizeTsvValue(value: string): string {
-  return value.replace(/[\t\r\n]/g, " ");
+  const sanitized = value.replace(/[\t\r\n]/g, " ");
+  const trimmedStart = sanitized.trimStart();
+  if (/^[=+\-@]/.test(trimmedStart)) {
+    return `'${trimmedStart}`;
+  }
+
+  return sanitized;
+}
+
+function addIntakeSheet(workbook: ExcelJS.Workbook): void {
+  const sheet = workbook.addWorksheet("Intake");
+  sheet.addRow([...INTAKE_COLUMNS]);
+  sheet.getRow(1).font = { bold: true };
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+
+    throw error;
+  }
 }

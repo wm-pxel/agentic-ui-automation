@@ -9,11 +9,13 @@ export interface ExcelAdapterOptions {
 
 export class ExcelAdapter implements TargetAdapter {
   readonly name = "excel" as const;
+  private nextRow?: number;
 
   constructor(private readonly options: ExcelAdapterOptions) {}
 
   async prepare(): Promise<void> {
     await ensureWorkbook(this.options.workbookPath);
+    this.nextRow = await nextExcelRow(this.options.workbookPath);
     await this.options.port.openWorkbook(this.options.workbookPath);
   }
 
@@ -50,8 +52,9 @@ export class ExcelAdapter implements TargetAdapter {
       };
     }
 
-    const rowNumber = await nextExcelRow(this.options.workbookPath);
+    const rowNumber = this.nextRow ?? (await nextExcelRow(this.options.workbookPath));
     await this.options.port.pasteRow(rowNumber, recordToTsv(context.record));
+    this.nextRow = rowNumber + 1;
 
     const after = await this.options.port.screenshot(`after-${context.record.sourceRecordId}`);
     const afterPath = await context.audit.writeScreenshot(context.record.sourceRecordId, this.name, "after-entry", after);
