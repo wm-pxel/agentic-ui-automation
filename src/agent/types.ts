@@ -9,7 +9,10 @@ export const AllowedAgentActionSchema = z.object({
   description: z.string(),
 });
 
-export type AllowedAgentAction = z.infer<typeof AllowedAgentActionSchema>;
+export interface AllowedAgentAction {
+  id: string;
+  description: string;
+}
 
 export interface AgentDecisionInput {
   target: TargetName;
@@ -26,7 +29,11 @@ export const AgentDecisionSchema = z.object({
   rationale: z.string().min(1),
 });
 
-export type AgentDecision = z.infer<typeof AgentDecisionSchema>;
+export interface AgentDecision {
+  actionId: string;
+  confidence: number;
+  rationale: string;
+}
 
 export interface AgentDriver {
   decide(input: AgentDecisionInput): Promise<AgentDecision>;
