@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TargetAdapterResultSchema } from "../../src/adapters/contract.js";
 import { ScriptedAgentDriver } from "../../src/agent/scriptedAgent.js";
-import { validateAgentDecision } from "../../src/agent/types.js";
+import { STOP_AGENT_ACTION_ID, validateAgentDecision } from "../../src/agent/types.js";
 
 describe("ScriptedAgentDriver", () => {
   it("selects the first allowed action with full confidence", async () => {
@@ -59,6 +59,28 @@ describe("ScriptedAgentDriver", () => {
         },
       ),
     ).toThrow();
+  });
+
+  it("accepts stop decisions even when no actions are allowed", () => {
+    expect(
+      validateAgentDecision(
+        {
+          target: "fake",
+          recordId: "demo-001",
+          step: "save",
+          allowedActions: [],
+        },
+        {
+          actionId: STOP_AGENT_ACTION_ID,
+          confidence: 0,
+          rationale: "Stop for safety.",
+        },
+      ),
+    ).toEqual({
+      actionId: STOP_AGENT_ACTION_ID,
+      confidence: 0,
+      rationale: "Stop for safety.",
+    });
   });
 
   it("rejects decisions with disallowed actions", () => {

@@ -1,3 +1,4 @@
+import { STOP_AGENT_ACTION_ID } from "./types.js";
 import type { AgentDecision, AgentDecisionInput, AgentDriver } from "./types.js";
 
 export class ScriptedAgentDriver implements AgentDriver {
@@ -6,7 +7,7 @@ export class ScriptedAgentDriver implements AgentDriver {
 
     if (!firstAction) {
       return {
-        actionId: "stop",
+        actionId: STOP_AGENT_ACTION_ID,
         confidence: 0,
         rationale: `Scripted agent found no allowed actions for step ${input.step}.`,
       };
