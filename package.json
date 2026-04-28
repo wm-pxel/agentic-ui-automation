@@ -1,0 +1,32 @@
+{
+  "name": "agentic-ui-automation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agentic-ui": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "dev": "tsx src/cli.ts",
+    "smoke:openemr": "tsx src/cli.ts run --input data/demo/intake-records.json --targets openemr --agent scripted",
+    "smoke:excel": "tsx src/cli.ts run --input data/demo/intake-records.json --targets excel --agent scripted"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.46.0",
+    "commander": "^12.1.0",
+    "csv-parse": "^5.5.6",
+    "exceljs": "^4.4.0",
+    "openai": "^4.56.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
