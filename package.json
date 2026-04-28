@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "agentic-ui": "./dist/cli.js"
+    "agentic-ui": "./dist/src/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
