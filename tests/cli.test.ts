@@ -38,10 +38,14 @@ describe("runCli", () => {
       runId: string;
       status: string;
       preflightExceptions: number;
+      environmentExceptions: number;
+      closeExceptions: number;
       targetCounts: { fake?: { succeeded: number } };
     };
     expect(result.status).toBe("completed_with_exceptions");
     expect(result.preflightExceptions).toBe(3);
+    expect(result.environmentExceptions).toBe(0);
+    expect(result.closeExceptions).toBe(0);
     expect(result.targetCounts.fake?.succeeded).toBe(3);
 
     await expect(readJson(join(runsDir, result.runId, "run.json"))).resolves.toMatchObject({

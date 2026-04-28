@@ -25,10 +25,14 @@ describe("runWorkflow", () => {
 
     expect(result.status).toBe("completed_with_exceptions");
     expect(result.preflightExceptions).toBe(1);
+    expect(result.environmentExceptions).toBe(0);
+    expect(result.closeExceptions).toBe(0);
     expect(result.targetCounts.fake).toEqual({ succeeded: 1, exception: 0, skipped: 0 });
 
     const summary = await readFile(join(runsDir, "run-orchestrator", "summary.md"), "utf8");
     expect(summary).toContain("| fake | 1 | 0 | 0 |");
+    expect(summary).toContain("Environment exceptions: 0");
+    expect(summary).toContain("Close exceptions: 0");
 
     const exceptionDir = join(runsDir, "run-orchestrator", "exceptions");
     const exceptionFile = (await readdir(exceptionDir)).find((name) => name.startsWith("demo-missing"));
@@ -49,6 +53,8 @@ describe("runWorkflow", () => {
     });
 
     expect(result.status).toBe("completed_with_exceptions");
+    expect(result.environmentExceptions).toBe(1);
+    expect(result.closeExceptions).toBe(0);
 
     const runMetadata = JSON.parse(await readFile(join(runsDir, "run-prepare-failed", "run.json"), "utf8"));
     expect(runMetadata.status).toBe("completed_with_exceptions");
@@ -74,6 +80,23 @@ describe("runWorkflow", () => {
     expect(result.status).toBe("completed_with_exceptions");
     expect(result.targetCounts.fake).toEqual({ succeeded: 0, exception: 1, skipped: 0 });
     await expect(readExceptions(runsDir, "run-record-throws")).resolves.toContain("ui_state_unexpected");
+  });
+
+  it("audits target exceptions for path-unsafe record IDs without failing the run", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "workflow-path-unsafe-record-"));
+    const result = await runWorkflow({
+      runId: "run-path-unsafe-record",
+      runsDir,
+      records: [cleanRecord("case/001")],
+      adapters: [new ThrowingRunRecordAdapter()],
+      agent: new ScriptedAgentDriver(),
+      now: () => "2026-04-28T12:00:00.000Z",
+    });
+
+    expect(result.status).toBe("completed_with_exceptions");
+    expect(result.targetCounts.fake).toEqual({ succeeded: 0, exception: 1, skipped: 0 });
+    const exceptionFiles = await readdir(join(runsDir, "run-path-unsafe-record", "exceptions"));
+    expect(exceptionFiles).toContain("case-001-fake.json");
   });
 
   it("converts malformed adapter results into target exceptions", async () => {
@@ -138,6 +161,7 @@ describe("runWorkflow", () => {
     });
 
     expect(result.status).toBe("completed_with_exceptions");
+    expect(result.closeExceptions).toBe(1);
     expect(result.targetCounts.fake).toEqual({ succeeded: 1, exception: 0, skipped: 0 });
     await expect(readExceptions(runsDir, "run-close-failure")).resolves.toContain("Close failed.");
 
@@ -184,6 +208,24 @@ describe("runWorkflow", () => {
 
     expect(agent.lastScreenshotPath).toBe("screenshots/demo-agent-context/fake/before-entry.png");
     expect(agent.lastScreenshotRootDir).toBe(join(runsDir, "run-agent-context"));
+  });
+
+  it("validates agent decisions before adapters act on them", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "workflow-invalid-agent-"));
+    const adapter = new AgentApprovedSideEffectAdapter();
+    const result = await runWorkflow({
+      runId: "run-invalid-agent",
+      runsDir,
+      records: [cleanRecord("demo-invalid-agent")],
+      adapters: [adapter],
+      agent: new InvalidConfidenceAgent(),
+      now: () => "2026-04-28T12:00:00.000Z",
+    });
+
+    expect(result.status).toBe("completed_with_exceptions");
+    expect(result.targetCounts.fake).toEqual({ succeeded: 0, exception: 1, skipped: 0 });
+    expect(adapter.sideEffectPerformed).toBe(false);
+    await expect(readExceptions(runsDir, "run-invalid-agent")).resolves.toContain("Expected number, received nan");
   });
 });
 
@@ -326,6 +368,36 @@ class CapturingAgent implements AgentDriver {
       actionId: input.allowedActions[0]?.id ?? "stop",
       confidence: 1,
       rationale: "Captured agent input.",
+    };
+  }
+}
+
+class AgentApprovedSideEffectAdapter implements TargetAdapter {
+  readonly name = "fake";
+  sideEffectPerformed = false;
+
+  async prepare(): Promise<void> {}
+
+  async runRecord(context: TargetRunContext): Promise<TargetAdapterResult> {
+    await context.agent.decide({
+      target: this.name,
+      recordId: context.record.sourceRecordId,
+      step: "perform-side-effect",
+      allowedActions: [{ id: "perform", description: "Perform the target side effect." }],
+    });
+    this.sideEffectPerformed = true;
+    return { status: "succeeded" };
+  }
+
+  async close(): Promise<void> {}
+}
+
+class InvalidConfidenceAgent implements AgentDriver {
+  async decide(_input: AgentDecisionInput): Promise<AgentDecision> {
+    return {
+      actionId: "perform",
+      confidence: Number.NaN,
+      rationale: "Malformed confidence should be rejected.",
     };
   }
 }

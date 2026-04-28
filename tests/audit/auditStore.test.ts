@@ -101,6 +101,23 @@ describe("FileAuditStore", () => {
     await expect(readFile(join(root, "run-test", second), "utf8")).resolves.toBe("two");
   });
 
+  it("sanitizes record IDs for screenshot and exception artifact paths", async () => {
+    const root = await mkdtemp(join(tmpdir(), "audit-record-paths-"));
+    const store = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
+
+    const screenshotPath = await store.writeScreenshot("case/001", "fake", "before/save", Buffer.from("png"));
+    const exceptionPath = await store.writeException("", {
+      code: "verification_failed",
+      severity: "error",
+      message: "Missing source ID.",
+    });
+
+    expect(screenshotPath).toBe("screenshots/case-001/fake/before-save.png");
+    expect(exceptionPath).toBe("exceptions/record.json");
+    await expect(readFile(join(root, "run-test", screenshotPath), "utf8")).resolves.toBe("png");
+    await expect(readFile(join(root, "run-test", exceptionPath), "utf8")).resolves.toContain("Missing source ID.");
+  });
+
   it("keeps repeated screenshots across reopened stores", async () => {
     const root = await mkdtemp(join(tmpdir(), "audit-resumed-screenshots-"));
     const firstStore = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
@@ -178,11 +195,15 @@ describe("FileAuditStore", () => {
         excel: { succeeded: 2, exception: 0, skipped: 0 },
       },
       preflightExceptions: 1,
+      environmentExceptions: 2,
+      closeExceptions: 1,
     });
 
     expect(summary).toContain("# Workflow Run run-test");
     expect(summary).toContain("| openemr | 1 | 1 | 0 |");
     expect(summary).toContain("Preflight exceptions: 1");
+    expect(summary).toContain("Environment exceptions: 2");
+    expect(summary).toContain("Close exceptions: 1");
   });
 
   it("renders target rows in deterministic order", () => {
@@ -195,6 +216,8 @@ describe("FileAuditStore", () => {
         openemr: { succeeded: 1, exception: 2, skipped: 0 },
       },
       preflightExceptions: 0,
+      environmentExceptions: 0,
+      closeExceptions: 0,
     });
 
     expect(summary.indexOf("| openemr | 1 | 2 | 0 |")).toBeLessThan(summary.indexOf("| excel | 2 | 1 | 0 |"));

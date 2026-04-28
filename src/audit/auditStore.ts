@@ -60,9 +60,9 @@ export class FileAuditStore {
   }
 
   async writeScreenshot(recordId: string, target: TargetName, step: string, bytes: Buffer): Promise<string> {
-    const safeRecordId = safeSegment(recordId, "screenshot recordId");
-    const safeTarget = safeSegment(target, "screenshot target");
-    const safeStep = safeSegment(step, "screenshot step");
+    const safeRecordId = safeArtifactSegment(recordId, "record");
+    const safeTarget = safeArtifactSegment(target, "target");
+    const safeStep = safeArtifactSegment(step, "step");
     const key = `${safeRecordId}/${safeTarget}/${safeStep}`;
     const screenshotDir = join(this.runDir, "screenshots", safeRecordId, safeTarget);
     await mkdir(screenshotDir, { recursive: true });
@@ -76,7 +76,7 @@ export class FileAuditStore {
   }
 
   async writeException(recordId: string, exception: ValidationException & Record<string, unknown>): Promise<string> {
-    const safeRecordId = safeSegment(recordId, "exception recordId");
+    const safeRecordId = safeArtifactSegment(recordId, "record");
     return this.writeUniqueArtifact({
       counts: this.exceptionCounts,
       key: safeRecordId,
@@ -134,6 +134,14 @@ function safeSegment(value: string, label: string): string {
     throw new Error(`${label} must not be empty.`);
   }
 
+  return segment;
+}
+
+function safeArtifactSegment(value: string, fallback: string): string {
+  const segment = sanitize(value);
+  if (segment.length === 0 || segment === "." || segment === "..") {
+    return fallback;
+  }
   return segment;
 }
 

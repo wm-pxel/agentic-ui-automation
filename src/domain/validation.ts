@@ -112,6 +112,18 @@ export function validateAndNormalizeRecord(input: RawIntakeRecord): ValidationRe
     });
   }
 
+  const preferredContactMethod = normalizeContactMethod(String(input.preferredContactMethod ?? ""));
+  if (input.preferredContactMethod && !preferredContactMethod) {
+    exceptions.push({
+      code: "invalid_format",
+      severity: "error",
+      field: "preferredContactMethod",
+      message: "Preferred contact method could not be normalized.",
+      rawValue: input.preferredContactMethod,
+      suggestedRemediation: "Use phone, email, text, or mail.",
+    });
+  }
+
   const partialRecord: Partial<NormalizedIntakeRecord> = {
     sourceRecordId: String(input.sourceRecordId ?? ""),
     firstName: String(input.firstName ?? "").trim(),
@@ -128,7 +140,7 @@ export function validateAndNormalizeRecord(input: RawIntakeRecord): ValidationRe
     insuranceMemberId: String(input.insuranceMemberId ?? "").trim(),
     insuranceGroupId: optionalString(input.insuranceGroupId),
     reasonForVisit: String(input.reasonForVisit ?? "").trim(),
-    preferredContactMethod: normalizeContactMethod(String(input.preferredContactMethod ?? "")),
+    preferredContactMethod: preferredContactMethod ?? "phone",
     notes: optionalString(input.notes),
     sourceFormat: input.sourceFormat,
     rawSourceExcerpt: input.rawSourceExcerpt,
@@ -208,12 +220,12 @@ function normalizeGender(value: string): NormalizedIntakeRecord["sexOrGender"] {
   return "unknown";
 }
 
-function normalizeContactMethod(value: string): NormalizedIntakeRecord["preferredContactMethod"] {
+function normalizeContactMethod(value: string): NormalizedIntakeRecord["preferredContactMethod"] | undefined {
   const normalized = value.trim().toLowerCase();
   if (["phone", "email", "text", "mail"].includes(normalized)) {
     return normalized as NormalizedIntakeRecord["preferredContactMethod"];
   }
-  return "phone";
+  return undefined;
 }
 
 function optionalString(value: unknown): string | undefined {

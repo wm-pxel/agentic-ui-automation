@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { FileAuditStore } from "../audit/auditStore.js";
 import { renderSummary } from "../audit/summary.js";
+import { validateAgentDecision } from "../agent/types.js";
 import type { AgentDriver } from "../agent/types.js";
 import { TargetAdapterResultSchema } from "../adapters/contract.js";
 import type { TargetAdapter, TargetAdapterResult } from "../adapters/contract.js";
@@ -27,6 +28,8 @@ export interface RunWorkflowResult {
   status: RunStatus;
   totalRecords: number;
   preflightExceptions: number;
+  environmentExceptions: number;
+  closeExceptions: number;
   targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>;
 }
 
@@ -179,6 +182,8 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
         runId,
         totalRecords: input.records.length,
         preflightExceptions,
+        environmentExceptions,
+        closeExceptions,
         targetCounts,
       }),
     );
@@ -199,6 +204,8 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
       status,
       totalRecords: input.records.length,
       preflightExceptions,
+      environmentExceptions,
+      closeExceptions,
       targetCounts,
     };
   } catch (error) {
@@ -222,11 +229,13 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
 
 function withScreenshotRootDir(agent: AgentDriver, screenshotRootDir: string): AgentDriver {
   return {
-    decide: (decisionInput) =>
-      agent.decide({
+    decide: async (decisionInput) => {
+      const input = {
         ...decisionInput,
         screenshotRootDir: decisionInput.screenshotRootDir ?? screenshotRootDir,
-      }),
+      };
+      return validateAgentDecision(input, await agent.decide(input));
+    },
   };
 }
 

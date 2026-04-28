@@ -7,6 +7,8 @@ export interface SummaryInput {
   totalRecords: number;
   targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>;
   preflightExceptions: number;
+  environmentExceptions: number;
+  closeExceptions: number;
 }
 
 export function renderSummary(input: SummaryInput): string {
@@ -15,6 +17,8 @@ export function renderSummary(input: SummaryInput): string {
     "",
     `Total source records: ${input.totalRecords}`,
     `Preflight exceptions: ${input.preflightExceptions}`,
+    `Environment exceptions: ${input.environmentExceptions}`,
+    `Close exceptions: ${input.closeExceptions}`,
     "",
     "| Target | Succeeded | Exceptions | Skipped |",
     "| --- | ---: | ---: | ---: |",
