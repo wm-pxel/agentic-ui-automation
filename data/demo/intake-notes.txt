@@ -1,0 +1,15 @@
+Record: text-001
+Name: Jordan Patel
+DOB: 1975-04-22
+Sex: Male
+Phone: 312-555-0123
+Email: jordan.patel@example.test
+Address: 10 South Michigan Avenue
+City: Chicago
+State: IL
+Zip: 60603
+Insurance: Aetna
+Member ID: AET555
+Reason: Follow-up visit
+Preferred Contact: phone
+Notes: Requests afternoon appointment.
