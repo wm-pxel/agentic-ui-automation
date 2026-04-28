@@ -1,5 +1,7 @@
 import type { TargetName, TargetTaskStatus } from "../domain/schema.js";
 
+const TARGET_ORDER: TargetName[] = ["openemr", "excel", "fake"];
+
 export interface SummaryInput {
   runId: string;
   totalRecords: number;
@@ -18,7 +20,9 @@ export function renderSummary(input: SummaryInput): string {
     "| --- | ---: | ---: | ---: |",
   ];
 
-  for (const [target, counts] of Object.entries(input.targetCounts)) {
+  for (const target of TARGET_ORDER) {
+    const counts = input.targetCounts[target];
+    if (!counts) continue;
     lines.push(`| ${target} | ${counts.succeeded ?? 0} | ${counts.exception ?? 0} | ${counts.skipped ?? 0} |`);
   }
 
