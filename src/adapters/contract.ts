@@ -1,5 +1,7 @@
+import { z } from "zod";
 import type { FileAuditStore } from "../audit/auditStore.js";
 import type { AgentDriver } from "../agent/types.js";
+import { ValidationExceptionSchema } from "../domain/schema.js";
 import type { NormalizedIntakeRecord, TargetName, ValidationException } from "../domain/schema.js";
 
 export interface TargetRunContext {
@@ -22,6 +24,21 @@ export type TargetAdapterResult =
       status: "exception";
       exception: ValidationException & Record<string, unknown>;
     };
+
+export const TargetAdapterResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("succeeded"),
+    targetRecordId: z.string().optional(),
+  }),
+  z.object({
+    status: z.literal("skipped"),
+    reason: z.string(),
+  }),
+  z.object({
+    status: z.literal("exception"),
+    exception: ValidationExceptionSchema.and(z.record(z.unknown())),
+  }),
+]);
 
 export interface TargetAdapter {
   readonly name: TargetName;

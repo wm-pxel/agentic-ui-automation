@@ -23,8 +23,8 @@ export class FakeAdapter implements TargetAdapter {
         exception: {
           code: "verification_failed",
           severity: "error",
-          message: "Fake adapter exception mode returned the implementation plan verification failure.",
-          suggestedRemediation: "Review Task 5 fake adapter exception-mode plan text.",
+          message: "Fake adapter verification failed.",
+          suggestedRemediation: "Use success mode for happy-path tests.",
         },
       };
     }
