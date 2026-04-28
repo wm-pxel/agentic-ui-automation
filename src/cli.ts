@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Command, Option } from "commander";
@@ -52,7 +53,9 @@ export async function runCli(argv: string[] = process.argv, io: CliIo = {}): Pro
       return 0;
     }
 
-    resolvedIo.stderr.write(`${formatCliError(error)}\n`);
+    if (!isCommanderExit(error)) {
+      resolvedIo.stderr.write(`${formatCliError(error)}\n`);
+    }
     return 1;
   }
 }
@@ -69,7 +72,7 @@ function createProgram(io: Required<CliIo>): Command {
     .showSuggestionAfterError(false)
     .configureOutput({
       writeOut: (chunk) => io.stdout.write(chunk),
-      writeErr: () => undefined,
+      writeErr: (chunk) => io.stderr.write(chunk),
     });
 
   program
@@ -135,16 +138,20 @@ function formatCliError(error: unknown): string {
 }
 
 function isCommanderSuccessExit(error: unknown): boolean {
+  return isCommanderExit(error) && error.exitCode === 0;
+}
+
+function isCommanderExit(error: unknown): error is { exitCode: number } {
   return (
     typeof error === "object" &&
     error !== null &&
     "exitCode" in error &&
-    error.exitCode === 0
+    typeof error.exitCode === "number"
   );
 }
 
 function isDirectRun(): boolean {
-  return Boolean(process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href);
+  return Boolean(process.argv[1] && import.meta.url === pathToFileURL(realpathSync(resolve(process.argv[1]))).href);
 }
 
 if (isDirectRun()) {

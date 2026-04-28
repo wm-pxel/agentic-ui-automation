@@ -67,6 +67,17 @@ describe("runCli", () => {
     expect(io.stdoutText()).toBe("");
     expect(io.stderrText()).toBe("error: required option '--input <path>' not specified\n");
   });
+
+  it("prints command help for no-argument invocation", async () => {
+    const io = captureIo();
+
+    const exitCode = await runCli(["node", "agentic-ui"], io);
+
+    expect(exitCode).toBe(1);
+    expect(io.stdoutText()).toBe("");
+    expect(io.stderrText()).toContain("Usage: agentic-ui");
+    expect(io.stderrText()).not.toContain("(outputHelp)");
+  });
 });
 
 function captureIo() {
