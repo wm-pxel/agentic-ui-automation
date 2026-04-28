@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { TargetAdapter, TargetAdapterResult, TargetRunContext } from "../../src/adapters/contract.js";
+import type { AgentDecision, AgentDecisionInput, AgentDriver } from "../../src/agent/types.js";
 import { FakeAdapter } from "../../src/adapters/fakeAdapter.js";
 import { ScriptedAgentDriver } from "../../src/agent/scriptedAgent.js";
 import { runWorkflow } from "../../src/orchestrator/runWorkflow.js";
@@ -167,6 +168,23 @@ describe("runWorkflow", () => {
     const exceptionFiles = await readdir(join(runsDir, "run-audit-failure", "exceptions"));
     expect(exceptionFiles).toHaveLength(0);
   });
+
+  it("passes the audit run directory to agent decisions so run-relative screenshots can be resolved", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "workflow-agent-context-"));
+    const agent = new CapturingAgent();
+
+    await runWorkflow({
+      runId: "run-agent-context",
+      runsDir,
+      records: [cleanRecord("demo-agent-context")],
+      adapters: [new AgentScreenshotAdapter()],
+      agent,
+      now: () => "2026-04-28T12:00:00.000Z",
+    });
+
+    expect(agent.lastScreenshotPath).toBe("screenshots/demo-agent-context/fake/before-entry.png");
+    expect(agent.lastScreenshotRootDir).toBe(join(runsDir, "run-agent-context"));
+  });
 });
 
 class ThrowingPrepareAdapter implements TargetAdapter {
@@ -269,6 +287,46 @@ class AuditSabotagePrepareAdapter implements TargetAdapter {
 
   async close(): Promise<void> {
     this.closed = true;
+  }
+}
+
+class AgentScreenshotAdapter implements TargetAdapter {
+  readonly name = "fake";
+
+  async prepare(): Promise<void> {}
+
+  async runRecord(context: TargetRunContext): Promise<TargetAdapterResult> {
+    const screenshotPath = await context.audit.writeScreenshot(
+      context.record.sourceRecordId,
+      this.name,
+      "before-entry",
+      Buffer.from("png-data"),
+    );
+    await context.agent.decide({
+      target: this.name,
+      recordId: context.record.sourceRecordId,
+      step: "inspect-screenshot",
+      screenshotPath,
+      allowedActions: [{ id: "continue", description: "Continue after screenshot inspection." }],
+    });
+    return { status: "succeeded" };
+  }
+
+  async close(): Promise<void> {}
+}
+
+class CapturingAgent implements AgentDriver {
+  lastScreenshotPath?: string;
+  lastScreenshotRootDir?: string;
+
+  async decide(input: AgentDecisionInput): Promise<AgentDecision> {
+    this.lastScreenshotPath = input.screenshotPath;
+    this.lastScreenshotRootDir = input.screenshotRootDir;
+    return {
+      actionId: input.allowedActions[0]?.id ?? "stop",
+      confidence: 1,
+      rationale: "Captured agent input.",
+    };
   }
 }
 

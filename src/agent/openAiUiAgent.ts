@@ -57,7 +57,7 @@ export class OpenAiUiAgentDriver implements AgentDriver {
     const response = await this.client.responses.create({
       model: this.model,
       instructions: SYSTEM_INSTRUCTIONS,
-      input: await buildResponseInput(input, this.screenshotRootDir),
+      input: await buildResponseInput(input, input.screenshotRootDir ?? this.screenshotRootDir),
       text: {
         format: {
           type: "json_schema",

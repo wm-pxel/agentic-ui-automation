@@ -19,6 +19,7 @@ export interface AgentDecisionInput {
   recordId: string;
   step: string;
   screenshotPath?: string;
+  screenshotRootDir?: string;
   visibleText?: string;
   allowedActions: AllowedAgentAction[];
 }

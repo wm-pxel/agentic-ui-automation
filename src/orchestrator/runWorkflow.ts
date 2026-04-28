@@ -38,6 +38,7 @@ interface TargetReadiness {
 export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowResult> {
   const runId = input.runId ?? `run-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
   const audit = await FileAuditStore.create({ runsDir: input.runsDir, runId, now: input.now });
+  const agent = withScreenshotRootDir(input.agent, audit.runDir);
   const targets = input.adapters.map((adapter) => adapter.name);
   const targetCounts = initializeTargetCounts(targets);
   const readiness = new Map<TargetName, TargetReadiness>();
@@ -147,7 +148,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
           runId,
           record: validation.record,
           audit,
-          agent: input.agent,
+          agent,
         });
         counts[result.status] += 1;
         await audit.writeEvent({
@@ -217,6 +218,16 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
     }
     throw error;
   }
+}
+
+function withScreenshotRootDir(agent: AgentDriver, screenshotRootDir: string): AgentDriver {
+  return {
+    decide: (decisionInput) =>
+      agent.decide({
+        ...decisionInput,
+        screenshotRootDir: decisionInput.screenshotRootDir ?? screenshotRootDir,
+      }),
+  };
 }
 
 function initializeTargetCounts(targets: TargetName[]): Partial<Record<TargetName, Record<TargetTaskStatus, number>>> {

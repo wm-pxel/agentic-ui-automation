@@ -1,17 +1,18 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { OpenAiUiAgentDriver, type OpenAiResponsesClient } from "../../src/agent/openAiUiAgent.js";
 import { STOP_AGENT_ACTION_ID } from "../../src/agent/types.js";
 
-function createInput(screenshotPath?: string) {
+function createInput(screenshotPath?: string, screenshotRootDir?: string) {
   return {
     target: "fake" as const,
     recordId: "demo-001",
     step: "save",
     visibleText: "Save patient",
     screenshotPath,
+    screenshotRootDir,
     allowedActions: [
       { id: "click-save", description: "Click Save" },
       { id: "click-cancel", description: "Click Cancel" },
@@ -52,8 +53,9 @@ describe("OpenAiUiAgentDriver", () => {
 
   it("sends UI context to the Responses API and validates the model decision", async () => {
     const root = await mkdtemp(join(tmpdir(), "openai-agent-"));
-    const screenshotPath = join(root, "save.png");
-    await writeFile(screenshotPath, Buffer.from("png-data"));
+    const screenshotPath = "screenshots/demo-001/fake/save.png";
+    await mkdir(join(root, "screenshots", "demo-001", "fake"), { recursive: true });
+    await writeFile(join(root, screenshotPath), Buffer.from("png-data"));
     const calls: unknown[] = [];
     const client = createClient(
       JSON.stringify({
@@ -65,7 +67,7 @@ describe("OpenAiUiAgentDriver", () => {
     );
     const agent = new OpenAiUiAgentDriver({ model: "gpt-4o-mini", client });
 
-    const decision = await agent.decide(createInput(screenshotPath));
+    const decision = await agent.decide(createInput(screenshotPath, root));
 
     expect(decision).toEqual({
       actionId: "click-save",
