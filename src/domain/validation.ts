@@ -21,11 +21,17 @@ const REQUIRED_FIELDS = [
   "dateOfBirth",
   "sexOrGender",
   "phone",
+  "email",
   "streetAddress",
   "city",
   "state",
   "zip",
+  "insurancePayer",
+  "insuranceMemberId",
   "reasonForVisit",
+  "preferredContactMethod",
+  "sourceFormat",
+  "rawSourceExcerpt",
 ] as const;
 
 export function validateAndNormalizeRecord(input: RawIntakeRecord): ValidationResult {
@@ -141,12 +147,25 @@ export function validateAndNormalizeRecord(input: RawIntakeRecord): ValidationRe
 function normalizeDate(value: string): string | undefined {
   const trimmed = value.trim();
   const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
-  if (iso) return trimmed;
+  if (iso) return normalizeDateParts(iso[1], iso[2], iso[3]);
   const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
   if (!us) return undefined;
-  const month = us[1].padStart(2, "0");
-  const day = us[2].padStart(2, "0");
-  return `${us[3]}-${month}-${day}`;
+  return normalizeDateParts(us[3], us[1], us[2]);
+}
+
+function normalizeDateParts(yearValue: string, monthValue: string, dayValue: string): string | undefined {
+  const year = Number(yearValue);
+  const month = Number(monthValue);
+  const day = Number(dayValue);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return `${yearValue.padStart(4, "0")}-${monthValue.padStart(2, "0")}-${dayValue.padStart(2, "0")}`;
 }
 
 function normalizePhone(value: string): string | undefined {
