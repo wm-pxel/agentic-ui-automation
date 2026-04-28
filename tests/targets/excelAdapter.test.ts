@@ -339,6 +339,27 @@ describe("MacExcelPort", () => {
     expect(executed.some((call) => call.command === "osascript" && call.args.join("\n").includes("A4"))).toBe(true);
     expect(clipboardValues).toEqual(["secret\trow", ""]);
   });
+
+  it("attempts to clear the clipboard when the initial copy fails", async () => {
+    const clipboardValues: string[] = [];
+    const port = new MacExcelPort({
+      execute: async () => {},
+      writeClipboard: async (value) => {
+        clipboardValues.push(value);
+        if (value !== "") {
+          throw new Error("copy failed");
+        }
+      },
+      readFile: async () => Buffer.from("png"),
+      unlink: async () => {},
+      sleep: async () => {},
+    });
+
+    await port.openWorkbook("/tmp/Intake Book.xlsx");
+    await expect(port.pasteRow(4, "phi\trow")).rejects.toThrow("copy failed");
+
+    expect(clipboardValues).toEqual(["phi\trow", ""]);
+  });
 });
 
 class FakeExcelPort implements ExcelDesktopPort {

@@ -52,8 +52,8 @@ export class MacExcelPort implements ExcelDesktopPort {
 
   async pasteRow(rowNumber: number, tsv: string): Promise<void> {
     const workbookName = this.requireOpenedWorkbookName();
-    await this.writeClipboard(tsv);
     try {
+      await this.writeClipboard(tsv);
       await this.execute("osascript", ["-e", pasteScript(workbookName, rowNumber)]);
       await this.delay(500);
     } finally {
