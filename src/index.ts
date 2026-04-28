@@ -9,3 +9,6 @@ export * from "./agent/openAiUiAgent.js";
 export * from "./orchestrator/runWorkflow.js";
 export * from "./adapters/contract.js";
 export * from "./adapters/fakeAdapter.js";
+export * from "./targets/excel/excelAdapter.js";
+export * from "./targets/excel/macExcelPort.js";
+export * from "./targets/openemr/openEmrAdapter.js";
