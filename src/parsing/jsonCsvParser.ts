@@ -2,11 +2,19 @@ import { parse } from "csv-parse/sync";
 import type { RawIntakeRecord } from "../domain/schema.js";
 
 export function parseJsonRecords(content: string): RawIntakeRecord[] {
-  const parsed = JSON.parse(content) as Array<Record<string, unknown>>;
+  const parsed = JSON.parse(content) as unknown;
   if (!Array.isArray(parsed)) {
     throw new Error("JSON intake input must be an array of records.");
   }
-  return parsed.map((record, index) => ({
+
+  const records = parsed.map((record, index) => {
+    if (!isPlainObject(record)) {
+      throw new Error(`JSON intake record at index ${index} must be an object.`);
+    }
+    return record;
+  });
+
+  return records.map((record, index) => ({
     ...record,
     sourceRecordId: String(record.sourceRecordId ?? `json-${index + 1}`),
     sourceFormat: "json",
@@ -27,4 +35,12 @@ export function parseCsvRecords(content: string): RawIntakeRecord[] {
     sourceFormat: "csv",
     rawSourceExcerpt: JSON.stringify(record),
   }));
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
