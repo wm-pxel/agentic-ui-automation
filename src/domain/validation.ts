@@ -1,5 +1,6 @@
 import {
   type NormalizedIntakeRecord,
+  NormalizedIntakeRecordSchema,
   type RawIntakeRecord,
   type ValidationException,
   type ValidationResult,
@@ -137,9 +138,24 @@ export function validateAndNormalizeRecord(input: RawIntakeRecord): ValidationRe
     return { ok: false, exceptions, partialRecord };
   }
 
+  const normalizedRecord = NormalizedIntakeRecordSchema.safeParse(partialRecord);
+  if (!normalizedRecord.success) {
+    return {
+      ok: false,
+      exceptions: normalizedRecord.error.issues.map((issue) => ({
+        code: "invalid_format",
+        severity: "error",
+        field: issue.path.length > 0 ? issue.path.join(".") : undefined,
+        message: issue.message,
+        suggestedRemediation: "Provide a normalized value that satisfies the intake schema.",
+      })),
+      partialRecord,
+    };
+  }
+
   return {
     ok: true,
-    record: partialRecord as NormalizedIntakeRecord,
+    record: normalizedRecord.data,
     exceptions: [],
   };
 }

@@ -210,4 +210,66 @@ describe("validateAndNormalizeRecord", () => {
       expect(NormalizedIntakeRecordSchema.safeParse({ ...normalizedRecord, ...invalidField }).success).toBe(false);
     }
   });
+
+  it("reports invalid email from the normalized schema contract", () => {
+    const result = validateAndNormalizeRecord({
+      sourceRecordId: "rec-bad-email",
+      firstName: "Ava",
+      lastName: "Nguyen",
+      dateOfBirth: "1987-03-14",
+      sexOrGender: "female",
+      phone: "3125550198",
+      email: "not-an-email",
+      streetAddress: "1200 West Lake Street",
+      city: "Chicago",
+      state: "IL",
+      zip: "60607",
+      insurancePayer: "Aetna",
+      insuranceMemberId: "AET123456",
+      reasonForVisit: "Annual wellness visit",
+      preferredContactMethod: "phone",
+      sourceFormat: "json",
+      rawSourceExcerpt: "bad email",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected validation exception");
+    expect(result.exceptions).toContainEqual(
+      expect.objectContaining({
+        code: "invalid_format",
+        field: "email",
+      }),
+    );
+  });
+
+  it("reports invalid runtime source format from the normalized schema contract", () => {
+    const result = validateAndNormalizeRecord({
+      sourceRecordId: "rec-bad-source-format",
+      firstName: "Ava",
+      lastName: "Nguyen",
+      dateOfBirth: "1987-03-14",
+      sexOrGender: "female",
+      phone: "3125550198",
+      email: "ava.nguyen@example.test",
+      streetAddress: "1200 West Lake Street",
+      city: "Chicago",
+      state: "IL",
+      zip: "60607",
+      insurancePayer: "Aetna",
+      insuranceMemberId: "AET123456",
+      reasonForVisit: "Annual wellness visit",
+      preferredContactMethod: "phone",
+      sourceFormat: "xml",
+      rawSourceExcerpt: "bad source format",
+    } as never);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected validation exception");
+    expect(result.exceptions).toContainEqual(
+      expect.objectContaining({
+        code: "invalid_format",
+        field: "sourceFormat",
+      }),
+    );
+  });
 });
