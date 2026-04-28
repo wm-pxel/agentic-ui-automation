@@ -42,6 +42,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
   const targetCounts = initializeTargetCounts(targets);
   const readiness = new Map<TargetName, TargetReadiness>();
   let preflightExceptions = 0;
+  let environmentExceptions = 0;
 
   await audit.writeRunMetadata({
     runId,
@@ -63,6 +64,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
         result: "target ready",
       });
     } catch (error) {
+      environmentExceptions += 1;
       const exception = exceptionFromError("environment_not_ready", error);
       readiness.set(adapter.name, { ready: false, exception });
       await audit.writeException(`${adapter.name}-prepare`, exception);
@@ -162,7 +164,9 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
     }
   }
 
-  const status: RunStatus = hasExceptions(preflightExceptions, targetCounts) ? "completed_with_exceptions" : "completed";
+  const status: RunStatus = hasExceptions(preflightExceptions, environmentExceptions, targetCounts)
+    ? "completed_with_exceptions"
+    : "completed";
 
   await audit.writeSummary(
     renderSummary({
@@ -215,9 +219,14 @@ async function runAdapterRecord(
 
 function hasExceptions(
   preflightExceptions: number,
+  environmentExceptions: number,
   targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>,
 ): boolean {
-  return preflightExceptions > 0 || Object.values(targetCounts).some((counts) => counts.exception > 0);
+  return (
+    preflightExceptions > 0 ||
+    environmentExceptions > 0 ||
+    Object.values(targetCounts).some((counts) => counts.exception > 0)
+  );
 }
 
 function exceptionFromError(code: ValidationException["code"], error: unknown): ValidationException {
