@@ -101,6 +101,19 @@ describe("FileAuditStore", () => {
     await expect(readFile(join(root, "run-test", second), "utf8")).resolves.toBe("two");
   });
 
+  it("keeps repeated screenshots across reopened stores", async () => {
+    const root = await mkdtemp(join(tmpdir(), "audit-resumed-screenshots-"));
+    const firstStore = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
+    const first = await firstStore.writeScreenshot("demo-001", "fake", "after-save", Buffer.from("one"));
+
+    const secondStore = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
+    const second = await secondStore.writeScreenshot("demo-001", "fake", "after-save", Buffer.from("two"));
+
+    expect(first).not.toBe(second);
+    await expect(readFile(join(root, "run-test", first), "utf8")).resolves.toBe("one");
+    await expect(readFile(join(root, "run-test", second), "utf8")).resolves.toBe("two");
+  });
+
   it("keeps repeated exceptions with unique paths", async () => {
     const root = await mkdtemp(join(tmpdir(), "audit-exceptions-"));
     const store = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
@@ -111,6 +124,27 @@ describe("FileAuditStore", () => {
       message: "First failure.",
     });
     const second = await store.writeException("demo-001", {
+      code: "environment_not_ready",
+      severity: "error",
+      message: "Second failure.",
+    });
+
+    expect(first).not.toBe(second);
+    await expect(readFile(join(root, "run-test", first), "utf8")).resolves.toContain("First failure.");
+    await expect(readFile(join(root, "run-test", second), "utf8")).resolves.toContain("Second failure.");
+  });
+
+  it("keeps repeated exceptions across reopened stores", async () => {
+    const root = await mkdtemp(join(tmpdir(), "audit-resumed-exceptions-"));
+    const firstStore = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
+    const first = await firstStore.writeException("demo-001", {
+      code: "verification_failed",
+      severity: "error",
+      message: "First failure.",
+    });
+
+    const secondStore = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
+    const second = await secondStore.writeException("demo-001", {
       code: "environment_not_ready",
       severity: "error",
       message: "Second failure.",

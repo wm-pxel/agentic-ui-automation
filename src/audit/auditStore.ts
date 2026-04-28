@@ -1,4 +1,5 @@
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import { join } from "node:path";
 import { AuditEventSchema } from "../domain/schema.js";
 import type { AuditEvent, TargetName, ValidationException } from "../domain/schema.js";
@@ -63,22 +64,26 @@ export class FileAuditStore {
     const safeTarget = safeSegment(target, "screenshot target");
     const safeStep = safeSegment(step, "screenshot step");
     const key = `${safeRecordId}/${safeTarget}/${safeStep}`;
-    const count = this.nextCount(this.screenshotCounts, key);
-    const filename = count === 1 ? `${safeStep}.png` : `${safeStep}-${formatCount(count)}.png`;
-    const relativePath = join("screenshots", safeRecordId, safeTarget, filename);
     const screenshotDir = join(this.runDir, "screenshots", safeRecordId, safeTarget);
     await mkdir(screenshotDir, { recursive: true });
-    await writeFile(join(this.runDir, relativePath), bytes);
-    return relativePath;
+    return this.writeUniqueArtifact({
+      counts: this.screenshotCounts,
+      key,
+      makeRelativePath: (count) =>
+        join("screenshots", safeRecordId, safeTarget, count === 1 ? `${safeStep}.png` : `${safeStep}-${formatCount(count)}.png`),
+      content: bytes,
+    });
   }
 
   async writeException(recordId: string, exception: ValidationException & Record<string, unknown>): Promise<string> {
     const safeRecordId = safeSegment(recordId, "exception recordId");
-    const count = this.nextCount(this.exceptionCounts, safeRecordId);
-    const filename = count === 1 ? `${safeRecordId}.json` : `${safeRecordId}-${formatCount(count)}.json`;
-    const relativePath = join("exceptions", filename);
-    await writeFile(join(this.runDir, relativePath), `${JSON.stringify(exception, null, 2)}\n`);
-    return relativePath;
+    return this.writeUniqueArtifact({
+      counts: this.exceptionCounts,
+      key: safeRecordId,
+      makeRelativePath: (count) =>
+        join("exceptions", count === 1 ? `${safeRecordId}.json` : `${safeRecordId}-${formatCount(count)}.json`),
+      content: `${JSON.stringify(exception, null, 2)}\n`,
+    });
   }
 
   async writeSummary(markdown: string): Promise<void> {
@@ -89,6 +94,29 @@ export class FileAuditStore {
     const count = (counts.get(key) ?? 0) + 1;
     counts.set(key, count);
     return count;
+  }
+
+  private async writeUniqueArtifact(input: {
+    counts: Map<string, number>;
+    key: string;
+    makeRelativePath: (count: number) => string;
+    content: string | Buffer;
+  }): Promise<string> {
+    let count = this.nextCount(input.counts, input.key);
+
+    while (true) {
+      const relativePath = input.makeRelativePath(count);
+      try {
+        await writeFile(join(this.runDir, relativePath), input.content, { flag: constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY });
+        input.counts.set(input.key, count);
+        return relativePath;
+      } catch (error) {
+        if (!isFileExistsError(error)) {
+          throw error;
+        }
+        count += 1;
+      }
+    }
   }
 }
 
@@ -111,4 +139,8 @@ function safeSegment(value: string, label: string): string {
 
 function formatCount(count: number): string {
   return String(count).padStart(4, "0");
+}
+
+function isFileExistsError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
 }
