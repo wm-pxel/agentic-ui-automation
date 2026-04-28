@@ -93,6 +93,21 @@ describe("OpenEmrAdapter", () => {
     expect(browser.closed).toBe(true);
   });
 
+  it("closes the launched browser and does not leak credentials when prepare fails", async () => {
+    const page = new FakeOpenEmrPage({
+      availableSelectors: ['input[name="authUser"]', 'button[type="submit"]'],
+    });
+    const browser = new FakeOpenEmrBrowser(page);
+    const adapter = new OpenEmrAdapter(openEmrConfig(), {
+      launchBrowser: async () => browser,
+    });
+
+    await expect(adapter.prepare()).rejects.toThrow("No OpenEMR selector matched for login password.");
+
+    expect(browser.closed).toBe(true);
+    await expect(adapter.prepare()).rejects.not.toThrow("secret");
+  });
+
   it("returns a UI-state exception when the agent rejects new-patient navigation", async () => {
     const root = await mkdtemp(join(tmpdir(), "openemr-nav-rejected-"));
     const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openemr" });
@@ -204,6 +219,9 @@ describe("OpenEmrAdapter", () => {
     await expect(readFile(join(root, "run-openemr", "screenshots/demo-001/openemr/after-save.png"), "utf8")).resolves.toBe(
       "screenshot-3",
     );
+    const events = await readFile(join(root, "run-openemr", "events.jsonl"), "utf8");
+    expect(events).toContain("OpenEMR indicated a possible duplicate patient");
+    expect(events).toContain("The form contains the normalized record.");
   });
 });
 

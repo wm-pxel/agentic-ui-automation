@@ -63,12 +63,20 @@ export class OpenEmrAdapter implements TargetAdapter {
       env: {},
       args: ["--disable-extensions", "--disable-file-system"],
     });
-    this.page = await this.browser.newPage({ viewport: { width: 1280, height: 720 } });
-    await this.page.goto(this.config.baseUrl, { waitUntil: "domcontentloaded" });
-    await fillFirst(this.page, OPENEMR_LOGIN_SELECTORS.username, this.config.username);
-    await fillFirst(this.page, OPENEMR_LOGIN_SELECTORS.password, this.config.password);
-    await clickFirst(this.page, OPENEMR_LOGIN_SELECTORS.submit);
-    await this.page.waitForLoadState("networkidle");
+
+    try {
+      this.page = await this.browser.newPage({ viewport: { width: 1280, height: 720 } });
+      await this.page.goto(this.config.baseUrl, { waitUntil: "domcontentloaded" });
+      await fillFirst(this.page, OPENEMR_LOGIN_SELECTORS.username, this.config.username, "login username");
+      await fillFirst(this.page, OPENEMR_LOGIN_SELECTORS.password, this.config.password, "login password");
+      await clickFirst(this.page, OPENEMR_LOGIN_SELECTORS.submit, "login submit");
+      await this.page.waitForLoadState("networkidle");
+    } catch (error) {
+      await this.browser.close().catch(() => undefined);
+      this.browser = undefined;
+      this.page = undefined;
+      throw error;
+    }
   }
 
   async runRecord(context: TargetRunContext): Promise<TargetAdapterResult> {
@@ -117,7 +125,7 @@ export class OpenEmrAdapter implements TargetAdapter {
     });
 
     for (const mapping of openEmrFieldMappings(context.record)) {
-      await fillFirst(page, mapping.selectors, mapping.value);
+      await fillFirst(page, mapping.selectors, mapping.value, "patient field");
     }
 
     const filled = await page.screenshot({ fullPage: true });
@@ -152,13 +160,23 @@ export class OpenEmrAdapter implements TargetAdapter {
       };
     }
 
-    await clickFirst(page, OPENEMR_SAVE_CANDIDATES);
+    await clickFirst(page, OPENEMR_SAVE_CANDIDATES, "save patient");
     await page.waitForLoadState("networkidle").catch(() => undefined);
     const after = await page.screenshot({ fullPage: true });
     const afterPath = await context.audit.writeScreenshot(context.record.sourceRecordId, this.name, "after-save", after);
     const text = await visibleText(page);
 
     if (/duplicate|already exists|similar patient/i.test(text)) {
+      await context.audit.writeEvent({
+        recordId: context.record.sourceRecordId,
+        target: this.name,
+        phase: "web",
+        actionType: "save",
+        rationale: saveDecision.rationale,
+        screenshotPath: afterPath,
+        result: "OpenEMR indicated a possible duplicate patient",
+        exceptionCode: "possible_duplicate",
+      });
       return {
         status: "exception",
         exception: {
@@ -194,7 +212,7 @@ export class OpenEmrAdapter implements TargetAdapter {
   }
 }
 
-async function fillFirst(page: OpenEmrPage, selectors: string[], value: string): Promise<void> {
+async function fillFirst(page: OpenEmrPage, selectors: string[], value: string, label: string): Promise<void> {
   for (const selector of selectors) {
     const locator = page.locator(selector).first();
     if ((await locator.count()) > 0) {
@@ -207,10 +225,10 @@ async function fillFirst(page: OpenEmrPage, selectors: string[], value: string):
       return;
     }
   }
-  throw new Error(`No OpenEMR selector matched for value ${value}.`);
+  throw new Error(`No OpenEMR selector matched for ${label}.`);
 }
 
-async function clickFirst(page: OpenEmrPage, selectors: string[]): Promise<void> {
+async function clickFirst(page: OpenEmrPage, selectors: string[], label: string): Promise<void> {
   for (const selector of selectors) {
     const locator = page.locator(selector).first();
     if ((await locator.count()) > 0) {
@@ -218,11 +236,11 @@ async function clickFirst(page: OpenEmrPage, selectors: string[]): Promise<void>
       return;
     }
   }
-  throw new Error(`No OpenEMR click selector matched: ${selectors.join(", ")}`);
+  throw new Error(`No OpenEMR click selector matched for ${label}: ${selectors.join(", ")}`);
 }
 
 async function navigateToNewPatient(page: OpenEmrPage): Promise<void> {
-  await clickFirst(page, OPENEMR_NEW_PATIENT_CANDIDATES);
+  await clickFirst(page, OPENEMR_NEW_PATIENT_CANDIDATES, "new patient navigation");
   await page.waitForLoadState("networkidle").catch(() => undefined);
 }
 
