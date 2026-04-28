@@ -41,21 +41,45 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
   const targets = input.adapters.map((adapter) => adapter.name);
   const targetCounts = initializeTargetCounts(targets);
   const readiness = new Map<TargetName, TargetReadiness>();
+  const closedAdapters = new Set<TargetAdapter>();
   let preflightExceptions = 0;
   let environmentExceptions = 0;
+  let closeExceptions = 0;
+  let initialMetadataWritten = false;
 
-  await audit.writeRunMetadata({
-    runId,
-    status: "running",
-    targets,
-    totalRecords: input.records.length,
-  });
-  await audit.writeInputArtifact("normalized-records.json", "[]\n");
-  await audit.writeEvent({ phase: "run", actionType: "start", result: "workflow run started" });
+  try {
+    await audit.writeRunMetadata({
+      runId,
+      status: "running",
+      targets,
+      totalRecords: input.records.length,
+    });
+    initialMetadataWritten = true;
+    await audit.writeInputArtifact("normalized-records.json", "[]\n");
+    await audit.writeEvent({ phase: "run", actionType: "start", result: "workflow run started" });
 
-  for (const adapter of input.adapters) {
-    try {
-      await adapter.prepare();
+    for (const adapter of input.adapters) {
+      let prepareException: ValidationException | undefined;
+      try {
+        await adapter.prepare();
+      } catch (error) {
+        prepareException = exceptionFromError("environment_not_ready", error);
+      }
+
+      if (prepareException) {
+        environmentExceptions += 1;
+        readiness.set(adapter.name, { ready: false, exception: prepareException });
+        await audit.writeException(`${adapter.name}-prepare`, prepareException);
+        await audit.writeEvent({
+          target: adapter.name,
+          phase: "environment",
+          actionType: "prepare",
+          result: prepareException.message,
+          exceptionCode: prepareException.code,
+        });
+        continue;
+      }
+
       readiness.set(adapter.name, { ready: true });
       await audit.writeEvent({
         target: adapter.name,
@@ -63,23 +87,9 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
         actionType: "prepare",
         result: "target ready",
       });
-    } catch (error) {
-      environmentExceptions += 1;
-      const exception = exceptionFromError("environment_not_ready", error);
-      readiness.set(adapter.name, { ready: false, exception });
-      await audit.writeException(`${adapter.name}-prepare`, exception);
-      await audit.writeEvent({
-        target: adapter.name,
-        phase: "environment",
-        actionType: "prepare",
-        result: exception.message,
-        exceptionCode: exception.code,
-      });
     }
-  }
 
-  const normalizedRecords = [];
-  try {
+    const normalizedRecords = [];
     for (const rawRecord of input.records) {
       const validation = validateAndNormalizeRecord(rawRecord);
 
@@ -145,7 +155,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
           target: adapter.name,
           phase: "target",
           actionType: "complete",
-          result: result.status,
+          result: targetCompletionResult(result),
           exceptionCode: result.status === "exception" ? result.exception.code : undefined,
         });
 
@@ -156,43 +166,57 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
     }
 
     await audit.writeInputArtifact("normalized-records.json", `${JSON.stringify(normalizedRecords, null, 2)}\n`);
-  } finally {
-    for (const adapter of input.adapters) {
-      if (readiness.get(adapter.name)?.ready) {
-        await adapter.close().catch(() => undefined);
-      }
-    }
-  }
 
-  const status: RunStatus = hasExceptions(preflightExceptions, environmentExceptions, targetCounts)
-    ? "completed_with_exceptions"
-    : "completed";
+    closeExceptions += await closeReadyAdapters(input.adapters, audit, readiness, closedAdapters);
 
-  await audit.writeSummary(
-    renderSummary({
+    const status: RunStatus = hasExceptions(preflightExceptions, environmentExceptions, closeExceptions, targetCounts)
+      ? "completed_with_exceptions"
+      : "completed";
+
+    await audit.writeSummary(
+      renderSummary({
+        runId,
+        totalRecords: input.records.length,
+        preflightExceptions,
+        targetCounts,
+      }),
+    );
+    await audit.writeRunMetadata({
       runId,
+      status,
+      targets,
+      totalRecords: input.records.length,
+      preflightExceptions,
+      environmentExceptions,
+      closeExceptions,
+      targetCounts,
+    });
+    await audit.writeEvent({ phase: "run", actionType: "finish", result: status });
+
+    return {
+      runId,
+      status,
       totalRecords: input.records.length,
       preflightExceptions,
       targetCounts,
-    }),
-  );
-  await audit.writeRunMetadata({
-    runId,
-    status,
-    targets,
-    totalRecords: input.records.length,
-    preflightExceptions,
-    targetCounts,
-  });
-  await audit.writeEvent({ phase: "run", actionType: "finish", result: status });
-
-  return {
-    runId,
-    status,
-    totalRecords: input.records.length,
-    preflightExceptions,
-    targetCounts,
-  };
+    };
+  } catch (error) {
+    closeExceptions += await closeReadyAdapters(input.adapters, audit, readiness, closedAdapters);
+    if (initialMetadataWritten) {
+      await writeFailedRunArtifacts({
+        audit,
+        runId,
+        targets,
+        totalRecords: input.records.length,
+        preflightExceptions,
+        environmentExceptions,
+        closeExceptions,
+        targetCounts,
+        error,
+      });
+    }
+    throw error;
+  }
 }
 
 function initializeTargetCounts(targets: TargetName[]): Partial<Record<TargetName, Record<TargetTaskStatus, number>>> {
@@ -220,13 +244,94 @@ async function runAdapterRecord(
 function hasExceptions(
   preflightExceptions: number,
   environmentExceptions: number,
+  closeExceptions: number,
   targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>,
 ): boolean {
   return (
     preflightExceptions > 0 ||
     environmentExceptions > 0 ||
+    closeExceptions > 0 ||
     Object.values(targetCounts).some((counts) => counts.exception > 0)
   );
+}
+
+async function closeReadyAdapters(
+  adapters: TargetAdapter[],
+  audit: FileAuditStore,
+  readiness: Map<TargetName, TargetReadiness>,
+  closedAdapters: Set<TargetAdapter>,
+): Promise<number> {
+  let closeExceptions = 0;
+
+  for (const adapter of adapters) {
+    if (!readiness.get(adapter.name)?.ready || closedAdapters.has(adapter)) {
+      continue;
+    }
+
+    closedAdapters.add(adapter);
+    try {
+      await adapter.close();
+    } catch (error) {
+      closeExceptions += 1;
+      const exception = exceptionFromError("ui_state_unexpected", error);
+      await audit.writeException(`${adapter.name}-close`, exception).catch(() => undefined);
+      await audit
+        .writeEvent({
+          target: adapter.name,
+          phase: "environment",
+          actionType: "close",
+          result: exception.message,
+          exceptionCode: exception.code,
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  return closeExceptions;
+}
+
+async function writeFailedRunArtifacts(input: {
+  audit: FileAuditStore;
+  runId: string;
+  targets: TargetName[];
+  totalRecords: number;
+  preflightExceptions: number;
+  environmentExceptions: number;
+  closeExceptions: number;
+  targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>;
+  error: unknown;
+}): Promise<void> {
+  const exception = exceptionFromError("ui_state_unexpected", input.error);
+  await input.audit
+    .writeRunMetadata({
+      runId: input.runId,
+      status: "failed",
+      targets: input.targets,
+      totalRecords: input.totalRecords,
+      preflightExceptions: input.preflightExceptions,
+      environmentExceptions: input.environmentExceptions,
+      closeExceptions: input.closeExceptions,
+      targetCounts: input.targetCounts,
+      failure: exception,
+    })
+    .catch(() => undefined);
+  await input.audit
+    .writeEvent({
+      phase: "run",
+      actionType: "finish",
+      result: "failed",
+      exceptionCode: exception.code,
+      rationale: exception.message,
+    })
+    .catch(() => undefined);
+}
+
+function targetCompletionResult(result: TargetAdapterResult): string {
+  if (result.status === "skipped") {
+    return `skipped: ${result.reason}`;
+  }
+
+  return result.status;
 }
 
 function exceptionFromError(code: ValidationException["code"], error: unknown): ValidationException {
