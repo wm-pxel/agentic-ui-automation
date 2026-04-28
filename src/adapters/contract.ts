@@ -12,7 +12,7 @@ export interface TargetRunContext {
 export type TargetAdapterResult =
   | {
       status: "succeeded";
-      targetRecordId: string;
+      targetRecordId?: string;
     }
   | {
       status: "skipped";
@@ -20,11 +20,11 @@ export type TargetAdapterResult =
     }
   | {
       status: "exception";
-      exception: ValidationException;
+      exception: ValidationException & Record<string, unknown>;
     };
 
 export interface TargetAdapter {
-  name: TargetName;
+  readonly name: TargetName;
   prepare(): Promise<void>;
   runRecord(context: TargetRunContext): Promise<TargetAdapterResult>;
   close(): Promise<void>;

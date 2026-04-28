@@ -10,15 +10,15 @@ describe("ScriptedAgentDriver", () => {
       recordId: "demo-001",
       step: "save",
       screenshotPath: "screenshots/demo-001/fake/save.png",
-      visibleText: "Save Cancel",
+      visibleText: "Save patient",
       allowedActions: [
-        { id: "save", description: "Click Save" },
-        { id: "cancel", description: "Click Cancel" },
+        { id: "click-save", description: "Click Save" },
+        { id: "stop", description: "Stop" },
       ],
     });
 
     expect(decision).toEqual({
-      actionId: "save",
+      actionId: "click-save",
       confidence: 1,
       rationale: "Scripted agent selected the first allowed action for step save.",
     });
