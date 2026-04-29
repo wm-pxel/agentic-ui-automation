@@ -40,12 +40,15 @@ Prerequisites:
 
 ```sh
 npx playwright install chromium
-# Replace these placeholders with a real synthetic/demo OpenEMR environment.
-export OPENEMR_BASE_URL="<openemr-demo-url>"
-export OPENEMR_USERNAME="<openemr-demo-user>"
-export OPENEMR_PASSWORD="<openemr-demo-password>"
+export OPENEMR_BASE_URL="https://demo.openemr.io/b/openemr"
+export OPENEMR_USERNAME="admin"
+export OPENEMR_PASSWORD="pass"
 npm run dev -- run --input data/demo/intake-records.json --targets openemr --runs-dir runs
 ```
+
+The public demo URL, credentials, and UI can change. If login, navigation,
+selectors, or save behavior drift, the run should stop with auditable environment
+or UI-state exceptions rather than silently claiming success.
 
 ## Excel Desktop Smoke Demo
 
@@ -76,9 +79,9 @@ Run OpenEMR and Excel together only after each target has passed its individual
 smoke run in the current environment. The same synthetic-data-only rule applies.
 
 ```sh
-export OPENEMR_BASE_URL="<openemr-demo-url>"
-export OPENEMR_USERNAME="<openemr-demo-user>"
-export OPENEMR_PASSWORD="<openemr-demo-password>"
+export OPENEMR_BASE_URL="https://demo.openemr.io/b/openemr"
+export OPENEMR_USERNAME="admin"
+export OPENEMR_PASSWORD="pass"
 npm run dev -- run \
   --input data/demo/intake-records.json \
   --targets openemr,excel \
