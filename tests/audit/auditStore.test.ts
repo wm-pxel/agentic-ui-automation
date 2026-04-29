@@ -548,6 +548,7 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("## OpenEMR Success Evidence");
     expect(summary).toContain("### Record demo-001");
     expect(summary).toContain("- Proof screenshot: screenshots/demo-001/openemr/after-save.png");
+    expect(summary).toContain("![OpenEMR success screenshot for demo-001](screenshots/demo-001/openemr/after-save.png)");
     expect(summary).toContain("- Target record: openemr-demo-001");
     expect(summary).toContain("\"intake_id\": \"demo-001\"");
     expect(summary).toContain("\"given_name\": \"Ava\"");

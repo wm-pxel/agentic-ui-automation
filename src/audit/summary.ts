@@ -127,6 +127,7 @@ function appendOpenEmrSuccessEvidence(details: ReportDetails | undefined, lines:
     const input = inputsByRecord.get(evidence.recordId);
     lines.push(`### Record ${evidence.recordId}`, "");
     lines.push(`- Proof screenshot: ${cell(evidence.screenshotPath)}`);
+    lines.push("", `![OpenEMR success screenshot for ${cell(evidence.recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
     if (evidence.targetRecordId) {
       lines.push(`- Target record: ${cell(evidence.targetRecordId)}`);
     }
@@ -143,6 +144,10 @@ function appendOpenEmrSuccessEvidence(details: ReportDetails | undefined, lines:
 
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? "null";
+}
+
+function markdownImagePath(path: string | undefined): string {
+  return encodeURI(path ?? "").replace(/\(/g, "%28").replace(/\)/g, "%29");
 }
 
 function appendOpenEmrFieldMappings(
