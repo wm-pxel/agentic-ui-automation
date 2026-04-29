@@ -6,6 +6,8 @@ export const CliRunConfigSchema = z.object({
   targets: z.array(TargetNameSchema).min(1),
   runsDir: z.string().default("runs"),
   agent: z.enum(["scripted", "openai"]).default("scripted"),
+  parser: z.enum(["openai", "deterministic"]).default("openai"),
+  parserModel: z.string().optional(),
   excelWorkbookPath: z.string().default("runs/intake-workbook.xlsx"),
   syntheticSuffix: z.string().optional(),
   openEmr: z.object({
@@ -22,6 +24,8 @@ export interface BuildRunConfigOptions {
   targets: string;
   runsDir?: string;
   agent?: "scripted" | "openai";
+  parser?: "openai" | "deterministic";
+  parserModel?: string;
   excelWorkbookPath?: string;
   syntheticSuffix?: string;
 }
@@ -39,6 +43,8 @@ export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
     targets: parseTargets(options.targets),
     runsDir: options.runsDir ?? process.env.RUNS_DIR,
     agent: options.agent,
+    parser: options.parser,
+    parserModel: options.parserModel ?? process.env.OPENAI_PARSER_MODEL ?? process.env.OPENAI_MODEL,
     excelWorkbookPath: options.excelWorkbookPath ?? process.env.EXCEL_WORKBOOK_PATH,
     syntheticSuffix: options.syntheticSuffix,
     openEmr: {

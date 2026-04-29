@@ -82,6 +82,54 @@ describe("runWorkflow", () => {
     await expect(readExceptions(runsDir, "run-record-throws")).resolves.toContain("ui_state_unexpected");
   });
 
+  it("writes report JSON and issue sections for validation and target exceptions", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "workflow-report-"));
+    const result = await runWorkflow({
+      runId: "run-report",
+      runsDir,
+      records: [cleanRecord("demo-target-exception"), { ...cleanRecord("demo-validation-exception"), dateOfBirth: "" }],
+      adapters: [new ThrowingRunRecordAdapter()],
+      agent: new ScriptedAgentDriver(),
+      now: () => "2026-04-28T12:00:00.000Z",
+    });
+
+    expect(result.status).toBe("completed_with_exceptions");
+
+    const report = JSON.parse(await readFile(join(runsDir, "run-report", "report.json"), "utf8"));
+    expect(report).toMatchObject({
+      runId: "run-report",
+      status: "completed_with_exceptions",
+      totalRecords: 2,
+      counts: {
+        preflightExceptions: 1,
+        environmentExceptions: 0,
+        closeExceptions: 0,
+      },
+    });
+    expect(report.details.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordId: "demo-validation-exception",
+          phase: "validation",
+          exceptionCode: "missing_required_field",
+          message: expect.stringContaining("dateOfBirth"),
+        }),
+        expect.objectContaining({
+          recordId: "demo-target-exception",
+          target: "fake",
+          phase: "target",
+          exceptionCode: "ui_state_unexpected",
+          message: "Run record failed.",
+        }),
+      ]),
+    );
+
+    const summary = await readFile(join(runsDir, "run-report", "summary.md"), "utf8");
+    expect(summary).toContain("## Issues");
+    expect(summary).toContain("| demo-validation-exception |  | validation | missing_required_field |");
+    expect(summary).toContain("| demo-target-exception | fake | target | ui_state_unexpected | Run record failed. |");
+  });
+
   it("audits target exceptions for path-unsafe record IDs without failing the run", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-path-unsafe-record-"));
     const result = await runWorkflow({
@@ -191,6 +239,31 @@ describe("runWorkflow", () => {
 
     const exceptionFiles = await readdir(join(runsDir, "run-audit-failure", "exceptions"));
     expect(exceptionFiles).toHaveLength(0);
+  });
+
+  it("writes a failed report when the workflow fails after initial audit artifacts start", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "workflow-failed-report-"));
+    const adapter = new AuditSabotagePrepareAdapter(runsDir, "run-failed-report");
+
+    await expect(
+      runWorkflow({
+        runId: "run-failed-report",
+        runsDir,
+        records: [],
+        adapters: [adapter],
+        agent: new ScriptedAgentDriver(),
+        now: () => "2026-04-28T12:00:00.000Z",
+      }),
+    ).rejects.toThrow();
+
+    const report = JSON.parse(await readFile(join(runsDir, "run-failed-report", "report.json"), "utf8"));
+    expect(report.status).toBe("failed");
+    expect(report.details.issues).toContainEqual(
+      expect.objectContaining({
+        phase: "run",
+        exceptionCode: "ui_state_unexpected",
+      }),
+    );
   });
 
   it("passes the audit run directory to agent decisions so run-relative screenshots can be resolved", async () => {

@@ -60,8 +60,19 @@ describe("buildRunConfig", () => {
       targets: ["fake"],
       runsDir: "runs",
       agent: "scripted",
+      parser: "openai",
       excelWorkbookPath: "runs/intake-workbook.xlsx",
     });
+  });
+
+  it("allows deterministic parsing for tests and local smoke runs", () => {
+    const config = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "fake",
+      parser: "deterministic",
+    });
+
+    expect(config.parser).toBe("deterministic");
   });
 
   it("uses fallback defaults when environment variables are unset", () => {

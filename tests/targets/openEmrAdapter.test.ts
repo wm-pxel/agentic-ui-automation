@@ -32,9 +32,25 @@ describe("OpenEMR selectors", () => {
       "+13125550198",
       "ava.nguyen@example.test",
     ]);
-    expect(mappings[0].selectors).toEqual(['input[name="form_fname"]', 'input[name="fname"]', 'input[id*="fname"]']);
-    expect(mappings[3].selectors).toEqual(['select[name="form_sex"]', 'select[name="sex"]']);
-    expect(mappings[9].selectors).toEqual(['input[name="form_email"]', 'input[name*="email"]']);
+    expect(mappings.map((mapping) => [mapping.sourceField, mapping.targetField])).toEqual([
+      ["firstName", "First Name"],
+      ["lastName", "Last Name"],
+      ["dateOfBirth", "Date of Birth"],
+      ["sexOrGender", "Birth Sex"],
+      ["streetAddress", "Street Address"],
+      ["city", "City"],
+      ["state", "State"],
+      ["zip", "ZIP"],
+      ["phone", "Mobile Phone"],
+      ["email", "Email"],
+    ]);
+    expect(mappings[0].selectors).toEqual(
+      expect.arrayContaining(['input[name="form_fname"]', 'input[name="form_Fname"]', 'input[name="form_first"]']),
+    );
+    expect(mappings[0].required).toBe(true);
+    expect(mappings[3].selectors).toEqual(expect.arrayContaining(['select[name="form_sex"]', 'select[name="form_sx"]']));
+    expect(mappings[3].required).toBe(true);
+    expect(mappings[9].selectors).toEqual(expect.arrayContaining(['input[name="form_email"]', 'input[name="form_E_mail"]']));
     expect(OPENEMR_LOGIN_SELECTORS).toEqual({
       username: ['input[name="authUser"]', "#authUser"],
       password: ['input[name="clearPass"]', "#clearPass"],
@@ -262,6 +278,15 @@ describe("OpenEmrAdapter", () => {
     const events = await readFile(join(root, "run-openemr", "events.jsonl"), "utf8");
     expect(events).toContain("OpenEMR indicated a possible duplicate patient");
     expect(events).toContain("The form contains the normalized record.");
+    expect(audit.getReportDetails().issues).toContainEqual(
+      expect.objectContaining({
+        recordId: "demo-001",
+        target: "openemr",
+        phase: "target",
+        exceptionCode: "possible_duplicate",
+        screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+      }),
+    );
   });
 
   it("opens the menu form, expands contact fields, and confirms creation when no matches are found", async () => {
@@ -370,6 +395,171 @@ describe("OpenEmrAdapter", () => {
     await expect(readFile(join(root, "run-openemr", "screenshots/demo-001/openemr/after-save.png"), "utf8")).resolves.toBe(
       "screenshot-3",
     );
+    expect(audit.getReportDetails().fieldMappings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordId: "demo-001",
+          target: "openemr",
+          sourceField: "sexOrGender",
+          targetField: "Birth Sex",
+          normalizedValue: "Female",
+          selectedSelector: 'select[name="form_sex"]',
+          action: "select",
+          status: "succeeded",
+        }),
+        expect.objectContaining({
+          recordId: "demo-001",
+          target: "openemr",
+          sourceField: "state",
+          targetField: "State",
+          normalizedValue: "Illinois",
+          selectedSelector: 'input[name="form_state"]',
+          action: "fill",
+          status: "succeeded",
+        }),
+      ]),
+    );
+  });
+
+  it("records a failed OpenEMR field mapping before throwing for a missing selector", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openemr-missing-selector-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openemr" });
+    const page = new FakeOpenEmrPage({
+      availableSelectors: [
+        ...loginSelectors(),
+        'text="Patient"',
+        'text="New/Search"',
+        'input[name="form_fname"]',
+        'input[name="form_DOB"]',
+        'select[name="form_sex"]',
+        'input[name="form_street"]',
+        'input[name="form_city"]',
+        'input[name="form_state"]',
+        'input[name="form_postal_code"]',
+        'input[name="form_phone_cell"]',
+        'button:has-text("Create New Patient")',
+      ],
+      visibleSelectors: [
+        ...loginSelectors(),
+        'text="Patient"',
+        'input[name="form_fname"]',
+        'input[name="form_DOB"]',
+        'select[name="form_sex"]',
+        'input[name="form_street"]',
+        'input[name="form_city"]',
+        'input[name="form_state"]',
+        'input[name="form_postal_code"]',
+        'input[name="form_phone_cell"]',
+        'button:has-text("Create New Patient")',
+      ],
+      hoverReveals: {
+        'text="Patient"': ['text="New/Search"'],
+      },
+      bodyTexts: ["OpenEMR dashboard", "Search or Add Patient"],
+      tagNames: [['select[name="form_sex"]', "select"]],
+    });
+    const adapter = new OpenEmrAdapter(openEmrConfig(), {
+      launchBrowser: async () => new FakeOpenEmrBrowser(page),
+    });
+    const agent = new QueuedAgent([
+      {
+        actionId: "navigate-new-patient",
+        confidence: 0.91,
+        rationale: "The patient menu is visible.",
+      },
+    ]);
+
+    await adapter.prepare();
+    await expect(
+      adapter.runRecord({
+        runId: "run-openemr",
+        record: record("demo-001"),
+        audit,
+        agent,
+      }),
+    ).rejects.toThrow("No visible OpenEMR selector matched for Last Name");
+
+    const failedMapping = audit.getReportDetails().fieldMappings.find((mapping) => mapping.sourceField === "lastName");
+    expect(failedMapping).toMatchObject({
+      recordId: "demo-001",
+      target: "openemr",
+      sourceField: "lastName",
+      targetField: "Last Name",
+      normalizedValue: "Nguyen",
+      status: "failed",
+      errorMessage: expect.stringContaining("No visible OpenEMR selector matched for Last Name"),
+    });
+    expect(failedMapping).not.toHaveProperty("selectedSelector");
+    expect(failedMapping).not.toHaveProperty("action");
+  });
+
+  it("continues when optional OpenEMR contact fields are unavailable", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openemr-optional-missing-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openemr" });
+    const page = new FakeOpenEmrPage({
+      availableSelectors: [
+        ...loginSelectors(),
+        'text="Patient"',
+        'text="New/Search"',
+        'input[name="form_Fname"]',
+        'input[name="form_Name"]',
+        'input[name="form_birthdate"]',
+        'select[name="form_sx"]',
+        'button:has-text("Create New Patient")',
+        'button:has-text("Confirm Create New Patient")',
+      ],
+      visibleSelectors: [
+        ...loginSelectors(),
+        'text="Patient"',
+        'input[name="form_Fname"]',
+        'input[name="form_Name"]',
+        'input[name="form_birthdate"]',
+        'select[name="form_sx"]',
+        'button:has-text("Create New Patient")',
+        'button:has-text("Confirm Create New Patient")',
+      ],
+      hoverReveals: {
+        'text="Patient"': ['text="New/Search"'],
+      },
+      clickHides: {
+        'button:has-text("Create New Patient")': ['button:has-text("Create New Patient")'],
+        'button:has-text("Confirm Create New Patient")': ['button:has-text("Confirm Create New Patient")'],
+      },
+      bodyTexts: [
+        "OpenEMR dashboard",
+        "Search or Add Patient",
+        "No matches were found.\nConfirm Create New Patient Cancel",
+        "No matches were found.\nConfirm Create New Patient Cancel",
+        "Created patient",
+      ],
+      tagNames: [['select[name="form_sx"]', "select"]],
+    });
+    const adapter = new OpenEmrAdapter(openEmrConfig(), {
+      launchBrowser: async () => new FakeOpenEmrBrowser(page),
+    });
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The patient form is visible." },
+      { actionId: "save-patient", confidence: 0.88, rationale: "The required fields are filled." },
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openemr", record: record("demo-001"), audit, agent });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "openemr-demo-001" });
+    expect(page.filled).toEqual(
+      expect.arrayContaining([
+        { selector: 'input[name="form_Fname"]', value: "Ava" },
+        { selector: 'input[name="form_Name"]', value: "Nguyen" },
+        { selector: 'input[name="form_birthdate"]', value: "1987-03-14" },
+      ]),
+    );
+    expect(page.selected).toContainEqual({ selector: 'select[name="form_sx"]', option: { label: "Female" } });
+    expect(audit.getReportDetails().fieldMappings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceField: "city", status: "failed" }),
+        expect.objectContaining({ sourceField: "email", status: "failed" }),
+      ]),
+    );
   });
 
   it("uses a fresh OpenEMR session for each record after one is saved", async () => {
@@ -477,6 +667,15 @@ describe("OpenEmrAdapter", () => {
         screenshotPath: "screenshots/demo-001/openemr/after-save.png",
       },
     });
+    expect(audit.getReportDetails().issues).toContainEqual(
+      expect.objectContaining({
+        recordId: "demo-001",
+        target: "openemr",
+        phase: "target",
+        exceptionCode: "verification_failed",
+        screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+      }),
+    );
   });
 });
 

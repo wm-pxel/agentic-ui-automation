@@ -1,14 +1,18 @@
 import type { TargetName, TargetTaskStatus } from "../domain/schema.js";
+import type { ReportAiExtraction, ReportDetails, ReportFieldMapping, ReportIssue } from "./auditStore.js";
 
 const TARGET_ORDER: TargetName[] = ["openemr", "excel", "fake"];
 
 export interface SummaryInput {
   runId: string;
+  runDir?: string;
+  sourceInputPath?: string;
   totalRecords: number;
   targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>;
   preflightExceptions: number;
   environmentExceptions: number;
   closeExceptions: number;
+  details?: ReportDetails;
 }
 
 export function renderSummary(input: SummaryInput): string {
@@ -20,9 +24,11 @@ export function renderSummary(input: SummaryInput): string {
     `Environment exceptions: ${input.environmentExceptions}`,
     `Close exceptions: ${input.closeExceptions}`,
     "",
-    "| Target | Succeeded | Exceptions | Skipped |",
-    "| --- | ---: | ---: | ---: |",
   ];
+
+  appendArtifacts(lines, input);
+
+  lines.push("| Target | Succeeded | Exceptions | Skipped |", "| --- | ---: | ---: | ---: |");
 
   for (const target of TARGET_ORDER) {
     const counts = input.targetCounts[target];
@@ -30,6 +36,109 @@ export function renderSummary(input: SummaryInput): string {
     lines.push(`| ${target} | ${counts.succeeded ?? 0} | ${counts.exception ?? 0} | ${counts.skipped ?? 0} |`);
   }
 
+  appendAiExtractions(lines, input.details?.aiExtractions ?? []);
+  appendIssues(lines, input.details?.issues ?? []);
+  appendOpenEmrFieldMappings(lines, input.details?.fieldMappings ?? []);
+
   lines.push("");
   return `${lines.join("\n")}\n`;
+}
+
+function appendArtifacts(lines: string[], input: SummaryInput): void {
+  if (!input.runDir && !input.sourceInputPath) return;
+
+  const runDir = input.runDir;
+  lines.push("## Artifacts", "");
+  lines.push("| Artifact | Path |");
+  lines.push("| --- | --- |");
+  if (runDir) {
+    lines.push(`| Run directory | ${cell(runDir)} |`);
+    lines.push(`| Summary | ${cell(pathInRun(runDir, "summary.md"))} |`);
+    lines.push(`| Run metadata | ${cell(pathInRun(runDir, "run.json"))} |`);
+    lines.push(`| Structured report | ${cell(pathInRun(runDir, "report.json"))} |`);
+    lines.push(`| Event log | ${cell(pathInRun(runDir, "events.jsonl"))} |`);
+    lines.push(`| Normalized records | ${cell(pathInRun(runDir, "input/normalized-records.json"))} |`);
+    lines.push(`| Exceptions | ${cell(pathInRun(runDir, "exceptions/"))} |`);
+    lines.push(`| Screenshots | ${cell(pathInRun(runDir, "screenshots/"))} |`);
+  }
+  if (input.sourceInputPath) {
+    lines.push(`| Source input | ${cell(input.sourceInputPath)} |`);
+  }
+  lines.push("");
+}
+
+function pathInRun(runDir: string, path: string): string {
+  return `${runDir.replace(/\/$/, "")}/${path}`;
+}
+
+function appendAiExtractions(lines: string[], aiExtractions: ReportAiExtraction[]): void {
+  if (aiExtractions.length === 0) return;
+
+  lines.push("", "## AI Source Extraction", "");
+  lines.push("| Record | Field | Value | Confidence | Evidence |");
+  lines.push("| --- | --- | --- | ---: | --- |");
+
+  for (const extraction of aiExtractions) {
+    for (const field of extraction.fields) {
+      lines.push(
+        `| ${cell(extraction.recordId)} | ${cell(field.sourceField)} | ${cell(field.value)} | ${cell(field.confidence)} | ${cell(field.evidence)} |`,
+      );
+    }
+    for (const field of extraction.additionalFields) {
+      lines.push(
+        `| ${cell(extraction.recordId)} | ${cell(field.sourceField)} | ${cell(field.value)} | ${cell(field.confidence)} | ${cell(field.evidence)} |`,
+      );
+    }
+  }
+}
+
+function appendIssues(lines: string[], issues: ReportIssue[]): void {
+  lines.push("", "## Issues", "");
+  if (issues.length === 0) {
+    lines.push("No issues recorded.");
+    return;
+  }
+
+  lines.push(
+    "| Record | Target | Phase | Code | Message | Remediation | Evidence |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
+  );
+  for (const issue of issues) {
+    lines.push(
+      `| ${cell(issue.recordId)} | ${cell(issue.target)} | ${cell(issue.phase)} | ${cell(issue.exceptionCode)} | ${cell(issue.message)} | ${cell(issue.suggestedRemediation)} | ${cell(issue.screenshotPath)} |`,
+    );
+  }
+}
+
+function appendOpenEmrFieldMappings(lines: string[], fieldMappings: ReportFieldMapping[]): void {
+  const openEmrMappings = fieldMappings.filter((mapping) => mapping.target === "openemr");
+  if (openEmrMappings.length === 0) return;
+
+  lines.push("", "## OpenEMR Field Mapping", "");
+  for (const [recordId, mappings] of groupByRecord(openEmrMappings)) {
+    lines.push(`### Record ${recordId}`, "");
+    lines.push("| Source Field | OpenEMR Field | Value | Action | Status | Selected Selector | Selector Candidates | Error |");
+    lines.push("| --- | --- | --- | --- | --- | --- | --- | --- |");
+    for (const mapping of mappings) {
+      lines.push(
+        `| ${cell(mapping.sourceField)} | ${cell(mapping.targetField)} | ${cell(mapping.normalizedValue)} | ${cell(mapping.action)} | ${cell(mapping.status)} | ${cell(mapping.selectedSelector)} | ${cell(mapping.selectorCandidates.join(", "))} | ${cell(mapping.errorMessage)} |`,
+      );
+    }
+    lines.push("");
+  }
+}
+
+function groupByRecord(mappings: ReportFieldMapping[]): Array<[string, ReportFieldMapping[]]> {
+  const groups = new Map<string, ReportFieldMapping[]>();
+  for (const mapping of mappings) {
+    const group = groups.get(mapping.recordId) ?? [];
+    group.push(mapping);
+    groups.set(mapping.recordId, group);
+  }
+  return [...groups.entries()];
+}
+
+function cell(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "";
+  return String(value).replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 }

@@ -2,17 +2,20 @@
 
 Pilot for repeatable, audited UI data entry across web and desktop applications.
 
-The workflow takes synthetic intake records, parses and validates them, asks an
-agent driver to approve bounded UI actions, runs one or more target adapters, and
-writes a traceable audit package for each run.
+The workflow takes synthetic intake source documents, uses AI by default to
+extract intake records, validates them deterministically, asks an agent driver to
+approve bounded UI actions, runs one or more target adapters, and writes a
+traceable audit package for each run.
 
 ## What It Demonstrates
 
 - Last-mile UI automation when an API is unavailable or incomplete.
+- AI-assisted parsing for variable source documents before deterministic
+  validation and EMR entry.
 - Deterministic orchestration around agentic screen interpretation.
 - Structured exception handling instead of silent target failures.
 - Audit evidence for every run: screenshots, event logs, normalized input,
-  exception JSON, run metadata, and a Markdown summary.
+  exception JSON, run metadata, a Markdown summary, and structured report JSON.
 - Two target styles:
   - Web app: OpenEMR through Playwright.
   - Desktop app: Microsoft Excel on macOS.
@@ -40,7 +43,7 @@ npm install
 Run the no-UI demo first:
 
 ```sh
-npm run dev -- run --input data/demo/intake-records.json --targets fake --runs-dir runs
+npm run dev -- run --input data/demo/intake-records.json --targets fake --runs-dir runs --parser deterministic
 ```
 
 Expected result:
@@ -51,6 +54,141 @@ Expected result:
 
 The status includes exceptions because the demo file contains three intentionally
 invalid records that should stop during validation.
+
+## OpenEMR Smoke
+
+Prerequisites:
+
+- Playwright Chromium is installed.
+- `OPENEMR_BASE_URL`, `OPENEMR_USERNAME`, and `OPENEMR_PASSWORD` point to a
+  synthetic/demo OpenEMR environment.
+- `.env` contains the OpenEMR values and `OPENAI_API_KEY` when using the default
+  OpenAI parser.
+
+Install Chromium if needed:
+
+```sh
+npx playwright install chromium
+```
+
+OpenEMR publishes multiple public demo environments. If one is stale, broken, or
+returns unexpected UI/database errors, try another before treating the adapter as
+broken:
+
+- Main demo: `https://demo.openemr.io/openemr`
+- Alternate demo: `https://demo.openemr.io/a/openemr`
+- Another alternate demo: `https://demo.openemr.io/b/openemr`
+
+Populate `.env` with the demo values you want to use. The `/b/openemr`
+environment with `admin` / `pass` is the most recently smoke-tested demo for this
+repo:
+
+```dotenv
+OPENEMR_BASE_URL=https://demo.openemr.io/b/openemr
+OPENEMR_USERNAME=admin
+OPENEMR_PASSWORD=pass
+OPENAI_API_KEY=<your-api-key>
+```
+
+Run against the configured OpenEMR environment with the default OpenAI source
+parser:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run dev -- run \
+  --input data/demo/intake-records.json \
+  --targets openemr \
+  --runs-dir runs \
+  --synthetic-suffix auto
+```
+
+For local smoke checks that should not call OpenAI, add
+`--parser deterministic` explicitly.
+
+Public demo credentials and screens can change. If login, navigation, selectors,
+or save behavior drift, the run should finish with auditable environment or
+UI-state exceptions rather than silently claiming success.
+
+OpenEMR can expose patient deletion when `Admin` -> `Config` -> `Features` ->
+`Allow Administrators to Delete Patients` is enabled. The current public demo has
+that setting off, and enabling it would mutate shared demo configuration. The
+smoke run therefore uses `--synthetic-suffix auto` to create fresh synthetic
+patient names and identifiers instead of deleting prior demo patients.
+
+### What The OpenEMR Target Does
+
+For each normalized valid source record, the OpenEMR adapter is expected to:
+
+1. Log in to the configured OpenEMR environment.
+2. Capture a `before-navigation` screenshot.
+3. Open `Patient` -> `New/Search`.
+4. Fill the Search or Add Patient form:
+   - first name, last name, DOB, birth sex
+   - available contact fields such as street, city/province, state, ZIP, mobile
+     phone, and contact email
+5. Capture an `after-fill` screenshot.
+6. Click `Create New Patient`.
+7. If OpenEMR shows the search confirmation with no matches, click
+   `Confirm Create New Patient`.
+8. Capture an `after-save` screenshot.
+9. Treat the record as successful only if OpenEMR no longer shows the
+   new-patient create form.
+
+For the checked-in demo file, three records are intentionally invalid and stop in
+preflight validation. A clean OpenEMR target pass therefore means:
+
+- `preflightExceptions` is `3`.
+- `targetCounts.openemr.succeeded` is `3`.
+- `targetCounts.openemr.exception` is `0`.
+- `exceptions/` only contains the three intentional validation exceptions.
+- Each valid record has `before-navigation`, `after-fill`, and `after-save`
+  screenshots.
+- `summary.md` and `report.json` include an OpenEMR field-mapping section. On
+  public demo layouts, optional contact fields that are unavailable may appear as
+  failed mappings without causing a target exception.
+
+Manual verification:
+
+1. Copy the `runId` from the CLI output and inspect the run summary:
+
+   ```sh
+   RUN_ID="<run-id-from-cli-output>"
+   cat "runs/$RUN_ID/summary.md"
+   cat "runs/$RUN_ID/run.json"
+   cat "runs/$RUN_ID/input/normalized-records.json"
+   ```
+
+2. Note the generated `lastName`, `email`, `phone`, and `insuranceMemberId`
+   values in `normalized-records.json`. With `--synthetic-suffix auto`, the
+   valid demo patients are renamed to values like `Nguyen Run-...`,
+   `Lee Run-...`, and `Shah Run-...`.
+3. Confirm the OpenEMR screenshot sequence exists for each valid record:
+
+   ```sh
+   find "runs/$RUN_ID/screenshots" -path "*/openemr/*.png" | sort
+   ```
+
+4. Open each `after-save.png` screenshot and confirm OpenEMR has left the
+   new-patient create form.
+5. Log in to the same OpenEMR environment used by the run.
+6. Open the patient search or finder screen.
+7. Search for the three generated last names from `normalized-records.json`.
+8. Open each patient record and confirm the demographic and contact fields match
+   `normalized-records.json` for the fields present in that demo layout. Use the
+   OpenEMR field-mapping table in `summary.md` to see which selectors were filled
+   and which optional fields were unavailable.
+9. Confirm the audit log includes an `after-save` event for each valid record:
+
+   ```sh
+   grep "after-save" "runs/$RUN_ID/events.jsonl"
+   ```
+
+The public OpenEMR demo keeps data for a while. If you run without
+`--synthetic-suffix`, existing demo patients may cause duplicate or verification
+exceptions. Use `--synthetic-suffix auto` when you need a clean end-to-end
+OpenEMR success run.
 
 ## Excel Desktop Smoke
 
@@ -68,7 +206,8 @@ npm run dev -- run \
   --input data/demo/intake-records.json \
   --targets excel \
   --runs-dir runs \
-  --excel-workbook-path runs/intake-workbook.xlsx
+  --excel-workbook-path runs/intake-workbook.xlsx \
+  --parser deterministic
 ```
 
 Expected target result:
@@ -148,127 +287,22 @@ Manual verification:
 The Excel target appends to the first empty row in an existing workbook. Use a
 fresh workbook path when you need an easy row-by-row validation run.
 
-## OpenEMR Smoke
-
-Prerequisites:
-
-- Playwright Chromium is installed.
-- `OPENEMR_BASE_URL`, `OPENEMR_USERNAME`, and `OPENEMR_PASSWORD` point to a
-  synthetic/demo OpenEMR environment.
-
-Install Chromium if needed:
-
-```sh
-npx playwright install chromium
-```
-
-Run against the current OpenEMR public demo environment:
-
-```sh
-OPENEMR_BASE_URL="https://demo.openemr.io/b/openemr" \
-OPENEMR_USERNAME="admin" \
-OPENEMR_PASSWORD="pass" \
-npm run dev -- run \
-  --input data/demo/intake-records.json \
-  --targets openemr \
-  --runs-dir runs \
-  --synthetic-suffix auto
-```
-
-Public demo credentials and screens can change. If login, navigation, selectors,
-or save behavior drift, the run should finish with auditable environment or
-UI-state exceptions rather than silently claiming success.
-
-OpenEMR can expose patient deletion when `Admin` -> `Config` -> `Features` ->
-`Allow Administrators to Delete Patients` is enabled. The current public demo has
-that setting off, and enabling it would mutate shared demo configuration. The
-smoke run therefore uses `--synthetic-suffix auto` to create fresh synthetic
-patient names and identifiers instead of deleting prior demo patients.
-
-### What The OpenEMR Target Does
-
-For each normalized valid source record, the OpenEMR adapter is expected to:
-
-1. Log in to the configured OpenEMR environment.
-2. Capture a `before-navigation` screenshot.
-3. Open `Patient` -> `New/Search`.
-4. Fill the Search or Add Patient form:
-   - first name, last name, DOB, birth sex
-   - street, city, state, ZIP
-   - mobile phone and contact email
-5. Capture an `after-fill` screenshot.
-6. Click `Create New Patient`.
-7. If OpenEMR shows the search confirmation with no matches, click
-   `Confirm Create New Patient`.
-8. Capture an `after-save` screenshot.
-9. Treat the record as successful only if OpenEMR no longer shows the
-   new-patient create form.
-
-For the checked-in demo file, three records are intentionally invalid and stop in
-preflight validation. A clean OpenEMR target pass therefore means:
-
-- `preflightExceptions` is `3`.
-- `targetCounts.openemr.succeeded` is `3`.
-- `targetCounts.openemr.exception` is `0`.
-- `exceptions/` only contains the three intentional validation exceptions.
-- Each valid record has `before-navigation`, `after-fill`, and `after-save`
-  screenshots.
-
-Manual verification:
-
-1. Copy the `runId` from the CLI output and inspect the run summary:
-
-   ```sh
-   RUN_ID="<run-id-from-cli-output>"
-   cat "runs/$RUN_ID/summary.md"
-   cat "runs/$RUN_ID/run.json"
-   cat "runs/$RUN_ID/input/normalized-records.json"
-   ```
-
-2. Note the generated `lastName`, `email`, `phone`, and `insuranceMemberId`
-   values in `normalized-records.json`. With `--synthetic-suffix auto`, the
-   valid demo patients are renamed to values like `Nguyen Run-...`,
-   `Lee Run-...`, and `Shah Run-...`.
-3. Confirm the OpenEMR screenshot sequence exists for each valid record:
-
-   ```sh
-   find "runs/$RUN_ID/screenshots" -path "*/openemr/*.png" | sort
-   ```
-
-4. Open each `after-save.png` screenshot and confirm OpenEMR has left the
-   new-patient create form.
-5. Log in to the same OpenEMR environment used by the run.
-6. Open the patient search or finder screen.
-7. Search for the three generated last names from `normalized-records.json`.
-8. Open each patient record and confirm the demographic and contact fields match
-   `normalized-records.json`: first name, last name, DOB, birth sex, street,
-   city, state, ZIP, phone, and email.
-9. Confirm the audit log includes an `after-save` event for each valid record:
-
-   ```sh
-   grep "after-save" "runs/$RUN_ID/events.jsonl"
-   ```
-
-The public OpenEMR demo keeps data for a while. If you run without
-`--synthetic-suffix`, existing demo patients may cause duplicate or verification
-exceptions. Use `--synthetic-suffix auto` when you need a clean end-to-end
-OpenEMR success run.
-
 ## Combined Smoke
 
 Run targets together only after each target has passed individually in the
 current environment:
 
 ```sh
-OPENEMR_BASE_URL="https://demo.openemr.io/b/openemr" \
-OPENEMR_USERNAME="admin" \
-OPENEMR_PASSWORD="pass" \
+set -a
+. ./.env
+set +a
 npm run dev -- run \
   --input data/demo/intake-records.json \
   --targets openemr,excel \
   --runs-dir runs \
   --excel-workbook-path runs/openemr-excel-demo.xlsx \
-  --synthetic-suffix auto
+  --synthetic-suffix auto \
+  --parser deterministic
 ```
 
 ## Audit Artifacts
@@ -278,6 +312,7 @@ Each run writes to `runs/<run-id>/`:
 ```text
 run.json
 summary.md
+report.json
 events.jsonl
 input/normalized-records.json
 exceptions/*.json
@@ -289,6 +324,7 @@ Use the `runId` from CLI output to inspect a specific run:
 ```sh
 RUN_ID="<run-id-from-cli-output>"
 cat "runs/$RUN_ID/summary.md"
+cat "runs/$RUN_ID/report.json"
 cat "runs/$RUN_ID/run.json"
 tail -n 40 "runs/$RUN_ID/events.jsonl"
 find "runs/$RUN_ID/exceptions" -maxdepth 1 -type f -print -exec cat {} \;
@@ -302,20 +338,26 @@ answer what the workflow saw for a specific record in a specific app.
 
 ```sh
 npm run dev -- run \
-  --input <path-to-json-csv-or-text-records> \
+  --input <path-to-json-csv-text-pdf-or-docx-source> \
   --targets fake,excel,openemr \
   --runs-dir runs \
   --excel-workbook-path runs/intake-workbook.xlsx \
+  --parser openai \
   --agent scripted \
   --synthetic-suffix auto
 ```
 
 Options:
 
-- `--input`: required source record file.
+- `--input`: required source file. AI parsing supports JSON, CSV, TXT, PDF, and
+  DOCX text-bearing inputs.
 - `--targets`: comma-separated targets: `fake`, `excel`, `openemr`.
 - `--runs-dir`: audit output directory. Defaults to `runs`.
 - `--excel-workbook-path`: workbook path for the Excel target.
+- `--parser`: `openai` or `deterministic`. Defaults to `openai`; use
+  `deterministic` for local fixture/smoke runs that should not call OpenAI.
+- `--parser-model`: OpenAI model for source parsing. Defaults to
+  `OPENAI_PARSER_MODEL`, then `OPENAI_MODEL`, then `gpt-5.4-mini`.
 - `--agent`: `scripted` or `openai`. Defaults to `scripted`.
 - `--synthetic-suffix`: appends a suffix to valid synthetic records before
   validation and target entry. Use `auto` for OpenEMR demo runs so each run uses
@@ -329,6 +371,7 @@ Environment variables:
 - `EXCEL_WORKBOOK_PATH`
 - `RUNS_DIR`
 - `OPENAI_API_KEY`
+- `OPENAI_PARSER_MODEL`
 - `OPENAI_MODEL`
 
 See `.env.example` for the full list.
@@ -358,7 +401,7 @@ npm pack --dry-run
 
 ```text
 src/domain/        Intake schemas and validation
-src/parsing/       JSON, CSV, and text source loading
+src/parsing/       Deterministic loading plus AI source-document parsing
 src/orchestrator/  Workflow coordination and exception handling
 src/audit/         Run metadata, events, summaries, screenshots, exceptions
 src/agent/         Scripted and OpenAI-backed agent drivers

@@ -11,6 +11,7 @@ import { OpenAiUiAgentDriver } from "./agent/openAiUiAgent.js";
 import { ScriptedAgentDriver } from "./agent/scriptedAgent.js";
 import type { AgentDriver } from "./agent/types.js";
 import { buildRunConfig, type CliRunConfig } from "./config.js";
+import { OpenAiIntakeParser } from "./parsing/aiIntakeParser.js";
 import { loadSourceRecords } from "./parsing/loadRecords.js";
 import { applySyntheticSuffix } from "./parsing/syntheticRecords.js";
 import { runWorkflow } from "./orchestrator/runWorkflow.js";
@@ -32,6 +33,8 @@ interface RunCommandOptions {
   targets: string;
   runsDir?: string;
   agent?: CliRunConfig["agent"];
+  parser?: CliRunConfig["parser"];
+  parserModel?: string;
   excelWorkbookPath?: string;
   syntheticSuffix?: string;
 }
@@ -85,6 +88,8 @@ function createProgram(io: Required<CliIo>): Command {
     .option("--targets <targets>", "Comma-separated target adapters to run.", "fake")
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
     .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
+    .addOption(new Option("--parser <parser>", "Input parser to use.").choices(["openai", "deterministic"]))
+    .option("--parser-model <model>", "OpenAI model to use for AI source parsing.")
     .option("--excel-workbook-path <path>", "Workbook path for the Excel target.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .action(async (options: RunCommandOptions) => {
@@ -96,15 +101,27 @@ function createProgram(io: Required<CliIo>): Command {
 
 async function runCommand(options: RunCommandOptions, stdout: CliWritable): Promise<void> {
   const config = buildRunConfig(options);
-  const records = applySyntheticSuffix(await loadSourceRecords(config.input), resolveSyntheticSuffix(config.syntheticSuffix));
+  const records = applySyntheticSuffix(await loadRecords(config), resolveSyntheticSuffix(config.syntheticSuffix));
   const result = await runWorkflow({
     runsDir: config.runsDir,
+    sourceInputPath: config.input,
     records,
     adapters: buildAdapters(config),
     agent: buildAgent(config.agent),
   });
 
   stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+async function loadRecords(config: CliRunConfig) {
+  if (config.parser === "deterministic") {
+    return loadSourceRecords(config.input);
+  }
+
+  return new OpenAiIntakeParser({
+    apiKey: process.env.OPENAI_API_KEY,
+    model: config.parserModel ?? "gpt-5.4-mini",
+  }).parseFile(config.input);
 }
 
 function resolveSyntheticSuffix(suffix: string | undefined): string | undefined {

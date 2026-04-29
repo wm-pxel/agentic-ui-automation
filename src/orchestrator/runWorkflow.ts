@@ -17,6 +17,7 @@ import { validateAndNormalizeRecord } from "../domain/validation.js";
 export interface RunWorkflowInput {
   runId?: string;
   runsDir: string;
+  sourceInputPath?: string;
   records: RawIntakeRecord[];
   adapters: TargetAdapter[];
   agent: AgentDriver;
@@ -57,6 +58,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
       status: "running",
       targets,
       totalRecords: input.records.length,
+      sourceInputPath: input.sourceInputPath,
     });
     initialMetadataWritten = true;
     await audit.writeInputArtifact("normalized-records.json", "[]\n");
@@ -74,6 +76,11 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
         environmentExceptions += 1;
         readiness.set(adapter.name, { ready: false, exception: prepareException });
         await audit.writeException(`${adapter.name}-prepare`, prepareException);
+        await audit.writeReportIssue(issueFromException({
+          phase: "environment",
+          target: adapter.name,
+          exception: prepareException,
+        }));
         await audit.writeEvent({
           target: adapter.name,
           phase: "environment",
@@ -95,6 +102,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
 
     const normalizedRecords = [];
     for (const rawRecord of input.records) {
+      await writeAiExtractionDetails(audit, rawRecord);
       const validation = validateAndNormalizeRecord(rawRecord);
 
       if (!validation.ok) {
@@ -109,6 +117,11 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
           allExceptions: validation.exceptions,
           partialRecord: validation.partialRecord,
         });
+        await audit.writeReportIssue(issueFromException({
+          phase: "validation",
+          recordId: String(rawRecord.sourceRecordId),
+          exception: primaryException,
+        }));
         await audit.writeEvent({
           recordId: String(rawRecord.sourceRecordId),
           phase: "validation",
@@ -136,6 +149,12 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
             } satisfies ValidationException);
           counts.exception += 1;
           await audit.writeException(`${validation.record.sourceRecordId}-${adapter.name}`, exception);
+          await audit.writeReportIssue(issueFromException({
+            phase: "target",
+            target: adapter.name,
+            recordId: validation.record.sourceRecordId,
+            exception,
+          }));
           await audit.writeEvent({
             recordId: validation.record.sourceRecordId,
             target: adapter.name,
@@ -165,6 +184,12 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
 
         if (result.status === "exception") {
           await audit.writeException(`${validation.record.sourceRecordId}-${adapter.name}`, result.exception);
+          await audit.writeReportIssue(issueFromException({
+            phase: "target",
+            target: adapter.name,
+            recordId: validation.record.sourceRecordId,
+            exception: result.exception,
+          }));
         }
       }
     }
@@ -177,20 +202,22 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
       ? "completed_with_exceptions"
       : "completed";
 
-    await audit.writeSummary(
-      renderSummary({
-        runId,
-        totalRecords: input.records.length,
-        preflightExceptions,
-        environmentExceptions,
-        closeExceptions,
-        targetCounts,
-      }),
-    );
+    await writeRunReportArtifacts({
+      audit,
+      runId,
+      sourceInputPath: input.sourceInputPath,
+      status,
+      totalRecords: input.records.length,
+      preflightExceptions,
+      environmentExceptions,
+      closeExceptions,
+      targetCounts,
+    });
     await audit.writeRunMetadata({
       runId,
       status,
       targets,
+      sourceInputPath: input.sourceInputPath,
       totalRecords: input.records.length,
       preflightExceptions,
       environmentExceptions,
@@ -215,6 +242,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
         audit,
         runId,
         targets,
+        sourceInputPath: input.sourceInputPath,
         totalRecords: input.records.length,
         preflightExceptions,
         environmentExceptions,
@@ -296,6 +324,13 @@ async function closeReadyAdapters(
       const exception = exceptionFromError("ui_state_unexpected", error);
       await audit.writeException(`${adapter.name}-close`, exception).catch(() => undefined);
       await audit
+        .writeReportIssue(issueFromException({
+          phase: "environment",
+          target: adapter.name,
+          exception,
+        }))
+        .catch(() => undefined);
+      await audit
         .writeEvent({
           target: adapter.name,
           phase: "environment",
@@ -314,6 +349,7 @@ async function writeFailedRunArtifacts(input: {
   audit: FileAuditStore;
   runId: string;
   targets: TargetName[];
+  sourceInputPath?: string;
   totalRecords: number;
   preflightExceptions: number;
   environmentExceptions: number;
@@ -323,10 +359,28 @@ async function writeFailedRunArtifacts(input: {
 }): Promise<void> {
   const exception = exceptionFromError("ui_state_unexpected", input.error);
   await input.audit
+    .writeReportIssue(issueFromException({
+      phase: "run",
+      exception,
+    }))
+    .catch(() => undefined);
+  await writeRunReportArtifacts({
+    audit: input.audit,
+    runId: input.runId,
+    sourceInputPath: input.sourceInputPath,
+    status: "failed",
+    totalRecords: input.totalRecords,
+    preflightExceptions: input.preflightExceptions,
+    environmentExceptions: input.environmentExceptions,
+    closeExceptions: input.closeExceptions,
+    targetCounts: input.targetCounts,
+  }).catch(() => undefined);
+  await input.audit
     .writeRunMetadata({
       runId: input.runId,
       status: "failed",
       targets: input.targets,
+      sourceInputPath: input.sourceInputPath,
       totalRecords: input.totalRecords,
       preflightExceptions: input.preflightExceptions,
       environmentExceptions: input.environmentExceptions,
@@ -344,6 +398,114 @@ async function writeFailedRunArtifacts(input: {
       rationale: exception.message,
     })
     .catch(() => undefined);
+}
+
+async function writeRunReportArtifacts(input: {
+  audit: FileAuditStore;
+  runId: string;
+  sourceInputPath?: string;
+  status: RunStatus;
+  totalRecords: number;
+  preflightExceptions: number;
+  environmentExceptions: number;
+  closeExceptions: number;
+  targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>;
+}): Promise<void> {
+  const details = input.audit.getReportDetails();
+  await input.audit.writeSummary(
+    renderSummary({
+      runId: input.runId,
+      runDir: input.audit.runDir,
+      sourceInputPath: input.sourceInputPath,
+      totalRecords: input.totalRecords,
+      preflightExceptions: input.preflightExceptions,
+      environmentExceptions: input.environmentExceptions,
+      closeExceptions: input.closeExceptions,
+      targetCounts: input.targetCounts,
+      details,
+    }),
+  );
+  await input.audit.writeReportJson({
+    runId: input.runId,
+    status: input.status,
+    totalRecords: input.totalRecords,
+    counts: {
+      preflightExceptions: input.preflightExceptions,
+      environmentExceptions: input.environmentExceptions,
+      closeExceptions: input.closeExceptions,
+      targetCounts: input.targetCounts,
+    },
+    details,
+  });
+}
+
+function issueFromException(input: {
+  phase: string;
+  target?: TargetName;
+  recordId?: string;
+  exception: ValidationException & Record<string, unknown>;
+}) {
+  return {
+    phase: input.phase,
+    target: input.target,
+    recordId: input.recordId,
+    exceptionCode: input.exception.code,
+    message: input.exception.message,
+    suggestedRemediation: input.exception.suggestedRemediation,
+    screenshotPath: stringValue(input.exception.screenshotPath),
+  };
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+async function writeAiExtractionDetails(audit: FileAuditStore, rawRecord: RawIntakeRecord): Promise<void> {
+  const extraction = rawRecord.aiExtraction;
+  if (!isAiExtractionMetadata(extraction)) return;
+
+  await audit.writeAiExtraction({
+    recordId: String(rawRecord.sourceRecordId),
+    model: extraction.model,
+    sourceDocumentName: extraction.sourceDocumentName,
+    fields: extractionFields(extraction.fields),
+    additionalFields: extractionFields(extraction.additionalFields),
+    issues: extraction.issues,
+  });
+}
+
+function extractionFields(value: Record<string, { value: string; confidence: number; evidence?: string }>) {
+  return Object.entries(value).map(([sourceField, field]) => ({
+    sourceField,
+    value: field.value,
+    confidence: field.confidence,
+    evidence: field.evidence,
+  }));
+}
+
+function isAiExtractionMetadata(value: unknown): value is {
+  model: string;
+  sourceDocumentName: string;
+  fields: Record<string, { value: string; confidence: number; evidence?: string }>;
+  additionalFields: Record<string, { value: string; confidence: number; evidence?: string }>;
+  issues: Array<{ field?: string; message: string; severity: "info" | "warning" | "error" }>;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "model" in value &&
+    typeof value.model === "string" &&
+    "sourceDocumentName" in value &&
+    typeof value.sourceDocumentName === "string" &&
+    "fields" in value &&
+    typeof value.fields === "object" &&
+    value.fields !== null &&
+    "additionalFields" in value &&
+    typeof value.additionalFields === "object" &&
+    value.additionalFields !== null &&
+    "issues" in value &&
+    Array.isArray(value.issues)
+  );
 }
 
 function targetCompletionResult(result: TargetAdapterResult): string {

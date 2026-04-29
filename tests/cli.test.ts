@@ -28,6 +28,8 @@ describe("runCli", () => {
         "fake",
         "--runs-dir",
         runsDir,
+        "--parser",
+        "deterministic",
       ],
       io,
     );
@@ -80,6 +82,8 @@ describe("runCli", () => {
         runsDir,
         "--synthetic-suffix",
         "case123",
+        "--parser",
+        "deterministic",
       ],
       io,
     );
@@ -99,20 +103,20 @@ describe("runCli", () => {
         sourceRecordId: "demo-001-case123",
         firstName: "Ava",
         lastName: "Nguyen Case123",
-        phone: "+13125550200",
+        phone: "+13125553562",
         email: "ava.nguyen+case123@example.test",
         insuranceMemberId: "AET123456-CASE123-1",
       },
       {
         sourceRecordId: "demo-002-case123",
         lastName: "Lee Case123",
-        phone: "+13125550201",
+        phone: "+13125553563",
         email: "marcus.lee+case123@example.test",
       },
       {
         sourceRecordId: "demo-003-case123",
         lastName: "Shah Case123",
-        phone: "+13125550202",
+        phone: "+13125553564",
         email: "priya.shah+case123@example.test",
       },
     ]);
@@ -129,6 +133,41 @@ describe("runCli", () => {
     expect(exitCode).toBe(1);
     expect(io.stdoutText()).toBe("");
     expect(io.stderrText()).toBe("error: required option '--input <path>' not specified\n");
+  });
+
+  it("defaults to AI parsing and fails clearly without an OpenAI API key", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "agentic-ui-cli-openai-required-"));
+    tempDirs.push(runsDir);
+    const io = captureIo();
+    const originalApiKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+
+    try {
+      const exitCode = await runCli(
+        [
+          "node",
+          "agentic-ui",
+          "run",
+          "--input",
+          "data/demo/intake-records.json",
+          "--targets",
+          "fake",
+          "--runs-dir",
+          runsDir,
+        ],
+        io,
+      );
+
+      expect(exitCode).toBe(1);
+      expect(io.stdoutText()).toBe("");
+      expect(io.stderrText()).toContain("OPENAI_API_KEY is required when --parser openai is used.");
+    } finally {
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey;
+      }
+    }
   });
 
   it("prints command help for no-argument invocation", async () => {

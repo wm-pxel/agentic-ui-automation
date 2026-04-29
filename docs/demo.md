@@ -7,11 +7,13 @@ customer, or production data.
 ## Local Deterministic Demo
 
 Run the fake target first. It does not open a browser or desktop app, so it is the
-fastest way to verify parsing, validation, orchestration, and audit artifact writes.
+fastest way to verify deterministic parsing, validation, orchestration, and audit
+artifact writes. Production runs default to AI source parsing; this fixture uses
+`--parser deterministic` so it does not require an API key.
 
 ```sh
 npm install
-npm run dev -- run --input data/demo/intake-records.json --targets fake --runs-dir runs
+npm run dev -- run --input data/demo/intake-records.json --targets fake --runs-dir runs --parser deterministic
 find runs -maxdepth 3 -type f | sort
 cat runs/*/summary.md
 ```
@@ -22,7 +24,8 @@ Expected fake run result:
 - `preflightExceptions` is `3`.
 - `targetCounts.fake.succeeded` is `3`.
 - Audit files are written under `runs/<run-id>/`, including `run.json`,
-  `events.jsonl`, `summary.md`, normalized input, and exception JSON files.
+  `report.json`, `events.jsonl`, `summary.md`, normalized input, and exception
+  JSON files.
 
 ## OpenEMR Smoke Demo
 
@@ -37,18 +40,31 @@ Prerequisites:
 - Playwright Chromium is installed.
 - `OPENEMR_BASE_URL`, `OPENEMR_USERNAME`, and `OPENEMR_PASSWORD` are set for a
   synthetic demo OpenEMR environment.
+- `.env` contains the OpenEMR values and `OPENAI_API_KEY` when using the default
+  OpenAI parser.
+
+OpenEMR publishes multiple public demo environments. If one is stale, broken, or
+returns unexpected UI/database errors, try another before treating the adapter as
+broken:
+
+- Main demo: `https://demo.openemr.io/openemr`
+- Alternate demo: `https://demo.openemr.io/a/openemr`
+- Another alternate demo: `https://demo.openemr.io/b/openemr`
 
 ```sh
 npx playwright install chromium
-export OPENEMR_BASE_URL="https://demo.openemr.io/b/openemr"
-export OPENEMR_USERNAME="admin"
-export OPENEMR_PASSWORD="pass"
+set -a
+. ./.env
+set +a
 npm run dev -- run \
   --input data/demo/intake-records.json \
   --targets openemr \
   --runs-dir runs \
   --synthetic-suffix auto
 ```
+
+For local smoke checks that should not call OpenAI, add
+`--parser deterministic` explicitly.
 
 The public demo URL, credentials, and UI can change. If login, navigation,
 selectors, or save behavior drift, the run should stop with auditable environment
@@ -66,7 +82,8 @@ For each valid normalized record, the target should:
 1. Log in to OpenEMR.
 2. Take a `before-navigation` screenshot.
 3. Open `Patient` -> `New/Search`.
-4. Fill the Search or Add Patient form with demographics and contact fields.
+4. Fill the Search or Add Patient form with demographics and available contact
+   fields.
 5. Take an `after-fill` screenshot.
 6. Click `Create New Patient`.
 7. Click `Confirm Create New Patient` when OpenEMR reports no matches.
@@ -80,6 +97,9 @@ For `data/demo/intake-records.json`, the expected clean OpenEMR target result is
 - `exceptions/` only contains the intentional validation exceptions.
 - Each valid record has three OpenEMR screenshots:
   `before-navigation.png`, `after-fill.png`, and `after-save.png`.
+- `summary.md` and `report.json` include OpenEMR field mappings. Optional
+  contact fields that are unavailable in a public demo layout may be reported as
+  failed mappings without failing the target record.
 
 The public OpenEMR demo keeps submitted patients for a while. If you rerun the
 same input without `--synthetic-suffix`, duplicate patient detection can make the
@@ -106,7 +126,8 @@ npm run dev -- run \
   --input data/demo/intake-records.json \
   --targets excel \
   --runs-dir runs \
-  --excel-workbook-path runs/intake-workbook.xlsx
+  --excel-workbook-path runs/intake-workbook.xlsx \
+  --parser deterministic
 ```
 
 ### Excel Success Criteria
@@ -151,15 +172,16 @@ Run OpenEMR and Excel together only after each target has passed its individual
 smoke run in the current environment. The same synthetic-data-only rule applies.
 
 ```sh
-export OPENEMR_BASE_URL="https://demo.openemr.io/b/openemr"
-export OPENEMR_USERNAME="admin"
-export OPENEMR_PASSWORD="pass"
+set -a
+. ./.env
+set +a
 npm run dev -- run \
   --input data/demo/intake-records.json \
   --targets openemr,excel \
   --runs-dir runs \
   --excel-workbook-path runs/intake-workbook.xlsx \
-  --synthetic-suffix auto
+  --synthetic-suffix auto \
+  --parser deterministic
 ```
 
 ## Audit Review Commands
@@ -174,6 +196,7 @@ count and no environment or target exceptions in `run.json`.
 RUN_ID="<run-id-from-cli-output>"
 find "runs/${RUN_ID}" -maxdepth 3 -type f | sort
 cat "runs/${RUN_ID}/summary.md"
+cat "runs/${RUN_ID}/report.json"
 cat "runs/${RUN_ID}/run.json"
 tail -n 40 "runs/${RUN_ID}/events.jsonl"
 find "runs/${RUN_ID}" -maxdepth 3 -path "*/exceptions/*.json" -type f -print -exec cat {} \;

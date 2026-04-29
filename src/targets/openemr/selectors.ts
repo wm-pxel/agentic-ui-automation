@@ -1,22 +1,121 @@
 import type { NormalizedIntakeRecord } from "../../domain/schema.js";
 
 export interface FieldMapping {
+  sourceField: keyof NormalizedIntakeRecord;
+  targetField: string;
   value: string;
   selectors: string[];
+  required?: boolean;
 }
 
 export function openEmrFieldMappings(record: NormalizedIntakeRecord): FieldMapping[] {
   return [
-    { value: record.firstName, selectors: ['input[name="form_fname"]', 'input[name="fname"]', 'input[id*="fname"]'] },
-    { value: record.lastName, selectors: ['input[name="form_lname"]', 'input[name="lname"]', 'input[id*="lname"]'] },
-    { value: record.dateOfBirth, selectors: ['input[name="form_DOB"]', 'input[name="DOB"]', 'input[id*="DOB"]'] },
-    { value: openEmrBirthSex(record.sexOrGender), selectors: ['select[name="form_sex"]', 'select[name="sex"]'] },
-    { value: record.streetAddress, selectors: ['input[name="form_street"]', 'input[name="street"]', 'textarea[name*="street"]'] },
-    { value: record.city, selectors: ['input[name="form_city"]', 'input[name="city"]'] },
-    { value: openEmrStateLabel(record.state), selectors: ['input[name="form_state"]', 'select[name="form_state"]', 'input[name="state"]'] },
-    { value: record.zip, selectors: ['input[name="form_postal_code"]', 'input[name="postal_code"]', 'input[name="zip"]'] },
-    { value: record.phone, selectors: ['input[name="form_phone_cell"]', 'input[name*="phone_cell"]', 'input[name*="phone"]'] },
-    { value: record.email, selectors: ['input[name="form_email"]', 'input[name*="email"]'] },
+    {
+      sourceField: "firstName",
+      targetField: "First Name",
+      value: record.firstName,
+      selectors: [
+        'input[name="form_fname"]',
+        'input[name="fname"]',
+        'input[id*="fname"]',
+        'input[name="form_Fname"]',
+        'input[id="form_Fname"]',
+        'input[name="form_first"]',
+        'input[id="form_first"]',
+      ],
+      required: true,
+    },
+    {
+      sourceField: "lastName",
+      targetField: "Last Name",
+      value: record.lastName,
+      selectors: [
+        'input[name="form_lname"]',
+        'input[name="lname"]',
+        'input[id*="lname"]',
+        'input[name="form_Name"]',
+        'input[id="form_Name"]',
+        'input[name="form_name"]',
+        'input[id="form_name"]',
+      ],
+      required: true,
+    },
+    {
+      sourceField: "dateOfBirth",
+      targetField: "Date of Birth",
+      value: record.dateOfBirth,
+      selectors: [
+        'input[name="form_DOB"]',
+        'input[name="DOB"]',
+        'input[id*="DOB"]',
+        'input[name="form_birthdate"]',
+        'input[id="form_birthdate"]',
+      ],
+      required: true,
+    },
+    {
+      sourceField: "sexOrGender",
+      targetField: "Birth Sex",
+      value: openEmrBirthSex(record.sexOrGender),
+      selectors: ['select[name="form_sex"]', 'select[name="sex"]', 'select[name="form_sx"]', 'select[id="form_sx"]'],
+      required: true,
+    },
+    {
+      sourceField: "streetAddress",
+      targetField: "Street Address",
+      value: record.streetAddress,
+      selectors: [
+        'input[name="form_street"]',
+        'input[name="street"]',
+        'textarea[name*="street"]',
+        'input[name="form_Adress"]',
+        'input[id="form_Adress"]',
+      ],
+    },
+    {
+      sourceField: "city",
+      targetField: "City",
+      value: record.city,
+      selectors: ['input[name="form_city"]', 'input[name="city"]', 'input[name="form_muni"]', 'input[id="form_muni"]'],
+    },
+    {
+      sourceField: "state",
+      targetField: "State",
+      value: openEmrStateLabel(record.state),
+      selectors: [
+        'input[name="form_state"]',
+        'select[name="form_state"]',
+        'input[name="state"]',
+        'input[name="form_Province"]',
+        'input[id="form_Province"]',
+      ],
+    },
+    {
+      sourceField: "zip",
+      targetField: "ZIP",
+      value: record.zip,
+      selectors: [
+        'input[name="form_postal_code"]',
+        'input[name="postal_code"]',
+        'input[name="zip"]',
+        'input[name="form_Postal_Code"]',
+        'input[id="form_Postal_Code"]',
+        'input[name="form_zip"]',
+        'input[id="form_zip"]',
+      ],
+    },
+    {
+      sourceField: "phone",
+      targetField: "Mobile Phone",
+      value: record.phone,
+      selectors: ['input[name="form_phone_cell"]', 'input[name*="phone_cell"]', 'input[name*="phone"]'],
+    },
+    {
+      sourceField: "email",
+      targetField: "Email",
+      value: record.email,
+      selectors: ['input[name="form_email"]', 'input[name*="email"]', 'input[name="form_E_mail"]', 'input[id="form_E_mail"]'],
+    },
   ];
 }
 

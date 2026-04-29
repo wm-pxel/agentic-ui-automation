@@ -2,7 +2,7 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join } from "node:path";
 import { AuditEventSchema } from "../domain/schema.js";
-import type { AuditEvent, TargetName, ValidationException } from "../domain/schema.js";
+import type { AuditEvent, RunStatus, TargetName, TargetTaskStatus, ValidationException } from "../domain/schema.js";
 
 export interface AuditStoreOptions {
   runsDir: string;
@@ -21,9 +21,72 @@ export interface WriteEventInput {
   exceptionCode?: AuditEvent["exceptionCode"];
 }
 
+export interface ReportFieldMapping {
+  recordId: string;
+  target: TargetName;
+  sourceField: string;
+  targetField: string;
+  normalizedValue: string;
+  selectorCandidates: string[];
+  selectedSelector?: string;
+  action?: "fill" | "select";
+  status: "succeeded" | "failed";
+  errorMessage?: string;
+}
+
+export interface ReportIssue {
+  phase: string;
+  target?: TargetName;
+  recordId?: string;
+  exceptionCode?: AuditEvent["exceptionCode"];
+  message: string;
+  suggestedRemediation?: string;
+  screenshotPath?: string;
+}
+
+export interface ReportAiExtractionField {
+  sourceField: string;
+  value: string;
+  confidence: number;
+  evidence?: string;
+}
+
+export interface ReportAiExtraction {
+  recordId: string;
+  model: string;
+  sourceDocumentName: string;
+  fields: ReportAiExtractionField[];
+  additionalFields: ReportAiExtractionField[];
+  issues: Array<{ field?: string; message: string; severity: "info" | "warning" | "error" }>;
+}
+
+export interface ReportDetails {
+  fieldMappings: ReportFieldMapping[];
+  aiExtractions: ReportAiExtraction[];
+  issues: ReportIssue[];
+}
+
+export interface RunReport {
+  runId: string;
+  status: RunStatus;
+  totalRecords: number;
+  counts: {
+    preflightExceptions: number;
+    environmentExceptions: number;
+    closeExceptions: number;
+    targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>;
+  };
+  details: ReportDetails;
+}
+
 export class FileAuditStore {
   private readonly screenshotCounts = new Map<string, number>();
   private readonly exceptionCounts = new Map<string, number>();
+  private readonly reportDetails: ReportDetails = {
+    fieldMappings: [],
+    aiExtractions: [],
+    issues: [],
+  };
 
   private constructor(
     public readonly runDir: string,
@@ -90,6 +153,39 @@ export class FileAuditStore {
     await writeFile(join(this.runDir, "summary.md"), markdown);
   }
 
+  async writeFieldMapping(mapping: ReportFieldMapping): Promise<void> {
+    this.reportDetails.fieldMappings.push({
+      ...mapping,
+      selectorCandidates: [...mapping.selectorCandidates],
+    });
+  }
+
+  async writeReportIssue(issue: ReportIssue): Promise<void> {
+    if (this.reportDetails.issues.some((existing) => sameReportIssue(existing, issue))) {
+      return;
+    }
+    this.reportDetails.issues.push({ ...issue });
+  }
+
+  async writeAiExtraction(extraction: ReportAiExtraction): Promise<void> {
+    this.reportDetails.aiExtractions.push(cloneAiExtraction(extraction));
+  }
+
+  getReportDetails(): ReportDetails {
+    return {
+      fieldMappings: this.reportDetails.fieldMappings.map((mapping) => ({
+        ...mapping,
+        selectorCandidates: [...mapping.selectorCandidates],
+      })),
+      aiExtractions: this.reportDetails.aiExtractions.map(cloneAiExtraction),
+      issues: this.reportDetails.issues.map((issue) => ({ ...issue })),
+    };
+  }
+
+  async writeReportJson(report: RunReport): Promise<void> {
+    await writeFile(join(this.runDir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
+  }
+
   private nextCount(counts: Map<string, number>, key: string): number {
     const count = (counts.get(key) ?? 0) + 1;
     counts.set(key, count);
@@ -151,4 +247,24 @@ function formatCount(count: number): string {
 
 function isFileExistsError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
+}
+
+function sameReportIssue(a: ReportIssue, b: ReportIssue): boolean {
+  return (
+    a.phase === b.phase &&
+    a.target === b.target &&
+    a.recordId === b.recordId &&
+    a.exceptionCode === b.exceptionCode &&
+    a.message === b.message &&
+    a.screenshotPath === b.screenshotPath
+  );
+}
+
+function cloneAiExtraction(extraction: ReportAiExtraction): ReportAiExtraction {
+  return {
+    ...extraction,
+    fields: extraction.fields.map((field) => ({ ...field })),
+    additionalFields: extraction.additionalFields.map((field) => ({ ...field })),
+    issues: extraction.issues.map((issue) => ({ ...issue })),
+  };
 }

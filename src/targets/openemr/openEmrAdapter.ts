@@ -1,5 +1,6 @@
 import { chromium, type Browser } from "@playwright/test";
 import type { TargetAdapter, TargetAdapterResult, TargetRunContext } from "../../adapters/contract.js";
+import type { ValidationException } from "../../domain/schema.js";
 import {
   OPENEMR_CONTACT_SECTION_CANDIDATES,
   OPENEMR_CONFIRM_CREATE_CANDIDATES,
@@ -7,6 +8,7 @@ import {
   OPENEMR_NEW_PATIENT_CANDIDATES,
   OPENEMR_PATIENT_MENU_CANDIDATES,
   OPENEMR_SAVE_CANDIDATES,
+  type FieldMapping,
   openEmrFieldMappings,
 } from "./selectors.js";
 
@@ -47,6 +49,11 @@ interface OpenEmrLocator {
   hover?(): Promise<unknown>;
   isVisible?(): Promise<boolean>;
   innerText(options: { timeout: number }): Promise<string>;
+}
+
+interface FillResult {
+  selectedSelector: string;
+  action: "fill" | "select";
 }
 
 export class OpenEmrAdapter implements TargetAdapter {
@@ -114,7 +121,7 @@ export class OpenEmrAdapter implements TargetAdapter {
 
       await expandOptionalSection(page, OPENEMR_CONTACT_SECTION_CANDIDATES);
       for (const mapping of openEmrFieldMappings(context.record)) {
-        await fillFirst(page, mapping.selectors, mapping.value, "patient field");
+        await fillMappedField(context, page, mapping);
       }
 
       const filled = await page.screenshot({ fullPage: true });
@@ -168,6 +175,13 @@ export class OpenEmrAdapter implements TargetAdapter {
             result: "OpenEMR indicated a possible duplicate patient",
             exceptionCode: "possible_duplicate",
           });
+          await writeTargetIssue(context, {
+            code: "possible_duplicate",
+            severity: "error",
+            message: "OpenEMR indicated a possible duplicate patient.",
+            suggestedRemediation: "Review the patient match screen and decide whether to merge, update, or skip.",
+            screenshotPath: afterPath,
+          });
           return {
             status: "exception",
             exception: {
@@ -199,6 +213,13 @@ export class OpenEmrAdapter implements TargetAdapter {
           result: "OpenEMR indicated a possible duplicate patient",
           exceptionCode: "possible_duplicate",
         });
+        await writeTargetIssue(context, {
+          code: "possible_duplicate",
+          severity: "error",
+          message: "OpenEMR indicated a possible duplicate patient.",
+          suggestedRemediation: "Review the patient match screen and decide whether to merge, update, or skip.",
+          screenshotPath: afterPath,
+        });
         return {
           status: "exception",
           exception: {
@@ -221,6 +242,13 @@ export class OpenEmrAdapter implements TargetAdapter {
           screenshotPath: afterPath,
           result: "OpenEMR still showed the new-patient form after save",
           exceptionCode: "verification_failed",
+        });
+        await writeTargetIssue(context, {
+          code: "verification_failed",
+          severity: "error",
+          message: "OpenEMR still showed the new-patient form after save.",
+          suggestedRemediation: "Review required fields and the after-save screenshot before retrying.",
+          screenshotPath: afterPath,
         });
         return {
           status: "exception",
@@ -290,18 +318,54 @@ export class OpenEmrAdapter implements TargetAdapter {
   }
 }
 
-async function fillFirst(page: OpenEmrPage, selectors: string[], value: string, label: string): Promise<void> {
-  const locator = await findFirstVisible(page, selectors, label);
+async function fillMappedField(context: TargetRunContext, page: OpenEmrPage, mapping: FieldMapping): Promise<void> {
+  try {
+    const result = await fillFirst(page, mapping.selectors, mapping.value, mapping.targetField);
+    await context.audit.writeFieldMapping({
+      recordId: context.record.sourceRecordId,
+      target: "openemr",
+      sourceField: mapping.sourceField,
+      targetField: mapping.targetField,
+      normalizedValue: mapping.value,
+      selectorCandidates: mapping.selectors,
+      selectedSelector: result.selectedSelector,
+      action: result.action,
+      status: "succeeded",
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    await context.audit.writeFieldMapping({
+      recordId: context.record.sourceRecordId,
+      target: "openemr",
+      sourceField: mapping.sourceField,
+      targetField: mapping.targetField,
+      normalizedValue: mapping.value,
+      selectorCandidates: mapping.selectors,
+      status: "failed",
+      errorMessage,
+    });
+    if (!mapping.required) {
+      return;
+    }
+    throw error;
+  }
+}
+
+async function fillFirst(page: OpenEmrPage, selectors: string[], value: string, label: string): Promise<FillResult> {
+  const match = await findFirstVisible(page, selectors, label);
+  const locator = match.locator;
   const tagName = await locator.evaluate((element) => element.tagName.toLowerCase()).catch(() => "input");
   if (tagName === "select") {
     await locator.selectOption({ label: value }).catch(() => locator.selectOption(value));
+    return { selectedSelector: match.selector, action: "select" };
   } else {
     await locator.fill(value);
+    return { selectedSelector: match.selector, action: "fill" };
   }
 }
 
 async function clickFirst(page: OpenEmrPage, selectors: string[], label: string): Promise<void> {
-  await (await findFirstVisible(page, selectors, label)).click();
+  await (await findFirstVisible(page, selectors, label)).locator.click();
 }
 
 async function clickOptional(page: OpenEmrPage, selectors: string[]): Promise<boolean> {
@@ -332,7 +396,7 @@ async function hasAnyVisible(page: OpenEmrPage, selectors: string[]): Promise<bo
 }
 
 async function hoverFirst(page: OpenEmrPage, selectors: string[], label: string): Promise<void> {
-  const locator = await findFirstVisible(page, selectors, label);
+  const locator = (await findFirstVisible(page, selectors, label)).locator;
   if (!locator.hover) {
     throw new Error(`OpenEMR selector matched for ${label}, but hover is unavailable.`);
   }
@@ -381,12 +445,16 @@ async function visibleText(page: OpenEmrPage): Promise<string> {
   return texts.filter(Boolean).join("\n");
 }
 
-async function findFirstVisible(page: OpenEmrPage, selectors: string[], label: string): Promise<OpenEmrLocator> {
+async function findFirstVisible(
+  page: OpenEmrPage,
+  selectors: string[],
+  label: string,
+): Promise<{ locator: OpenEmrLocator; selector: string }> {
   for (const context of contextsFor(page)) {
     for (const selector of selectors) {
       const locator = context.locator(selector).first();
       if ((await locator.count().catch(() => 0)) > 0 && (await isVisible(locator))) {
-        return locator;
+        return { locator, selector };
       }
     }
   }
@@ -420,7 +488,30 @@ async function isVisible(locator: OpenEmrLocator): Promise<boolean> {
 }
 
 function openEmrFieldMappingsProbe(): string[] {
-  return ['input[name="form_fname"]', 'input[name="fname"]', 'input[id*="fname"]'];
+  return [
+    'input[name="form_fname"]',
+    'input[name="fname"]',
+    'input[id*="fname"]',
+    'input[name="form_Fname"]',
+    'input[id="form_Fname"]',
+    'input[name="form_first"]',
+    'input[id="form_first"]',
+  ];
+}
+
+async function writeTargetIssue(
+  context: TargetRunContext,
+  exception: ValidationException & { screenshotPath?: string },
+): Promise<void> {
+  await context.audit.writeReportIssue({
+    phase: "target",
+    target: "openemr",
+    recordId: context.record.sourceRecordId,
+    exceptionCode: exception.code,
+    message: exception.message,
+    suggestedRemediation: exception.suggestedRemediation,
+    screenshotPath: exception.screenshotPath,
+  });
 }
 
 function sleep(ms: number): Promise<void> {

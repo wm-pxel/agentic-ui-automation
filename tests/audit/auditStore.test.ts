@@ -43,6 +43,139 @@ describe("FileAuditStore", () => {
     expect(summary).toBe("# Summary\n");
   });
 
+  it("collects structured report details and writes parseable report JSON", async () => {
+    const root = await mkdtemp(join(tmpdir(), "audit-report-"));
+    const store = await FileAuditStore.create({
+      runsDir: root,
+      runId: "run-test",
+      now: () => "2026-04-28T12:00:00.000Z",
+    });
+
+    await store.writeFieldMapping({
+      recordId: "demo-001",
+      target: "openemr",
+      sourceField: "sexOrGender",
+      targetField: "Birth Sex",
+      normalizedValue: "Female",
+      selectorCandidates: ['select[name="form_sex"]', 'select[name="sex"]'],
+      selectedSelector: 'select[name="form_sex"]',
+      action: "select",
+      status: "succeeded",
+    });
+    await store.writeAiExtraction({
+      recordId: "demo-001",
+      model: "gpt-test",
+      sourceDocumentName: "intake.txt",
+      fields: [
+        {
+          sourceField: "firstName",
+          value: "Ava",
+          confidence: 0.96,
+          evidence: "Name: Ava Nguyen",
+        },
+      ],
+      additionalFields: [
+        {
+          sourceField: "employer",
+          value: "Acme",
+          confidence: 0.7,
+          evidence: "Employer: Acme",
+        },
+      ],
+      issues: [],
+    });
+    await store.writeReportIssue({
+      phase: "target",
+      target: "openemr",
+      recordId: "demo-001",
+      exceptionCode: "verification_failed",
+      message: "OpenEMR still showed the new-patient form after save.",
+      suggestedRemediation: "Review required fields and the after-save screenshot before retrying.",
+      screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+    });
+    await store.writeReportJson({
+      runId: "run-test",
+      status: "completed_with_exceptions",
+      totalRecords: 1,
+      counts: {
+        preflightExceptions: 0,
+        environmentExceptions: 0,
+        closeExceptions: 0,
+        targetCounts: { openemr: { succeeded: 0, exception: 1, skipped: 0 } },
+      },
+      details: store.getReportDetails(),
+    });
+
+    expect(store.getReportDetails()).toEqual({
+      fieldMappings: [
+        {
+          recordId: "demo-001",
+          target: "openemr",
+          sourceField: "sexOrGender",
+          targetField: "Birth Sex",
+          normalizedValue: "Female",
+          selectorCandidates: ['select[name="form_sex"]', 'select[name="sex"]'],
+          selectedSelector: 'select[name="form_sex"]',
+          action: "select",
+          status: "succeeded",
+        },
+      ],
+      aiExtractions: [
+        {
+          recordId: "demo-001",
+          model: "gpt-test",
+          sourceDocumentName: "intake.txt",
+          fields: [
+            {
+              sourceField: "firstName",
+              value: "Ava",
+              confidence: 0.96,
+              evidence: "Name: Ava Nguyen",
+            },
+          ],
+          additionalFields: [
+            {
+              sourceField: "employer",
+              value: "Acme",
+              confidence: 0.7,
+              evidence: "Employer: Acme",
+            },
+          ],
+          issues: [],
+        },
+      ],
+      issues: [
+        {
+          phase: "target",
+          target: "openemr",
+          recordId: "demo-001",
+          exceptionCode: "verification_failed",
+          message: "OpenEMR still showed the new-patient form after save.",
+          suggestedRemediation: "Review required fields and the after-save screenshot before retrying.",
+          screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+        },
+      ],
+    });
+
+    const report = JSON.parse(await readFile(join(root, "run-test", "report.json"), "utf8"));
+    expect(report.details.fieldMappings[0]).toMatchObject({
+      sourceField: "sexOrGender",
+      targetField: "Birth Sex",
+      normalizedValue: "Female",
+      selectedSelector: 'select[name="form_sex"]',
+      action: "select",
+      status: "succeeded",
+    });
+    expect(report.details.aiExtractions[0]).toMatchObject({
+      recordId: "demo-001",
+      fields: [{ sourceField: "firstName", value: "Ava", confidence: 0.96 }],
+    });
+    expect(report.details.issues[0]).toMatchObject({
+      exceptionCode: "verification_failed",
+      screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+    });
+  });
+
   it("writes parseable JSONL events with the expected fields", async () => {
     const root = await mkdtemp(join(tmpdir(), "audit-jsonl-"));
     const store = await FileAuditStore.create({
@@ -189,6 +322,8 @@ describe("FileAuditStore", () => {
   it("renders status counts in Markdown", () => {
     const summary = renderSummary({
       runId: "run-test",
+      runDir: "runs/run-test",
+      sourceInputPath: "data/demo/intake-records.json",
       totalRecords: 2,
       targetCounts: {
         openemr: { succeeded: 1, exception: 1, skipped: 0 },
@@ -200,10 +335,113 @@ describe("FileAuditStore", () => {
     });
 
     expect(summary).toContain("# Workflow Run run-test");
+    expect(summary).toContain("## Artifacts");
+    expect(summary).toContain("| Run directory | runs/run-test |");
+    expect(summary).toContain("| Source input | data/demo/intake-records.json |");
+    expect(summary).toContain("| Normalized records | runs/run-test/input/normalized-records.json |");
+    expect(summary).toContain("| Event log | runs/run-test/events.jsonl |");
+    expect(summary).toContain("| Structured report | runs/run-test/report.json |");
     expect(summary).toContain("| openemr | 1 | 1 | 0 |");
     expect(summary).toContain("Preflight exceptions: 1");
     expect(summary).toContain("Environment exceptions: 2");
     expect(summary).toContain("Close exceptions: 1");
+  });
+
+  it("renders issues and OpenEMR field mappings in Markdown", () => {
+    const summary = renderSummary({
+      runId: "run-test",
+      totalRecords: 1,
+      targetCounts: {
+        openemr: { succeeded: 0, exception: 1, skipped: 0 },
+      },
+      preflightExceptions: 0,
+      environmentExceptions: 0,
+      closeExceptions: 0,
+      details: {
+        aiExtractions: [
+          {
+            recordId: "demo-001",
+            model: "gpt-test",
+            sourceDocumentName: "intake.txt",
+            fields: [
+              {
+                sourceField: "firstName",
+                value: "Ava",
+                confidence: 0.96,
+                evidence: "Name: Ava Nguyen",
+              },
+            ],
+            additionalFields: [],
+            issues: [],
+          },
+        ],
+        issues: [
+          {
+            phase: "target",
+            target: "openemr",
+            recordId: "demo-001",
+            exceptionCode: "verification_failed",
+            message: "OpenEMR still showed the new-patient form after save.",
+            suggestedRemediation: "Review required fields.",
+            screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+          },
+        ],
+        fieldMappings: [
+          {
+            recordId: "demo-001",
+            target: "openemr",
+            sourceField: "sexOrGender",
+            targetField: "Birth Sex",
+            normalizedValue: "Female",
+            selectorCandidates: ['select[name="form_sex"]', 'select[name="sex"]'],
+            selectedSelector: 'select[name="form_sex"]',
+            action: "select",
+            status: "succeeded",
+          },
+          {
+            recordId: "demo-001",
+            target: "openemr",
+            sourceField: "state",
+            targetField: "State",
+            normalizedValue: "Illinois",
+            selectorCandidates: ['input[name="form_state"]', 'select[name="form_state"]'],
+            selectedSelector: 'select[name="form_state"]',
+            action: "select",
+            status: "succeeded",
+          },
+        ],
+      },
+    });
+
+    expect(summary).toContain("## Issues");
+    expect(summary).toContain("## AI Source Extraction");
+    expect(summary).toContain("| demo-001 | firstName | Ava | 0.96 | Name: Ava Nguyen |");
+    expect(summary).toContain("| demo-001 | openemr | target | verification_failed | OpenEMR still showed the new-patient form after save. | Review required fields. | screenshots/demo-001/openemr/after-save.png |");
+    expect(summary).toContain("## OpenEMR Field Mapping");
+    expect(summary).toContain("### Record demo-001");
+    expect(summary).toContain("| sexOrGender | Birth Sex | Female | select | succeeded | select[name=\"form_sex\"] |");
+    expect(summary).toContain("| state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
+  });
+
+  it("renders clean no-issue and no-mapping sections for non-OpenEMR runs", () => {
+    const summary = renderSummary({
+      runId: "run-test",
+      totalRecords: 1,
+      targetCounts: {
+        fake: { succeeded: 1, exception: 0, skipped: 0 },
+      },
+      preflightExceptions: 0,
+      environmentExceptions: 0,
+      closeExceptions: 0,
+      details: {
+        aiExtractions: [],
+        issues: [],
+        fieldMappings: [],
+      },
+    });
+
+    expect(summary).toContain("## Issues\n\nNo issues recorded.");
+    expect(summary).not.toContain("## OpenEMR Field Mapping");
   });
 
   it("renders target rows in deterministic order", () => {
