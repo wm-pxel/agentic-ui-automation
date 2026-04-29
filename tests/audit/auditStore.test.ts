@@ -394,7 +394,12 @@ describe("FileAuditStore", () => {
     });
 
     expect(summary).toContain("# Workflow Run run-test");
+    expect(summary).toContain("## Contents");
+    expect(summary).toContain("- [Artifacts](#artifacts)");
+    expect(summary).toContain("- [Target Counts](#target-counts)");
+    expect(summary).toContain("- [Issues](#issues)");
     expect(summary).toContain("## Artifacts");
+    expect(summary).toContain("## Target Counts");
     expect(summary).toContain("| Source input | data/demo/intake-records.json |");
     expect(summary).toContain("| Normalized records | runs/run-test/input/normalized-records.json |");
     expect(summary).toContain("| Exceptions | runs/run-test/exceptions/ |");
@@ -521,6 +526,8 @@ describe("FileAuditStore", () => {
     });
 
     expect(summary).toContain("## Issues");
+    expect(summary).toContain("- [OpenEMR Record Review](#openemr-record-review)");
+    expect(summary).toContain("  - [Record demo-001](#record-demo-001)");
     expect(summary).toContain("| demo-001 | openemr | target | verification_failed | OpenEMR still showed the new-patient form after save. | Review required fields. | screenshots/demo-001/openemr/after-save.png |");
     expect(summary).toContain("## OpenEMR Record Review");
     expect(summary).toContain("### Record demo-001");

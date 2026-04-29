@@ -31,8 +31,10 @@ export function renderSummary(input: SummaryInput): string {
     "",
   ];
 
+  appendContents(lines, input);
   appendArtifacts(lines, input);
 
+  lines.push("## Target Counts", "");
   lines.push("| Target | Succeeded | Exceptions | Skipped |", "| --- | ---: | ---: | ---: |");
 
   for (const target of TARGET_ORDER) {
@@ -46,6 +48,23 @@ export function renderSummary(input: SummaryInput): string {
 
   lines.push("");
   return `${lines.join("\n")}\n`;
+}
+
+function appendContents(lines: string[], input: SummaryInput): void {
+  lines.push("## Contents", "");
+  if (input.runDir || input.sourceInputPath) {
+    lines.push("- [Artifacts](#artifacts)");
+  }
+  lines.push("- [Target Counts](#target-counts)", "- [Issues](#issues)");
+
+  const openEmrRecordIds = openEmrReviewRecordIds(input.details);
+  if (openEmrRecordIds.length > 0) {
+    lines.push("- [OpenEMR Record Review](#openemr-record-review)");
+    for (const recordId of openEmrRecordIds) {
+      lines.push(`  - [Record ${recordId}](#${markdownAnchor(`Record ${recordId}`)})`);
+    }
+  }
+  lines.push("");
 }
 
 function appendArtifacts(lines: string[], input: SummaryInput): void {
@@ -96,12 +115,7 @@ function appendOpenEmrRecordReviews(lines: string[], details: ReportDetails | un
   const openEmrMappings = details.fieldMappings.filter((mapping) => mapping.target === "openemr");
   const mappingsByRecord = groupByRecord(openEmrMappings);
   const evidenceByRecord = groupEvidenceByRecord(details.targetEvidence.filter((evidence) => evidence.target === "openemr"));
-  const openEmrIssues = details.issues.filter((issue) => issue.target === "openemr" && issue.recordId);
-  const recordIds = orderedUnique([
-    ...details.targetEvidence.filter((evidence) => evidence.target === "openemr").map((evidence) => evidence.recordId),
-    ...openEmrMappings.map((mapping) => mapping.recordId),
-    ...openEmrIssues.map((issue) => issue.recordId ?? ""),
-  ]);
+  const recordIds = openEmrReviewRecordIds(details);
 
   if (recordIds.length === 0) return;
 
@@ -251,6 +265,18 @@ function groupByRecord(mappings: ReportFieldMapping[]): Map<string, ReportFieldM
   return groups;
 }
 
+function openEmrReviewRecordIds(details: ReportDetails | undefined): string[] {
+  if (!details) return [];
+
+  const openEmrMappings = details.fieldMappings.filter((mapping) => mapping.target === "openemr");
+  const openEmrIssues = details.issues.filter((issue) => issue.target === "openemr" && issue.recordId);
+  return orderedUnique([
+    ...details.targetEvidence.filter((evidence) => evidence.target === "openemr").map((evidence) => evidence.recordId),
+    ...openEmrMappings.map((mapping) => mapping.recordId),
+    ...openEmrIssues.map((issue) => issue.recordId ?? ""),
+  ]);
+}
+
 function orderedUnique(values: string[]): string[] {
   return [...new Set(values.filter((value) => value.length > 0))];
 }
@@ -261,6 +287,14 @@ function formatJson(value: unknown): string {
 
 function markdownImagePath(path: string | undefined): string {
   return encodeURI(path ?? "").replace(/\(/g, "%28").replace(/\)/g, "%29");
+}
+
+function markdownAnchor(heading: string): string {
+  return heading
+    .toLowerCase()
+    .replace(/[^a-z0-9 _-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
 }
 
 function cell(value: unknown): string {
