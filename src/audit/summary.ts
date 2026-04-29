@@ -1,5 +1,10 @@
 import type { TargetName, TargetTaskStatus } from "../domain/schema.js";
-import type { ReportAiExtraction, ReportDetails, ReportFieldMapping, ReportIssue } from "./auditStore.js";
+import type {
+  ReportAiExtraction,
+  ReportDetails,
+  ReportFieldMapping,
+  ReportIssue,
+} from "./auditStore.js";
 
 const TARGET_ORDER: TargetName[] = ["openemr", "excel", "fake"];
 
@@ -38,6 +43,7 @@ export function renderSummary(input: SummaryInput): string {
 
   appendAiExtractions(lines, input.details?.aiExtractions ?? []);
   appendIssues(lines, input.details?.issues ?? []);
+  appendOpenEmrSuccessEvidence(input.details, lines);
   appendOpenEmrFieldMappings(lines, input.details?.fieldMappings ?? [], input.details?.aiExtractions ?? []);
 
   lines.push("");
@@ -105,6 +111,38 @@ function appendIssues(lines: string[], issues: ReportIssue[]): void {
       `| ${cell(issue.recordId)} | ${cell(issue.target)} | ${cell(issue.phase)} | ${cell(issue.exceptionCode)} | ${cell(issue.message)} | ${cell(issue.suggestedRemediation)} | ${cell(issue.screenshotPath)} |`,
     );
   }
+}
+
+function appendOpenEmrSuccessEvidence(details: ReportDetails | undefined, lines: string[]): void {
+  if (!details) return;
+
+  const successfulEvidence = (details.targetEvidence ?? []).filter(
+    (evidence) => evidence.target === "openemr" && evidence.status === "succeeded" && evidence.screenshotPath,
+  );
+  if (successfulEvidence.length === 0) return;
+
+  const inputsByRecord = new Map((details.recordInputs ?? []).map((input) => [input.recordId, input]));
+  lines.push("", "## OpenEMR Success Evidence", "");
+  for (const evidence of successfulEvidence) {
+    const input = inputsByRecord.get(evidence.recordId);
+    lines.push(`### Record ${evidence.recordId}`, "");
+    lines.push(`- Proof screenshot: ${cell(evidence.screenshotPath)}`);
+    if (evidence.targetRecordId) {
+      lines.push(`- Target record: ${cell(evidence.targetRecordId)}`);
+    }
+    if (evidence.message) {
+      lines.push(`- Result: ${cell(evidence.message)}`);
+    }
+    if (input) {
+      lines.push(`- Source format: ${cell(input.sourceFormat)}`, "", "```json", formatJson(input.rawInput), "```", "");
+    } else {
+      lines.push("- Raw input record: not available", "");
+    }
+  }
+}
+
+function formatJson(value: unknown): string {
+  return JSON.stringify(value, null, 2) ?? "null";
 }
 
 function appendOpenEmrFieldMappings(

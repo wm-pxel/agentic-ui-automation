@@ -123,6 +123,22 @@ describe("runWorkflow", () => {
         }),
       ]),
     );
+    expect(report.details.recordInputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordId: "demo-target-exception",
+          sourceFormat: "json",
+          rawInput: expect.objectContaining({
+            firstName: "Ava",
+            lastName: "Nguyen",
+          }),
+        }),
+        expect.objectContaining({
+          recordId: "demo-validation-exception",
+          sourceFormat: "json",
+        }),
+      ]),
+    );
 
     const summary = await readFile(join(runsDir, "run-report", "summary.md"), "utf8");
     expect(summary).toContain("## Issues");

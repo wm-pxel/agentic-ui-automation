@@ -86,6 +86,25 @@ describe("FileAuditStore", () => {
       ],
       issues: [],
     });
+    await store.writeRecordInput({
+      recordId: "demo-001",
+      sourceFormat: "json",
+      rawInput: {
+        intake_id: "demo-001",
+        patient: {
+          given_name: "Ava",
+          surname: "Nguyen",
+        },
+      },
+    });
+    await store.writeTargetEvidence({
+      recordId: "demo-001",
+      target: "openemr",
+      status: "succeeded",
+      screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+      targetRecordId: "openemr-demo-001",
+      message: "submitted OpenEMR patient form",
+    });
     await store.writeReportIssue({
       phase: "target",
       target: "openemr",
@@ -120,6 +139,29 @@ describe("FileAuditStore", () => {
           selectedSelector: 'select[name="form_sex"]',
           action: "select",
           status: "succeeded",
+        },
+      ],
+      recordInputs: [
+        {
+          recordId: "demo-001",
+          sourceFormat: "json",
+          rawInput: {
+            intake_id: "demo-001",
+            patient: {
+              given_name: "Ava",
+              surname: "Nguyen",
+            },
+          },
+        },
+      ],
+      targetEvidence: [
+        {
+          recordId: "demo-001",
+          target: "openemr",
+          status: "succeeded",
+          screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+          targetRecordId: "openemr-demo-001",
+          message: "submitted OpenEMR patient form",
         },
       ],
       aiExtractions: [
@@ -176,6 +218,16 @@ describe("FileAuditStore", () => {
     });
     expect(report.details.issues[0]).toMatchObject({
       exceptionCode: "verification_failed",
+      screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+    });
+    expect(report.details.recordInputs[0]).toMatchObject({
+      recordId: "demo-001",
+      rawInput: { intake_id: "demo-001" },
+    });
+    expect(report.details.targetEvidence[0]).toMatchObject({
+      recordId: "demo-001",
+      target: "openemr",
+      status: "succeeded",
       screenshotPath: "screenshots/demo-001/openemr/after-save.png",
     });
   });
@@ -371,6 +423,8 @@ describe("FileAuditStore", () => {
       environmentExceptions: 0,
       closeExceptions: 0,
       details: {
+        recordInputs: [],
+        targetEvidence: [],
         aiExtractions: [
           {
             recordId: "demo-001",
@@ -451,6 +505,54 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("| province | IL | province: IL | state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
   });
 
+  it("renders OpenEMR success evidence with raw input records and proof screenshots", () => {
+    const summary = renderSummary({
+      runId: "run-test",
+      totalRecords: 1,
+      targetCounts: {
+        openemr: { succeeded: 1, exception: 0, skipped: 0 },
+      },
+      preflightExceptions: 0,
+      environmentExceptions: 0,
+      closeExceptions: 0,
+      details: {
+        recordInputs: [
+          {
+            recordId: "demo-001",
+            sourceFormat: "json",
+            rawInput: {
+              intake_id: "demo-001",
+              patient: {
+                given_name: "Ava",
+                surname: "Nguyen",
+              },
+            },
+          },
+        ],
+        targetEvidence: [
+          {
+            recordId: "demo-001",
+            target: "openemr",
+            status: "succeeded",
+            screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+            targetRecordId: "openemr-demo-001",
+            message: "submitted OpenEMR patient form",
+          },
+        ],
+        aiExtractions: [],
+        issues: [],
+        fieldMappings: [],
+      },
+    });
+
+    expect(summary).toContain("## OpenEMR Success Evidence");
+    expect(summary).toContain("### Record demo-001");
+    expect(summary).toContain("- Proof screenshot: screenshots/demo-001/openemr/after-save.png");
+    expect(summary).toContain("- Target record: openemr-demo-001");
+    expect(summary).toContain("\"intake_id\": \"demo-001\"");
+    expect(summary).toContain("\"given_name\": \"Ava\"");
+  });
+
   it("renders clean no-issue and no-mapping sections for non-OpenEMR runs", () => {
     const summary = renderSummary({
       runId: "run-test",
@@ -462,6 +564,8 @@ describe("FileAuditStore", () => {
       environmentExceptions: 0,
       closeExceptions: 0,
       details: {
+        recordInputs: [],
+        targetEvidence: [],
         aiExtractions: [],
         issues: [],
         fieldMappings: [],

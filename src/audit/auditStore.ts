@@ -61,10 +61,27 @@ export interface ReportAiExtraction {
   issues: Array<{ field?: string; message: string; severity: "info" | "warning" | "error" }>;
 }
 
+export interface ReportRecordInput {
+  recordId: string;
+  sourceFormat: string;
+  rawInput: unknown;
+}
+
+export interface ReportTargetEvidence {
+  recordId: string;
+  target: TargetName;
+  status: TargetTaskStatus;
+  screenshotPath?: string;
+  targetRecordId?: string;
+  message?: string;
+}
+
 export interface ReportDetails {
   fieldMappings: ReportFieldMapping[];
   aiExtractions: ReportAiExtraction[];
   issues: ReportIssue[];
+  recordInputs: ReportRecordInput[];
+  targetEvidence: ReportTargetEvidence[];
 }
 
 export interface RunReport {
@@ -87,6 +104,8 @@ export class FileAuditStore {
     fieldMappings: [],
     aiExtractions: [],
     issues: [],
+    recordInputs: [],
+    targetEvidence: [],
   };
 
   private constructor(
@@ -172,6 +191,23 @@ export class FileAuditStore {
     this.reportDetails.aiExtractions.push(cloneAiExtraction(extraction));
   }
 
+  async writeRecordInput(input: ReportRecordInput): Promise<void> {
+    if (this.reportDetails.recordInputs.some((existing) => existing.recordId === input.recordId)) {
+      return;
+    }
+    this.reportDetails.recordInputs.push({
+      ...input,
+      rawInput: cloneJsonValue(input.rawInput),
+    });
+  }
+
+  async writeTargetEvidence(evidence: ReportTargetEvidence): Promise<void> {
+    if (this.reportDetails.targetEvidence.some((existing) => sameTargetEvidence(existing, evidence))) {
+      return;
+    }
+    this.reportDetails.targetEvidence.push({ ...evidence });
+  }
+
   getReportDetails(): ReportDetails {
     return {
       fieldMappings: this.reportDetails.fieldMappings.map((mapping) => ({
@@ -180,6 +216,11 @@ export class FileAuditStore {
       })),
       aiExtractions: this.reportDetails.aiExtractions.map(cloneAiExtraction),
       issues: this.reportDetails.issues.map((issue) => ({ ...issue })),
+      recordInputs: this.reportDetails.recordInputs.map((input) => ({
+        ...input,
+        rawInput: cloneJsonValue(input.rawInput),
+      })),
+      targetEvidence: this.reportDetails.targetEvidence.map((evidence) => ({ ...evidence })),
     };
   }
 
@@ -261,6 +302,17 @@ function sameReportIssue(a: ReportIssue, b: ReportIssue): boolean {
   );
 }
 
+function sameTargetEvidence(a: ReportTargetEvidence, b: ReportTargetEvidence): boolean {
+  return (
+    a.recordId === b.recordId &&
+    a.target === b.target &&
+    a.status === b.status &&
+    a.screenshotPath === b.screenshotPath &&
+    a.targetRecordId === b.targetRecordId &&
+    a.message === b.message
+  );
+}
+
 function cloneAiExtraction(extraction: ReportAiExtraction): ReportAiExtraction {
   return {
     ...extraction,
@@ -268,4 +320,9 @@ function cloneAiExtraction(extraction: ReportAiExtraction): ReportAiExtraction {
     additionalFields: extraction.additionalFields.map((field) => ({ ...field })),
     issues: extraction.issues.map((issue) => ({ ...issue })),
   };
+}
+
+function cloneJsonValue(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value)) as unknown;
 }

@@ -419,6 +419,15 @@ describe("OpenEmrAdapter", () => {
         }),
       ]),
     );
+    expect(audit.getReportDetails().targetEvidence).toContainEqual(
+      expect.objectContaining({
+        recordId: "demo-001",
+        target: "openemr",
+        status: "succeeded",
+        screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+        targetRecordId: "openemr-demo-001",
+      }),
+    );
   });
 
   it("records a failed OpenEMR field mapping before throwing for a missing selector", async () => {

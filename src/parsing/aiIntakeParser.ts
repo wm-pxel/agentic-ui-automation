@@ -115,6 +115,7 @@ export class OpenAiIntakeParser {
   }
 
   async parseDocument(document: SourceDocument): Promise<RawIntakeRecord[]> {
+    const sourceRecords = sourceRecordsFromDocument(document);
     const response = await this.client.responses.create({
       model: this.model,
       instructions: SYSTEM_INSTRUCTIONS,
@@ -150,15 +151,21 @@ export class OpenAiIntakeParser {
     });
 
     const parsed = AiParserResponseSchema.parse(JSON.parse(response.output_text) as unknown);
-    return toRawRecords(parsed, document, this.model);
+    return toRawRecords(parsed, document, this.model, sourceRecords);
   }
 }
 
-function toRawRecords(response: AiParserResponse, document: SourceDocument, model: string): RawIntakeRecord[] {
+function toRawRecords(
+  response: AiParserResponse,
+  document: SourceDocument,
+  model: string,
+  sourceRecords: Array<Record<string, unknown>> | undefined,
+): RawIntakeRecord[] {
   return response.records.map((record, index) => {
     const sourceRecordId = record.sourceRecordId?.trim() || `${document.format}-${index + 1}`;
     const fields = fieldEntriesToMap(record.fields);
     const additionalFields = fieldEntriesToMap(record.additionalFields);
+    const sourceRawRecord = sourceRawRecordFor(sourceRecords, sourceRecordId, index);
     const rawRecord: Record<string, unknown> = {
       sourceRecordId,
       sourceFormat: document.format === "pdf" || document.format === "docx" ? "text" : document.format,
@@ -177,6 +184,9 @@ function toRawRecords(response: AiParserResponse, document: SourceDocument, mode
         })),
       } satisfies AiExtractionMetadata,
     };
+    if (sourceRawRecord) {
+      rawRecord.sourceRawRecord = sourceRawRecord;
+    }
 
     for (const [field, extraction] of Object.entries(fields)) {
       rawRecord[field] = extraction.value;
@@ -184,6 +194,49 @@ function toRawRecords(response: AiParserResponse, document: SourceDocument, mode
 
     return rawRecord as RawIntakeRecord;
   });
+}
+
+function sourceRecordsFromDocument(document: SourceDocument): Array<Record<string, unknown>> | undefined {
+  if (document.format !== "json") return undefined;
+
+  try {
+    const parsed = JSON.parse(document.text) as unknown;
+    if (!Array.isArray(parsed)) return undefined;
+    return parsed.filter(isPlainObject);
+  } catch {
+    return undefined;
+  }
+}
+
+function sourceRawRecordFor(
+  sourceRecords: Array<Record<string, unknown>> | undefined,
+  sourceRecordId: string,
+  index: number,
+): Record<string, unknown> | undefined {
+  if (!sourceRecords) return undefined;
+  const byId = sourceRecords.find((record) => hasPrimitiveValue(record, sourceRecordId));
+  return byId ?? sourceRecords[index];
+}
+
+function hasPrimitiveValue(value: unknown, expected: string): boolean {
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value) === expected;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => hasPrimitiveValue(item, expected));
+  }
+  if (isPlainObject(value)) {
+    return Object.values(value).some((item) => hasPrimitiveValue(item, expected));
+  }
+  return false;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function fieldEntriesToMap(entries: Array<z.infer<typeof AiExtractedFieldEntrySchema>>): Record<string, ExtractedFieldValue> {

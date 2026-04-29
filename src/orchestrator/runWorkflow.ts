@@ -102,6 +102,11 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
 
     const normalizedRecords = [];
     for (const rawRecord of input.records) {
+      await audit.writeRecordInput({
+        recordId: String(rawRecord.sourceRecordId),
+        sourceFormat: rawRecord.sourceFormat,
+        rawInput: rawInputForReport(rawRecord),
+      });
       await writeAiExtractionDetails(audit, rawRecord);
       const validation = validateAndNormalizeRecord(rawRecord);
 
@@ -454,6 +459,21 @@ function issueFromException(input: {
     suggestedRemediation: input.exception.suggestedRemediation,
     screenshotPath: stringValue(input.exception.screenshotPath),
   };
+}
+
+function rawInputForReport(rawRecord: RawIntakeRecord): unknown {
+  const record = rawRecord as Record<string, unknown>;
+  if (record.sourceRawRecord !== undefined) {
+    return record.sourceRawRecord;
+  }
+
+  const {
+    rawSourceExcerpt: _rawSourceExcerpt,
+    aiExtraction: _aiExtraction,
+    sourceRawRecord: _sourceRawRecord,
+    ...rawInput
+  } = record;
+  return rawInput;
 }
 
 function stringValue(value: unknown): string | undefined {

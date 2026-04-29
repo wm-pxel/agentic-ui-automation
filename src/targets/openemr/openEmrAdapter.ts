@@ -272,7 +272,17 @@ export class OpenEmrAdapter implements TargetAdapter {
         result: "submitted OpenEMR patient form",
       });
 
-      return { status: "succeeded", targetRecordId: `openemr-${context.record.sourceRecordId}` };
+      const targetRecordId = `openemr-${context.record.sourceRecordId}`;
+      await context.audit.writeTargetEvidence({
+        recordId: context.record.sourceRecordId,
+        target: this.name,
+        status: "succeeded",
+        screenshotPath: afterPath,
+        targetRecordId,
+        message: "submitted OpenEMR patient form",
+      });
+
+      return { status: "succeeded", targetRecordId };
     } finally {
       await this.closeSession();
     }

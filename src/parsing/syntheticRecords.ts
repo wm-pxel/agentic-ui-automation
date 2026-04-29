@@ -46,6 +46,7 @@ function buildSyntheticRecord(record: RawIntakeRecord, token: string, validRecor
     insuranceMemberId: `${normalized.insuranceMemberId}-${token.toUpperCase()}-${validRecordIndex + 1}`,
     sourceFormat: record.sourceFormat,
     aiExtraction: record.aiExtraction,
+    sourceRawRecord: record.sourceRawRecord,
     rawSourceExcerpt: "",
   };
 
