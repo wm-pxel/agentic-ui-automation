@@ -140,11 +140,11 @@ function appendOpenEmrRecordReviews(lines: string[], details: ReportDetails | un
     const comparisonRows = openEmrComparisonRows(mappings, extraction);
     if (comparisonRows.length > 0) {
       lines.push("#### Intake to OpenEMR Comparison", "");
-      lines.push("| Intake Field | Intake Value | Intake Evidence | Normalized Field | OpenEMR Field | EMR Value | Action | Status | Selector or Error |");
-      lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+      lines.push("| Intake Field | Intake Value | AI Confidence | Intake Evidence | Normalized Field | OpenEMR Field | EMR Value | Action | Status | Selector or Error |");
+      lines.push("| --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |");
       for (const row of comparisonRows) {
         lines.push(
-          `| ${cell(row.sourceLabel)} | ${cell(row.sourceValue)} | ${cell(row.evidence)} | ${cell(row.normalizedField)} | ${cell(row.targetField)} | ${cell(row.emrValue)} | ${cell(row.action)} | ${cell(row.status)} | ${cell(row.selectorOrError)} |`,
+          `| ${cell(row.sourceLabel)} | ${cell(row.sourceValue)} | ${cell(row.confidence)} | ${cell(row.evidence)} | ${cell(row.normalizedField)} | ${cell(row.targetField)} | ${cell(row.emrValue)} | ${cell(row.action)} | ${cell(row.status)} | ${cell(row.selectorOrError)} |`,
         );
       }
       lines.push("");
@@ -155,6 +155,7 @@ function appendOpenEmrRecordReviews(lines: string[], details: ReportDetails | un
 interface OpenEmrComparisonRow {
   sourceLabel: string;
   sourceValue: string;
+  confidence?: number;
   evidence: string;
   normalizedField: string;
   targetField: string;
@@ -174,11 +175,13 @@ function openEmrComparisonRows(mappings: ReportFieldMapping[], extraction: Repor
     const source = extracted.get(mapping.sourceField) ?? {
       sourceLabel: mapping.sourceField,
       value: "",
+      confidence: undefined,
       evidence: "",
     };
     rows.push({
       sourceLabel: source.sourceLabel,
       sourceValue: source.value,
+      confidence: source.confidence,
       evidence: source.evidence,
       normalizedField: mapping.sourceField,
       targetField: mapping.targetField,
@@ -198,6 +201,7 @@ function openEmrComparisonRows(mappings: ReportFieldMapping[], extraction: Repor
     rows.push({
       sourceLabel: field.sourceLabel ?? field.sourceField,
       sourceValue: field.value,
+      confidence: field.confidence,
       evidence: field.evidence ?? "",
       normalizedField: field.sourceField,
       targetField: "",
@@ -211,13 +215,16 @@ function openEmrComparisonRows(mappings: ReportFieldMapping[], extraction: Repor
   return rows;
 }
 
-function extractionFieldLookup(extraction: ReportAiExtraction | undefined): Map<string, { sourceLabel: string; value: string; evidence: string }> {
-  const lookup = new Map<string, { sourceLabel: string; value: string; evidence: string }>();
+function extractionFieldLookup(
+  extraction: ReportAiExtraction | undefined,
+): Map<string, { sourceLabel: string; value: string; confidence?: number; evidence: string }> {
+  const lookup = new Map<string, { sourceLabel: string; value: string; confidence?: number; evidence: string }>();
   if (!extraction) return lookup;
   for (const field of [...extraction.fields, ...extraction.additionalFields]) {
     lookup.set(field.sourceField, {
       sourceLabel: field.sourceLabel ?? field.sourceField,
       value: field.value,
+      confidence: field.confidence,
       evidence: field.evidence ?? "",
     });
   }
