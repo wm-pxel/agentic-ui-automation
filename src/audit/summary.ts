@@ -128,10 +128,6 @@ function appendOpenEmrRecordReviews(lines: string[], details: ReportDetails | un
         lines.push(`- Filled-field screenshot: ${cell(evidence.fieldScreenshotPath)}`);
         lines.push("", `![OpenEMR filled fields screenshot for ${cell(recordId)}](${markdownImagePath(evidence.fieldScreenshotPath)})`, "");
       }
-      if (evidence.screenshotPath) {
-        lines.push(`- Proof screenshot: ${cell(evidence.screenshotPath)}`);
-        lines.push("", `![OpenEMR success screenshot for ${cell(recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
-      }
       if (evidence.targetRecordId) {
         lines.push(`- Target record: ${cell(evidence.targetRecordId)}`);
       }

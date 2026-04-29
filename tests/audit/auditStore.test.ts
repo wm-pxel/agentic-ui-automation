@@ -528,7 +528,7 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("\"intake_id\": \"demo-001\"");
     expect(summary).toContain("#### Screenshots");
     expect(summary).toContain("![OpenEMR filled fields screenshot for demo-001](screenshots/demo-001/openemr/after-fill.png)");
-    expect(summary).toContain("![OpenEMR success screenshot for demo-001](screenshots/demo-001/openemr/after-save.png)");
+    expect(summary).not.toContain("![OpenEMR success screenshot for demo-001](screenshots/demo-001/openemr/after-save.png)");
     expect(summary).toContain("#### Intake to OpenEMR Comparison");
     expect(summary).toContain("| sex_at_birth | female | sex_at_birth: female | sexOrGender | Birth Sex | Female | select | succeeded | select[name=\"form_sex\"] |");
     expect(summary).toContain("| province | IL | province: IL | state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
@@ -583,8 +583,8 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("#### Screenshots");
     expect(summary).toContain("- Filled-field screenshot: screenshots/demo-001/openemr/after-fill.png");
     expect(summary).toContain("![OpenEMR filled fields screenshot for demo-001](screenshots/demo-001/openemr/after-fill.png)");
-    expect(summary).toContain("- Proof screenshot: screenshots/demo-001/openemr/after-save.png");
-    expect(summary).toContain("![OpenEMR success screenshot for demo-001](screenshots/demo-001/openemr/after-save.png)");
+    expect(summary).not.toContain("- Proof screenshot: screenshots/demo-001/openemr/after-save.png");
+    expect(summary).not.toContain("![OpenEMR success screenshot for demo-001](screenshots/demo-001/openemr/after-save.png)");
     expect(summary).toContain("- Target record: openemr-demo-001");
     expect(summary).toContain("\"intake_id\": \"demo-001\"");
     expect(summary).toContain("\"given_name\": \"Ava\"");
