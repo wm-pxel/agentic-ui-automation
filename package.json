@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "dev": "tsx src/cli.ts",
     "smoke:openemr": "tsx src/cli.ts run --input data/demo/intake-records.json --targets openemr --agent scripted --synthetic-suffix auto",
-    "smoke:excel": "tsx src/cli.ts run --input data/demo/intake-records.json --targets excel --agent scripted"
+    "smoke:excel": "tsx src/cli.ts run --input data/demo/intake-records-normalized.json --targets excel --agent scripted --parser deterministic"
   },
   "dependencies": {
     "@playwright/test": "^1.46.0",

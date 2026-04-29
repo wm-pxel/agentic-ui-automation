@@ -32,14 +32,20 @@ const SYSTEM_INSTRUCTIONS = [
   "Use null only when a value is not present or is too ambiguous.",
   "Include concise source evidence snippets and confidence scores for extracted fields.",
   `The fields array must use only these normalized intake field names: ${NORMALIZED_INTAKE_FIELDS.join(", ")}.`,
+  "For each extracted field, set sourceLabel to the exact source key, label, or concise path that supplied the value.",
+  "Set sourceRecordId from any record ID, case ID, intake ID, chart reference, or similar source identifier; use null only when no identifier is present.",
+  "Normalize parseable dates to YYYY-MM-DD when extracting dateOfBirth; do not output month names for dateOfBirth.",
+  "If a required field label is present but its value is malformed, still map it to the normalized required field with the original value so deterministic validation can reject it.",
   "Put any source fields that do not map to those normalized names in additionalFields.",
   "Split full patient names into firstName and lastName.",
   "Map sex/gender source labels to sexOrGender, address/street labels to streetAddress, insurance/provider/payer labels to insurancePayer, member ID labels to insuranceMemberId, reason/visit labels to reasonForVisit, and preferred contact labels to preferredContactMethod.",
+  "When one address value contains street, city, state, and ZIP, split it into streetAddress, city, state, and zip instead of keeping the whole address in streetAddress.",
   "Do not invent values.",
 ].join(" ");
 
 const AiExtractedFieldEntrySchema = z.object({
   field: z.string(),
+  sourceLabel: z.string().optional(),
   value: z.string(),
   confidence: z.number().min(0).max(1),
   evidence: z.string(),
@@ -188,6 +194,7 @@ function fieldEntriesToMap(entries: Array<z.infer<typeof AiExtractedFieldEntrySc
       continue;
     }
     fields[field] = {
+      sourceLabel: entry.sourceLabel,
       value: entry.value,
       confidence: entry.confidence,
       evidence: entry.evidence,
@@ -209,9 +216,10 @@ function aiParserJsonSchema(): Record<string, unknown> {
   const fieldExtractionEntry = {
     type: "object",
     additionalProperties: false,
-    required: ["field", "value", "confidence", "evidence"],
+    required: ["field", "sourceLabel", "value", "confidence", "evidence"],
     properties: {
       field: { type: "string" },
+      sourceLabel: { type: "string" },
       value: { type: "string" },
       confidence: { type: "number", minimum: 0, maximum: 1 },
       evidence: { type: "string" },

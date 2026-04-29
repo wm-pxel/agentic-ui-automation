@@ -46,6 +46,7 @@ export interface ReportIssue {
 
 export interface ReportAiExtractionField {
   sourceField: string;
+  sourceLabel?: string;
   value: string;
   confidence: number;
   evidence?: string;

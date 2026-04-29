@@ -474,9 +474,10 @@ async function writeAiExtractionDetails(audit: FileAuditStore, rawRecord: RawInt
   });
 }
 
-function extractionFields(value: Record<string, { value: string; confidence: number; evidence?: string }>) {
+function extractionFields(value: Record<string, { sourceLabel?: string; value: string; confidence: number; evidence?: string }>) {
   return Object.entries(value).map(([sourceField, field]) => ({
     sourceField,
+    sourceLabel: field.sourceLabel,
     value: field.value,
     confidence: field.confidence,
     evidence: field.evidence,
@@ -486,8 +487,8 @@ function extractionFields(value: Record<string, { value: string; confidence: num
 function isAiExtractionMetadata(value: unknown): value is {
   model: string;
   sourceDocumentName: string;
-  fields: Record<string, { value: string; confidence: number; evidence?: string }>;
-  additionalFields: Record<string, { value: string; confidence: number; evidence?: string }>;
+  fields: Record<string, { sourceLabel?: string; value: string; confidence: number; evidence?: string }>;
+  additionalFields: Record<string, { sourceLabel?: string; value: string; confidence: number; evidence?: string }>;
   issues: Array<{ field?: string; message: string; severity: "info" | "warning" | "error" }>;
 } {
   return (

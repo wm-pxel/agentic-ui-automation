@@ -13,7 +13,7 @@ artifact writes. Production runs default to AI source parsing; this fixture uses
 
 ```sh
 npm install
-npm run dev -- run --input data/demo/intake-records.json --targets fake --runs-dir runs --parser deterministic
+npm run dev -- run --input data/demo/intake-records-normalized.json --targets fake --runs-dir runs --parser deterministic
 find runs -maxdepth 3 -type f | sort
 cat runs/*/summary.md
 ```
@@ -63,8 +63,12 @@ npm run dev -- run \
   --synthetic-suffix auto
 ```
 
-For local smoke checks that should not call OpenAI, add
-`--parser deterministic` explicitly.
+`data/demo/intake-records.json` intentionally uses varied source shapes and
+field labels so the demo exercises AI source parsing before deterministic EMR
+entry.
+
+For local smoke checks that should not call OpenAI, use
+`data/demo/intake-records-normalized.json` and add `--parser deterministic`.
 
 The public demo URL, credentials, and UI can change. If login, navigation,
 selectors, or save behavior drift, the run should stop with auditable environment
@@ -123,7 +127,7 @@ Prerequisites:
 
 ```sh
 npm run dev -- run \
-  --input data/demo/intake-records.json \
+  --input data/demo/intake-records-normalized.json \
   --targets excel \
   --runs-dir runs \
   --excel-workbook-path runs/intake-workbook.xlsx \
@@ -144,7 +148,7 @@ valid source record, it should:
 7. Capture an `after-entry.png` screenshot.
 8. Save the workbook when the target closes.
 
-A clean Excel smoke run with `data/demo/intake-records.json` means:
+A clean Excel smoke run with `data/demo/intake-records-normalized.json` means:
 
 - `preflightExceptions` is `3`.
 - `targetCounts.excel.succeeded` is `3`.
@@ -176,7 +180,7 @@ set -a
 . ./.env
 set +a
 npm run dev -- run \
-  --input data/demo/intake-records.json \
+  --input data/demo/intake-records-normalized.json \
   --targets openemr,excel \
   --runs-dir runs \
   --excel-workbook-path runs/intake-workbook.xlsx \

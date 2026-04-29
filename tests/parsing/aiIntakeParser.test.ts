@@ -139,13 +139,13 @@ describe("OpenAiIntakeParser", () => {
                       enum: expect.arrayContaining(["firstName", "lastName", "dateOfBirth", "sexOrGender"]),
                     },
                   },
-                  required: ["field", "value", "confidence", "evidence"],
+                  required: ["field", "sourceLabel", "value", "confidence", "evidence"],
                 },
               },
               additionalFields: {
                 type: "array",
                 items: {
-                  required: ["field", "value", "confidence", "evidence"],
+                  required: ["field", "sourceLabel", "value", "confidence", "evidence"],
                 },
               },
             },

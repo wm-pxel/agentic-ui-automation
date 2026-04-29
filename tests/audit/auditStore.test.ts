@@ -69,6 +69,7 @@ describe("FileAuditStore", () => {
       fields: [
         {
           sourceField: "firstName",
+          sourceLabel: "given_name",
           value: "Ava",
           confidence: 0.96,
           evidence: "Name: Ava Nguyen",
@@ -77,6 +78,7 @@ describe("FileAuditStore", () => {
       additionalFields: [
         {
           sourceField: "employer",
+          sourceLabel: "employer",
           value: "Acme",
           confidence: 0.7,
           evidence: "Employer: Acme",
@@ -128,6 +130,7 @@ describe("FileAuditStore", () => {
           fields: [
             {
               sourceField: "firstName",
+              sourceLabel: "given_name",
               value: "Ava",
               confidence: 0.96,
               evidence: "Name: Ava Nguyen",
@@ -136,6 +139,7 @@ describe("FileAuditStore", () => {
           additionalFields: [
             {
               sourceField: "employer",
+              sourceLabel: "employer",
               value: "Acme",
               confidence: 0.7,
               evidence: "Employer: Acme",
@@ -375,9 +379,24 @@ describe("FileAuditStore", () => {
             fields: [
               {
                 sourceField: "firstName",
+                sourceLabel: "given_name",
                 value: "Ava",
                 confidence: 0.96,
                 evidence: "Name: Ava Nguyen",
+              },
+              {
+                sourceField: "sexOrGender",
+                sourceLabel: "sex_at_birth",
+                value: "female",
+                confidence: 0.94,
+                evidence: "sex_at_birth: female",
+              },
+              {
+                sourceField: "state",
+                sourceLabel: "province",
+                value: "IL",
+                confidence: 0.93,
+                evidence: "province: IL",
               },
             ],
             additionalFields: [],
@@ -424,12 +443,12 @@ describe("FileAuditStore", () => {
 
     expect(summary).toContain("## Issues");
     expect(summary).toContain("## AI Source Extraction");
-    expect(summary).toContain("| demo-001 | firstName | Ava | 0.96 | Name: Ava Nguyen |");
+    expect(summary).toContain("| demo-001 | given_name | firstName | Ava | 0.96 | Name: Ava Nguyen |");
     expect(summary).toContain("| demo-001 | openemr | target | verification_failed | OpenEMR still showed the new-patient form after save. | Review required fields. | screenshots/demo-001/openemr/after-save.png |");
-    expect(summary).toContain("## OpenEMR Field Mapping");
+    expect(summary).toContain("## Intake to OpenEMR Field Mapping");
     expect(summary).toContain("### Record demo-001");
-    expect(summary).toContain("| sexOrGender | Birth Sex | Female | select | succeeded | select[name=\"form_sex\"] |");
-    expect(summary).toContain("| state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
+    expect(summary).toContain("| sex_at_birth | female | sex_at_birth: female | sexOrGender | Birth Sex | Female | select | succeeded | select[name=\"form_sex\"] |");
+    expect(summary).toContain("| province | IL | province: IL | state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
   });
 
   it("renders clean no-issue and no-mapping sections for non-OpenEMR runs", () => {
@@ -450,7 +469,7 @@ describe("FileAuditStore", () => {
     });
 
     expect(summary).toContain("## Issues\n\nNo issues recorded.");
-    expect(summary).not.toContain("## OpenEMR Field Mapping");
+    expect(summary).not.toContain("## Intake to OpenEMR Field Mapping");
   });
 
   it("renders target rows in deterministic order", () => {

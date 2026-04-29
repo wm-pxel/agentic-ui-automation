@@ -14,6 +14,33 @@ describe("applySyntheticSuffix", () => {
     expect(second.ok ? second.record.phone : undefined).toMatch(/^\+1312555\d{4}$/);
     expect(first.ok && second.ok && first.record.phone).not.toBe(second.ok ? second.record.phone : undefined);
   });
+
+  it("preserves AI extraction metadata when suffixing valid records", () => {
+    const input = {
+      ...record("demo-001"),
+      aiExtraction: {
+        parser: "openai",
+        model: "gpt-test",
+        sourceDocumentName: "intake.json",
+        sourceFormat: "json",
+        fields: {
+          firstName: {
+            sourceLabel: "given_name",
+            value: "Ava",
+            confidence: 0.98,
+            evidence: "given_name: Ava",
+          },
+        },
+        additionalFields: {},
+        issues: [],
+      },
+    };
+
+    const [suffixed] = applySyntheticSuffix([input], "case123");
+
+    expect(suffixed.sourceRecordId).toBe("demo-001-case123");
+    expect(suffixed.aiExtraction).toEqual(input.aiExtraction);
+  });
 });
 
 function record(sourceRecordId: string): RawIntakeRecord {

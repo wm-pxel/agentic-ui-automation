@@ -38,7 +38,7 @@ export function renderSummary(input: SummaryInput): string {
 
   appendAiExtractions(lines, input.details?.aiExtractions ?? []);
   appendIssues(lines, input.details?.issues ?? []);
-  appendOpenEmrFieldMappings(lines, input.details?.fieldMappings ?? []);
+  appendOpenEmrFieldMappings(lines, input.details?.fieldMappings ?? [], input.details?.aiExtractions ?? []);
 
   lines.push("");
   return `${lines.join("\n")}\n`;
@@ -72,18 +72,18 @@ function appendAiExtractions(lines: string[], aiExtractions: ReportAiExtraction[
   if (aiExtractions.length === 0) return;
 
   lines.push("", "## AI Source Extraction", "");
-  lines.push("| Record | Field | Value | Confidence | Evidence |");
-  lines.push("| --- | --- | --- | ---: | --- |");
+  lines.push("| Record | Source Label | Normalized Field | Value | Confidence | Evidence |");
+  lines.push("| --- | --- | --- | --- | ---: | --- |");
 
   for (const extraction of aiExtractions) {
     for (const field of extraction.fields) {
       lines.push(
-        `| ${cell(extraction.recordId)} | ${cell(field.sourceField)} | ${cell(field.value)} | ${cell(field.confidence)} | ${cell(field.evidence)} |`,
+        `| ${cell(extraction.recordId)} | ${cell(field.sourceLabel ?? field.sourceField)} | ${cell(field.sourceField)} | ${cell(field.value)} | ${cell(field.confidence)} | ${cell(field.evidence)} |`,
       );
     }
     for (const field of extraction.additionalFields) {
       lines.push(
-        `| ${cell(extraction.recordId)} | ${cell(field.sourceField)} | ${cell(field.value)} | ${cell(field.confidence)} | ${cell(field.evidence)} |`,
+        `| ${cell(extraction.recordId)} | ${cell(field.sourceLabel ?? field.sourceField)} | ${cell(field.sourceField)} | ${cell(field.value)} | ${cell(field.confidence)} | ${cell(field.evidence)} |`,
       );
     }
   }
@@ -107,22 +107,46 @@ function appendIssues(lines: string[], issues: ReportIssue[]): void {
   }
 }
 
-function appendOpenEmrFieldMappings(lines: string[], fieldMappings: ReportFieldMapping[]): void {
+function appendOpenEmrFieldMappings(
+  lines: string[],
+  fieldMappings: ReportFieldMapping[],
+  aiExtractions: ReportAiExtraction[],
+): void {
   const openEmrMappings = fieldMappings.filter((mapping) => mapping.target === "openemr");
   if (openEmrMappings.length === 0) return;
 
-  lines.push("", "## OpenEMR Field Mapping", "");
+  const sourceFields = sourceFieldLookup(aiExtractions);
+  lines.push("", "## Intake to OpenEMR Field Mapping", "");
   for (const [recordId, mappings] of groupByRecord(openEmrMappings)) {
     lines.push(`### Record ${recordId}`, "");
-    lines.push("| Source Field | OpenEMR Field | Value | Action | Status | Selected Selector | Selector Candidates | Error |");
-    lines.push("| --- | --- | --- | --- | --- | --- | --- | --- |");
+    lines.push("| Intake Field | Intake Value | Intake Evidence | Normalized Field | OpenEMR Field | EMR Value | Action | Status | Selected Selector | Error |");
+    lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
     for (const mapping of mappings) {
+      const source = sourceFields.get(`${recordId}\0${mapping.sourceField}`) ?? {
+        sourceLabel: mapping.sourceField,
+        value: "",
+        evidence: "",
+      };
       lines.push(
-        `| ${cell(mapping.sourceField)} | ${cell(mapping.targetField)} | ${cell(mapping.normalizedValue)} | ${cell(mapping.action)} | ${cell(mapping.status)} | ${cell(mapping.selectedSelector)} | ${cell(mapping.selectorCandidates.join(", "))} | ${cell(mapping.errorMessage)} |`,
+        `| ${cell(source.sourceLabel)} | ${cell(source.value)} | ${cell(source.evidence)} | ${cell(mapping.sourceField)} | ${cell(mapping.targetField)} | ${cell(mapping.normalizedValue)} | ${cell(mapping.action)} | ${cell(mapping.status)} | ${cell(mapping.selectedSelector)} | ${cell(mapping.errorMessage)} |`,
       );
     }
     lines.push("");
   }
+}
+
+function sourceFieldLookup(aiExtractions: ReportAiExtraction[]): Map<string, { sourceLabel: string; value: string; evidence: string }> {
+  const lookup = new Map<string, { sourceLabel: string; value: string; evidence: string }>();
+  for (const extraction of aiExtractions) {
+    for (const field of extraction.fields) {
+      lookup.set(`${extraction.recordId}\0${field.sourceField}`, {
+        sourceLabel: field.sourceLabel ?? field.sourceField,
+        value: field.value,
+        evidence: field.evidence ?? "",
+      });
+    }
+  }
+  return lookup;
 }
 
 function groupByRecord(mappings: ReportFieldMapping[]): Array<[string, ReportFieldMapping[]]> {

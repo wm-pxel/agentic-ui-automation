@@ -57,7 +57,7 @@ npm install
 Run the no-UI demo first:
 
 ```sh
-npm run dev -- run --input data/demo/intake-records.json --targets fake --runs-dir runs --parser deterministic
+npm run dev -- run --input data/demo/intake-records-normalized.json --targets fake --runs-dir runs --parser deterministic
 ```
 
 Expected result:
@@ -118,8 +118,12 @@ npm run dev -- run \
   --synthetic-suffix auto
 ```
 
-For local smoke checks that should not call OpenAI, add
-`--parser deterministic` explicitly.
+`data/demo/intake-records.json` intentionally uses varied source shapes and
+field labels so the demo exercises AI source parsing before deterministic EMR
+entry.
+
+For local smoke checks that should not call OpenAI, use
+`data/demo/intake-records-normalized.json` and add `--parser deterministic`.
 
 Public demo credentials and screens can change. If login, navigation, selectors,
 or save behavior drift, the run should finish with auditable environment or
@@ -217,7 +221,7 @@ Run:
 
 ```sh
 npm run dev -- run \
-  --input data/demo/intake-records.json \
+  --input data/demo/intake-records-normalized.json \
   --targets excel \
   --runs-dir runs \
   --excel-workbook-path runs/intake-workbook.xlsx \
@@ -254,8 +258,9 @@ Email, Street Address, City, State, ZIP, Insurance Payer, Member ID, Group ID,
 Reason for Visit, Preferred Contact, Notes
 ```
 
-For the checked-in demo file, three records are intentionally invalid and stop in
-preflight validation. A clean Excel target pass therefore means:
+For `data/demo/intake-records-normalized.json`, three records are intentionally
+invalid and stop in preflight validation. A clean Excel target pass therefore
+means:
 
 - `preflightExceptions` is `3`.
 - `targetCounts.excel.succeeded` is `3`.
@@ -285,7 +290,7 @@ Manual verification:
    - `demo-003`, `Priya`, `Shah`
 5. Confirm each row includes the expected DOB, contact, address, insurance, reason
    for visit, preferred contact, and notes fields from
-   `data/demo/intake-records.json`.
+   `data/demo/intake-records-normalized.json`.
 6. Confirm the audit screenshots exist:
 
    ```sh
@@ -311,7 +316,7 @@ set -a
 . ./.env
 set +a
 npm run dev -- run \
-  --input data/demo/intake-records.json \
+  --input data/demo/intake-records-normalized.json \
   --targets openemr,excel \
   --runs-dir runs \
   --excel-workbook-path runs/openemr-excel-demo.xlsx \
