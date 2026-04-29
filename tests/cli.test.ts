@@ -62,6 +62,65 @@ describe("runCli", () => {
     });
   });
 
+  it("applies a synthetic suffix to valid source records before running targets", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "agentic-ui-cli-synthetic-"));
+    tempDirs.push(runsDir);
+    const io = captureIo();
+
+    const exitCode = await runCli(
+      [
+        "node",
+        "agentic-ui",
+        "run",
+        "--input",
+        "data/demo/intake-records.json",
+        "--targets",
+        "fake",
+        "--runs-dir",
+        runsDir,
+        "--synthetic-suffix",
+        "case123",
+      ],
+      io,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.stderrText()).toBe("");
+    const result = JSON.parse(io.stdoutText()) as {
+      runId: string;
+      preflightExceptions: number;
+      targetCounts: { fake?: { succeeded: number } };
+    };
+    expect(result.preflightExceptions).toBe(3);
+    expect(result.targetCounts.fake?.succeeded).toBe(3);
+
+    await expect(readJson(join(runsDir, result.runId, "input", "normalized-records.json"))).resolves.toMatchObject([
+      {
+        sourceRecordId: "demo-001-case123",
+        firstName: "Ava",
+        lastName: "Nguyen Case123",
+        phone: "+13125550200",
+        email: "ava.nguyen+case123@example.test",
+        insuranceMemberId: "AET123456-CASE123-1",
+      },
+      {
+        sourceRecordId: "demo-002-case123",
+        lastName: "Lee Case123",
+        phone: "+13125550201",
+        email: "marcus.lee+case123@example.test",
+      },
+      {
+        sourceRecordId: "demo-003-case123",
+        lastName: "Shah Case123",
+        phone: "+13125550202",
+        email: "priya.shah+case123@example.test",
+      },
+    ]);
+    await expect(readJson(join(runsDir, result.runId, "exceptions", "demo-missing-dob.json"))).resolves.toMatchObject({
+      code: "missing_required_field",
+    });
+  });
+
   it("returns exit code 1 and prints a concise message for parse errors", async () => {
     const io = captureIo();
 

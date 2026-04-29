@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -11,6 +12,7 @@ import { ScriptedAgentDriver } from "./agent/scriptedAgent.js";
 import type { AgentDriver } from "./agent/types.js";
 import { buildRunConfig, type CliRunConfig } from "./config.js";
 import { loadSourceRecords } from "./parsing/loadRecords.js";
+import { applySyntheticSuffix } from "./parsing/syntheticRecords.js";
 import { runWorkflow } from "./orchestrator/runWorkflow.js";
 import { ExcelAdapter } from "./targets/excel/excelAdapter.js";
 import { MacExcelPort } from "./targets/excel/macExcelPort.js";
@@ -31,6 +33,7 @@ interface RunCommandOptions {
   runsDir?: string;
   agent?: CliRunConfig["agent"];
   excelWorkbookPath?: string;
+  syntheticSuffix?: string;
 }
 
 const defaultIo = {
@@ -83,6 +86,7 @@ function createProgram(io: Required<CliIo>): Command {
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
     .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
     .option("--excel-workbook-path <path>", "Workbook path for the Excel target.")
+    .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .action(async (options: RunCommandOptions) => {
       await runCommand(options, io.stdout);
     });
@@ -92,7 +96,7 @@ function createProgram(io: Required<CliIo>): Command {
 
 async function runCommand(options: RunCommandOptions, stdout: CliWritable): Promise<void> {
   const config = buildRunConfig(options);
-  const records = await loadSourceRecords(config.input);
+  const records = applySyntheticSuffix(await loadSourceRecords(config.input), resolveSyntheticSuffix(config.syntheticSuffix));
   const result = await runWorkflow({
     runsDir: config.runsDir,
     records,
@@ -101,6 +105,13 @@ async function runCommand(options: RunCommandOptions, stdout: CliWritable): Prom
   });
 
   stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+function resolveSyntheticSuffix(suffix: string | undefined): string | undefined {
+  if (suffix !== "auto") return suffix;
+
+  const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+  return `run-${timestamp}-${randomUUID().slice(0, 6)}`;
 }
 
 function buildAgent(agent: CliRunConfig["agent"]): AgentDriver {

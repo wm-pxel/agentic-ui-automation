@@ -78,6 +78,76 @@ Expected target result:
 - The workbook contains rows for `demo-001`, `demo-002`, and `demo-003`.
 - Six screenshots are written: before and after each valid record.
 
+### What The Excel Target Does
+
+For each normalized valid source record, the Excel adapter is expected to:
+
+1. Create the workbook at `--excel-workbook-path` if it does not exist.
+2. Create or reuse an `Intake` worksheet with the fixed intake columns.
+3. Open the workbook in Microsoft Excel.
+4. Determine the first empty row before starting desktop entry.
+5. Capture a `before-entry` screenshot.
+6. Ask the agent to approve the `paste-row` action from the current Excel screen.
+7. Paste the normalized record as one tab-separated row into Excel.
+8. Capture an `after-entry` screenshot.
+9. Log the row number, for example `pasted record into Excel row 2`.
+10. Save the workbook when the Excel target closes.
+
+The `Intake` worksheet columns are:
+
+```text
+Source Record ID, First Name, Last Name, Date of Birth, Sex/Gender, Phone,
+Email, Street Address, City, State, ZIP, Insurance Payer, Member ID, Group ID,
+Reason for Visit, Preferred Contact, Notes
+```
+
+For the checked-in demo file, three records are intentionally invalid and stop in
+preflight validation. A clean Excel target pass therefore means:
+
+- `preflightExceptions` is `3`.
+- `targetCounts.excel.succeeded` is `3`.
+- `targetCounts.excel.exception` is `0`.
+- `exceptions/` only contains the three intentional validation exceptions.
+- A fresh workbook contains the header row plus `demo-001`, `demo-002`, and
+  `demo-003` in rows 2 through 4.
+- Each valid record has `before-entry` and `after-entry` screenshots.
+- `events.jsonl` includes one `paste` event per valid record with the Excel row
+  number.
+
+Manual verification:
+
+1. Copy the `runId` from the CLI output and inspect the run summary:
+
+   ```sh
+   RUN_ID="<run-id-from-cli-output>"
+   cat "runs/$RUN_ID/summary.md"
+   cat "runs/$RUN_ID/run.json"
+   ```
+
+2. Open the workbook passed to `--excel-workbook-path` in Microsoft Excel.
+3. Confirm the `Intake` sheet exists and row 1 contains the fixed column headers.
+4. For a fresh workbook, confirm rows 2 through 4 contain:
+   - `demo-001`, `Ava`, `Nguyen`
+   - `demo-002`, `Marcus`, `Lee`
+   - `demo-003`, `Priya`, `Shah`
+5. Confirm each row includes the expected DOB, contact, address, insurance, reason
+   for visit, preferred contact, and notes fields from
+   `data/demo/intake-records.json`.
+6. Confirm the audit screenshots exist:
+
+   ```sh
+   find "runs/$RUN_ID/screenshots" -path "*/excel/*.png" | sort
+   ```
+
+7. Confirm the audit log includes one paste event per valid record:
+
+   ```sh
+   grep "pasted record into Excel row" "runs/$RUN_ID/events.jsonl"
+   ```
+
+The Excel target appends to the first empty row in an existing workbook. Use a
+fresh workbook path when you need an easy row-by-row validation run.
+
 ## OpenEMR Smoke
 
 Prerequisites:
@@ -101,12 +171,88 @@ OPENEMR_PASSWORD="pass" \
 npm run dev -- run \
   --input data/demo/intake-records.json \
   --targets openemr \
-  --runs-dir runs
+  --runs-dir runs \
+  --synthetic-suffix auto
 ```
 
 Public demo credentials and screens can change. If login, navigation, selectors,
 or save behavior drift, the run should finish with auditable environment or
 UI-state exceptions rather than silently claiming success.
+
+OpenEMR can expose patient deletion when `Admin` -> `Config` -> `Features` ->
+`Allow Administrators to Delete Patients` is enabled. The current public demo has
+that setting off, and enabling it would mutate shared demo configuration. The
+smoke run therefore uses `--synthetic-suffix auto` to create fresh synthetic
+patient names and identifiers instead of deleting prior demo patients.
+
+### What The OpenEMR Target Does
+
+For each normalized valid source record, the OpenEMR adapter is expected to:
+
+1. Log in to the configured OpenEMR environment.
+2. Capture a `before-navigation` screenshot.
+3. Open `Patient` -> `New/Search`.
+4. Fill the Search or Add Patient form:
+   - first name, last name, DOB, birth sex
+   - street, city, state, ZIP
+   - mobile phone and contact email
+5. Capture an `after-fill` screenshot.
+6. Click `Create New Patient`.
+7. If OpenEMR shows the search confirmation with no matches, click
+   `Confirm Create New Patient`.
+8. Capture an `after-save` screenshot.
+9. Treat the record as successful only if OpenEMR no longer shows the
+   new-patient create form.
+
+For the checked-in demo file, three records are intentionally invalid and stop in
+preflight validation. A clean OpenEMR target pass therefore means:
+
+- `preflightExceptions` is `3`.
+- `targetCounts.openemr.succeeded` is `3`.
+- `targetCounts.openemr.exception` is `0`.
+- `exceptions/` only contains the three intentional validation exceptions.
+- Each valid record has `before-navigation`, `after-fill`, and `after-save`
+  screenshots.
+
+Manual verification:
+
+1. Copy the `runId` from the CLI output and inspect the run summary:
+
+   ```sh
+   RUN_ID="<run-id-from-cli-output>"
+   cat "runs/$RUN_ID/summary.md"
+   cat "runs/$RUN_ID/run.json"
+   cat "runs/$RUN_ID/input/normalized-records.json"
+   ```
+
+2. Note the generated `lastName`, `email`, `phone`, and `insuranceMemberId`
+   values in `normalized-records.json`. With `--synthetic-suffix auto`, the
+   valid demo patients are renamed to values like `Nguyen Run-...`,
+   `Lee Run-...`, and `Shah Run-...`.
+3. Confirm the OpenEMR screenshot sequence exists for each valid record:
+
+   ```sh
+   find "runs/$RUN_ID/screenshots" -path "*/openemr/*.png" | sort
+   ```
+
+4. Open each `after-save.png` screenshot and confirm OpenEMR has left the
+   new-patient create form.
+5. Log in to the same OpenEMR environment used by the run.
+6. Open the patient search or finder screen.
+7. Search for the three generated last names from `normalized-records.json`.
+8. Open each patient record and confirm the demographic and contact fields match
+   `normalized-records.json`: first name, last name, DOB, birth sex, street,
+   city, state, ZIP, phone, and email.
+9. Confirm the audit log includes an `after-save` event for each valid record:
+
+   ```sh
+   grep "after-save" "runs/$RUN_ID/events.jsonl"
+   ```
+
+The public OpenEMR demo keeps data for a while. If you run without
+`--synthetic-suffix`, existing demo patients may cause duplicate or verification
+exceptions. Use `--synthetic-suffix auto` when you need a clean end-to-end
+OpenEMR success run.
 
 ## Combined Smoke
 
@@ -121,7 +267,8 @@ npm run dev -- run \
   --input data/demo/intake-records.json \
   --targets openemr,excel \
   --runs-dir runs \
-  --excel-workbook-path runs/openemr-excel-demo.xlsx
+  --excel-workbook-path runs/openemr-excel-demo.xlsx \
+  --synthetic-suffix auto
 ```
 
 ## Audit Artifacts
@@ -159,7 +306,8 @@ npm run dev -- run \
   --targets fake,excel,openemr \
   --runs-dir runs \
   --excel-workbook-path runs/intake-workbook.xlsx \
-  --agent scripted
+  --agent scripted \
+  --synthetic-suffix auto
 ```
 
 Options:
@@ -169,6 +317,9 @@ Options:
 - `--runs-dir`: audit output directory. Defaults to `runs`.
 - `--excel-workbook-path`: workbook path for the Excel target.
 - `--agent`: `scripted` or `openai`. Defaults to `scripted`.
+- `--synthetic-suffix`: appends a suffix to valid synthetic records before
+  validation and target entry. Use `auto` for OpenEMR demo runs so each run uses
+  fresh patient names and identifiers.
 
 Environment variables:
 

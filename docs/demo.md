@@ -43,12 +43,48 @@ npx playwright install chromium
 export OPENEMR_BASE_URL="https://demo.openemr.io/b/openemr"
 export OPENEMR_USERNAME="admin"
 export OPENEMR_PASSWORD="pass"
-npm run dev -- run --input data/demo/intake-records.json --targets openemr --runs-dir runs
+npm run dev -- run \
+  --input data/demo/intake-records.json \
+  --targets openemr \
+  --runs-dir runs \
+  --synthetic-suffix auto
 ```
 
 The public demo URL, credentials, and UI can change. If login, navigation,
 selectors, or save behavior drift, the run should stop with auditable environment
 or UI-state exceptions rather than silently claiming success.
+
+OpenEMR supports patient deletion only when administrator patient deletion is
+enabled in global feature configuration. The public demo has that setting off, so
+the smoke run uses `--synthetic-suffix auto` to avoid duplicate patients instead
+of trying to reset shared demo state.
+
+### OpenEMR Success Criteria
+
+For each valid normalized record, the target should:
+
+1. Log in to OpenEMR.
+2. Take a `before-navigation` screenshot.
+3. Open `Patient` -> `New/Search`.
+4. Fill the Search or Add Patient form with demographics and contact fields.
+5. Take an `after-fill` screenshot.
+6. Click `Create New Patient`.
+7. Click `Confirm Create New Patient` when OpenEMR reports no matches.
+8. Take an `after-save` screenshot after OpenEMR leaves the create form.
+
+For `data/demo/intake-records.json`, the expected clean OpenEMR target result is:
+
+- `preflightExceptions` is `3`.
+- `targetCounts.openemr.succeeded` is `3`.
+- `targetCounts.openemr.exception` is `0`.
+- `exceptions/` only contains the intentional validation exceptions.
+- Each valid record has three OpenEMR screenshots:
+  `before-navigation.png`, `after-fill.png`, and `after-save.png`.
+
+The public OpenEMR demo keeps submitted patients for a while. If you rerun the
+same input without `--synthetic-suffix`, duplicate patient detection can make the
+run fail correctly. Use `runs/<run-id>/input/normalized-records.json` to see the
+generated names and identifiers to search for during manual validation.
 
 ## Excel Desktop Smoke Demo
 
@@ -73,6 +109,42 @@ npm run dev -- run \
   --excel-workbook-path runs/intake-workbook.xlsx
 ```
 
+### Excel Success Criteria
+
+The Excel target uses Microsoft Excel as the desktop intake system. For each
+valid source record, it should:
+
+1. Create or reuse the workbook at `--excel-workbook-path`.
+2. Create or reuse the `Intake` worksheet with the fixed intake columns.
+3. Open the workbook in Excel.
+4. Capture a `before-entry.png` screenshot.
+5. Ask the agent to approve the `paste-row` action.
+6. Paste one normalized tab-separated row into the first empty row.
+7. Capture an `after-entry.png` screenshot.
+8. Save the workbook when the target closes.
+
+A clean Excel smoke run with `data/demo/intake-records.json` means:
+
+- `preflightExceptions` is `3`.
+- `targetCounts.excel.succeeded` is `3`.
+- `targetCounts.excel.exception` is `0`.
+- `exceptions/` only contains the intentional validation exceptions.
+- A fresh workbook has an `Intake` sheet with the header row and `demo-001`,
+  `demo-002`, and `demo-003` in rows 2 through 4.
+- Each valid record has two Excel screenshots: `before-entry.png` and
+  `after-entry.png`.
+- `events.jsonl` has one `paste` event per valid record, including the row
+  number used in Excel.
+
+Open the workbook directly, or inspect it from the command line:
+
+```sh
+node --input-type=module -e "import ExcelJS from 'exceljs'; const workbook = new ExcelJS.Workbook(); await workbook.xlsx.readFile('runs/intake-workbook.xlsx'); const sheet = workbook.getWorksheet('Intake'); const rows = []; sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => rows.push({ rowNumber, values: row.values.slice(1, 4) })); console.log(JSON.stringify(rows, null, 2));"
+```
+
+The Excel target appends to an existing workbook. Use a fresh workbook path when
+you want rows 2 through 4 to map exactly to the three demo records.
+
 ## Combined Demo
 
 Run OpenEMR and Excel together only after each target has passed its individual
@@ -86,7 +158,8 @@ npm run dev -- run \
   --input data/demo/intake-records.json \
   --targets openemr,excel \
   --runs-dir runs \
-  --excel-workbook-path runs/intake-workbook.xlsx
+  --excel-workbook-path runs/intake-workbook.xlsx \
+  --synthetic-suffix auto
 ```
 
 ## Audit Review Commands
