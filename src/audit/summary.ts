@@ -41,10 +41,8 @@ export function renderSummary(input: SummaryInput): string {
     lines.push(`| ${target} | ${counts.succeeded ?? 0} | ${counts.exception ?? 0} | ${counts.skipped ?? 0} |`);
   }
 
-  appendAiExtractions(lines, input.details?.aiExtractions ?? []);
   appendIssues(lines, input.details?.issues ?? []);
-  appendOpenEmrSuccessEvidence(input.details, lines);
-  appendOpenEmrFieldMappings(lines, input.details?.fieldMappings ?? [], input.details?.aiExtractions ?? []);
+  appendOpenEmrRecordReviews(lines, input.details);
 
   lines.push("");
   return `${lines.join("\n")}\n`;
@@ -74,27 +72,6 @@ function pathInRun(runDir: string, path: string): string {
   return `${runDir.replace(/\/$/, "")}/${path}`;
 }
 
-function appendAiExtractions(lines: string[], aiExtractions: ReportAiExtraction[]): void {
-  if (aiExtractions.length === 0) return;
-
-  lines.push("", "## AI Source Extraction", "");
-  lines.push("| Record | Source Label | Normalized Field | Value | Confidence | Evidence |");
-  lines.push("| --- | --- | --- | --- | ---: | --- |");
-
-  for (const extraction of aiExtractions) {
-    for (const field of extraction.fields) {
-      lines.push(
-        `| ${cell(extraction.recordId)} | ${cell(field.sourceLabel ?? field.sourceField)} | ${cell(field.sourceField)} | ${cell(field.value)} | ${cell(field.confidence)} | ${cell(field.evidence)} |`,
-      );
-    }
-    for (const field of extraction.additionalFields) {
-      lines.push(
-        `| ${cell(extraction.recordId)} | ${cell(field.sourceLabel ?? field.sourceField)} | ${cell(field.sourceField)} | ${cell(field.value)} | ${cell(field.confidence)} | ${cell(field.evidence)} |`,
-      );
-    }
-  }
-}
-
 function appendIssues(lines: string[], issues: ReportIssue[]): void {
   lines.push("", "## Issues", "");
   if (issues.length === 0) {
@@ -113,37 +90,166 @@ function appendIssues(lines: string[], issues: ReportIssue[]): void {
   }
 }
 
-function appendOpenEmrSuccessEvidence(details: ReportDetails | undefined, lines: string[]): void {
+function appendOpenEmrRecordReviews(lines: string[], details: ReportDetails | undefined): void {
   if (!details) return;
 
-  const successfulEvidence = (details.targetEvidence ?? []).filter(
-    (evidence) => evidence.target === "openemr" && evidence.status === "succeeded" && evidence.screenshotPath,
-  );
-  if (successfulEvidence.length === 0) return;
+  const openEmrMappings = details.fieldMappings.filter((mapping) => mapping.target === "openemr");
+  const mappingsByRecord = groupByRecord(openEmrMappings);
+  const evidenceByRecord = groupEvidenceByRecord(details.targetEvidence.filter((evidence) => evidence.target === "openemr"));
+  const openEmrIssues = details.issues.filter((issue) => issue.target === "openemr" && issue.recordId);
+  const recordIds = orderedUnique([
+    ...details.targetEvidence.filter((evidence) => evidence.target === "openemr").map((evidence) => evidence.recordId),
+    ...openEmrMappings.map((mapping) => mapping.recordId),
+    ...openEmrIssues.map((issue) => issue.recordId ?? ""),
+  ]);
 
+  if (recordIds.length === 0) return;
+
+  const aiByRecord = new Map(details.aiExtractions.map((extraction) => [extraction.recordId, extraction]));
   const inputsByRecord = new Map((details.recordInputs ?? []).map((input) => [input.recordId, input]));
-  lines.push("", "## OpenEMR Success Evidence", "");
-  for (const evidence of successfulEvidence) {
-    const input = inputsByRecord.get(evidence.recordId);
-    lines.push(`### Record ${evidence.recordId}`, "");
-    if (evidence.fieldScreenshotPath) {
-      lines.push(`- Filled-field screenshot: ${cell(evidence.fieldScreenshotPath)}`);
-      lines.push("", `![OpenEMR filled fields screenshot for ${cell(evidence.recordId)}](${markdownImagePath(evidence.fieldScreenshotPath)})`, "");
-    }
-    lines.push(`- Proof screenshot: ${cell(evidence.screenshotPath)}`);
-    lines.push("", `![OpenEMR success screenshot for ${cell(evidence.recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
-    if (evidence.targetRecordId) {
-      lines.push(`- Target record: ${cell(evidence.targetRecordId)}`);
-    }
-    if (evidence.message) {
-      lines.push(`- Result: ${cell(evidence.message)}`);
-    }
+  lines.push("", "## OpenEMR Record Review", "");
+  for (const recordId of recordIds) {
+    const input = inputsByRecord.get(recordId);
+    const evidence = evidenceByRecord.get(recordId)?.[0];
+    const mappings = mappingsByRecord.get(recordId) ?? [];
+    const extraction = aiByRecord.get(recordId);
+
+    lines.push(`### Record ${recordId}`, "");
+    lines.push("#### Intake Input", "");
     if (input) {
       lines.push(`- Source format: ${cell(input.sourceFormat)}`, "", "```json", formatJson(input.rawInput), "```", "");
     } else {
-      lines.push("- Raw input record: not available", "");
+      lines.push("Raw input record: not available.", "");
+    }
+
+    if (evidence) {
+      lines.push("#### Screenshots", "");
+      if (evidence.fieldScreenshotPath) {
+        lines.push(`- Filled-field screenshot: ${cell(evidence.fieldScreenshotPath)}`);
+        lines.push("", `![OpenEMR filled fields screenshot for ${cell(recordId)}](${markdownImagePath(evidence.fieldScreenshotPath)})`, "");
+      }
+      if (evidence.screenshotPath) {
+        lines.push(`- Proof screenshot: ${cell(evidence.screenshotPath)}`);
+        lines.push("", `![OpenEMR success screenshot for ${cell(recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
+      }
+      if (evidence.targetRecordId) {
+        lines.push(`- Target record: ${cell(evidence.targetRecordId)}`);
+      }
+      if (evidence.message) {
+        lines.push(`- Result: ${cell(evidence.message)}`);
+      }
+      lines.push("");
+    }
+
+    const comparisonRows = openEmrComparisonRows(mappings, extraction);
+    if (comparisonRows.length > 0) {
+      lines.push("#### Intake to OpenEMR Comparison", "");
+      lines.push("| Intake Field | Intake Value | Intake Evidence | Normalized Field | OpenEMR Field | EMR Value | Action | Status | Selector or Error |");
+      lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+      for (const row of comparisonRows) {
+        lines.push(
+          `| ${cell(row.sourceLabel)} | ${cell(row.sourceValue)} | ${cell(row.evidence)} | ${cell(row.normalizedField)} | ${cell(row.targetField)} | ${cell(row.emrValue)} | ${cell(row.action)} | ${cell(row.status)} | ${cell(row.selectorOrError)} |`,
+        );
+      }
+      lines.push("");
     }
   }
+}
+
+interface OpenEmrComparisonRow {
+  sourceLabel: string;
+  sourceValue: string;
+  evidence: string;
+  normalizedField: string;
+  targetField: string;
+  emrValue: string;
+  action: string;
+  status: string;
+  selectorOrError: string;
+}
+
+function openEmrComparisonRows(mappings: ReportFieldMapping[], extraction: ReportAiExtraction | undefined): OpenEmrComparisonRow[] {
+  const extracted = extractionFieldLookup(extraction);
+  const mappedFields = new Set<string>();
+  const rows: OpenEmrComparisonRow[] = [];
+
+  for (const mapping of mappings) {
+    mappedFields.add(mapping.sourceField);
+    const source = extracted.get(mapping.sourceField) ?? {
+      sourceLabel: mapping.sourceField,
+      value: "",
+      evidence: "",
+    };
+    rows.push({
+      sourceLabel: source.sourceLabel,
+      sourceValue: source.value,
+      evidence: source.evidence,
+      normalizedField: mapping.sourceField,
+      targetField: mapping.targetField,
+      emrValue: mapping.normalizedValue,
+      action: mapping.action ?? "",
+      status: mapping.status,
+      selectorOrError: mapping.errorMessage ?? mapping.selectedSelector ?? "",
+    });
+  }
+
+  if (!extraction) return rows;
+
+  for (const field of [...extraction.fields, ...extraction.additionalFields]) {
+    if (mappedFields.has(field.sourceField)) {
+      continue;
+    }
+    rows.push({
+      sourceLabel: field.sourceLabel ?? field.sourceField,
+      sourceValue: field.value,
+      evidence: field.evidence ?? "",
+      normalizedField: field.sourceField,
+      targetField: "",
+      emrValue: "",
+      action: "",
+      status: "not mapped",
+      selectorOrError: "",
+    });
+  }
+
+  return rows;
+}
+
+function extractionFieldLookup(extraction: ReportAiExtraction | undefined): Map<string, { sourceLabel: string; value: string; evidence: string }> {
+  const lookup = new Map<string, { sourceLabel: string; value: string; evidence: string }>();
+  if (!extraction) return lookup;
+  for (const field of [...extraction.fields, ...extraction.additionalFields]) {
+    lookup.set(field.sourceField, {
+      sourceLabel: field.sourceLabel ?? field.sourceField,
+      value: field.value,
+      evidence: field.evidence ?? "",
+    });
+  }
+  return lookup;
+}
+
+function groupEvidenceByRecord<T extends { recordId: string }>(items: T[]): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const group = groups.get(item.recordId) ?? [];
+    group.push(item);
+    groups.set(item.recordId, group);
+  }
+  return groups;
+}
+
+function groupByRecord(mappings: ReportFieldMapping[]): Map<string, ReportFieldMapping[]> {
+  const groups = new Map<string, ReportFieldMapping[]>();
+  for (const mapping of mappings) {
+    const group = groups.get(mapping.recordId) ?? [];
+    group.push(mapping);
+    groups.set(mapping.recordId, group);
+  }
+  return groups;
+}
+
+function orderedUnique(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 function formatJson(value: unknown): string {
@@ -152,58 +258,6 @@ function formatJson(value: unknown): string {
 
 function markdownImagePath(path: string | undefined): string {
   return encodeURI(path ?? "").replace(/\(/g, "%28").replace(/\)/g, "%29");
-}
-
-function appendOpenEmrFieldMappings(
-  lines: string[],
-  fieldMappings: ReportFieldMapping[],
-  aiExtractions: ReportAiExtraction[],
-): void {
-  const openEmrMappings = fieldMappings.filter((mapping) => mapping.target === "openemr");
-  if (openEmrMappings.length === 0) return;
-
-  const sourceFields = sourceFieldLookup(aiExtractions);
-  lines.push("", "## Intake to OpenEMR Field Mapping", "");
-  for (const [recordId, mappings] of groupByRecord(openEmrMappings)) {
-    lines.push(`### Record ${recordId}`, "");
-    lines.push("| Intake Field | Intake Value | Intake Evidence | Normalized Field | OpenEMR Field | EMR Value | Action | Status | Selected Selector | Error |");
-    lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
-    for (const mapping of mappings) {
-      const source = sourceFields.get(`${recordId}\0${mapping.sourceField}`) ?? {
-        sourceLabel: mapping.sourceField,
-        value: "",
-        evidence: "",
-      };
-      lines.push(
-        `| ${cell(source.sourceLabel)} | ${cell(source.value)} | ${cell(source.evidence)} | ${cell(mapping.sourceField)} | ${cell(mapping.targetField)} | ${cell(mapping.normalizedValue)} | ${cell(mapping.action)} | ${cell(mapping.status)} | ${cell(mapping.selectedSelector)} | ${cell(mapping.errorMessage)} |`,
-      );
-    }
-    lines.push("");
-  }
-}
-
-function sourceFieldLookup(aiExtractions: ReportAiExtraction[]): Map<string, { sourceLabel: string; value: string; evidence: string }> {
-  const lookup = new Map<string, { sourceLabel: string; value: string; evidence: string }>();
-  for (const extraction of aiExtractions) {
-    for (const field of extraction.fields) {
-      lookup.set(`${extraction.recordId}\0${field.sourceField}`, {
-        sourceLabel: field.sourceLabel ?? field.sourceField,
-        value: field.value,
-        evidence: field.evidence ?? "",
-      });
-    }
-  }
-  return lookup;
-}
-
-function groupByRecord(mappings: ReportFieldMapping[]): Array<[string, ReportFieldMapping[]]> {
-  const groups = new Map<string, ReportFieldMapping[]>();
-  for (const mapping of mappings) {
-    const group = groups.get(mapping.recordId) ?? [];
-    group.push(mapping);
-    groups.set(mapping.recordId, group);
-  }
-  return [...groups.entries()];
 }
 
 function cell(value: unknown): string {

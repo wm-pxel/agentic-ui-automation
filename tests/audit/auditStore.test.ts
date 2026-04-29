@@ -415,7 +415,7 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("Close exceptions: 1");
   });
 
-  it("renders issues and OpenEMR field mappings in Markdown", () => {
+  it("renders OpenEMR record review with intake input, screenshots, and side-by-side field comparisons", () => {
     const summary = renderSummary({
       runId: "run-test",
       totalRecords: 1,
@@ -426,8 +426,30 @@ describe("FileAuditStore", () => {
       environmentExceptions: 0,
       closeExceptions: 0,
       details: {
-        recordInputs: [],
-        targetEvidence: [],
+        recordInputs: [
+          {
+            recordId: "demo-001",
+            sourceFormat: "json",
+            rawInput: {
+              intake_id: "demo-001",
+              patient: {
+                given_name: "Ava",
+                sex_at_birth: "female",
+              },
+            },
+          },
+        ],
+        targetEvidence: [
+          {
+            recordId: "demo-001",
+            target: "openemr",
+            status: "succeeded",
+            screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+            fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
+            targetRecordId: "openemr-demo-001",
+            message: "submitted OpenEMR patient form",
+          },
+        ],
         aiExtractions: [
           {
             recordId: "demo-001",
@@ -499,16 +521,23 @@ describe("FileAuditStore", () => {
     });
 
     expect(summary).toContain("## Issues");
-    expect(summary).toContain("## AI Source Extraction");
-    expect(summary).toContain("| demo-001 | given_name | firstName | Ava | 0.96 | Name: Ava Nguyen |");
     expect(summary).toContain("| demo-001 | openemr | target | verification_failed | OpenEMR still showed the new-patient form after save. | Review required fields. | screenshots/demo-001/openemr/after-save.png |");
-    expect(summary).toContain("## Intake to OpenEMR Field Mapping");
+    expect(summary).toContain("## OpenEMR Record Review");
     expect(summary).toContain("### Record demo-001");
+    expect(summary).toContain("#### Intake Input");
+    expect(summary).toContain("\"intake_id\": \"demo-001\"");
+    expect(summary).toContain("#### Screenshots");
+    expect(summary).toContain("![OpenEMR filled fields screenshot for demo-001](screenshots/demo-001/openemr/after-fill.png)");
+    expect(summary).toContain("![OpenEMR success screenshot for demo-001](screenshots/demo-001/openemr/after-save.png)");
+    expect(summary).toContain("#### Intake to OpenEMR Comparison");
     expect(summary).toContain("| sex_at_birth | female | sex_at_birth: female | sexOrGender | Birth Sex | Female | select | succeeded | select[name=\"form_sex\"] |");
     expect(summary).toContain("| province | IL | province: IL | state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
+    expect(summary).toContain("| given_name | Ava | Name: Ava Nguyen | firstName |  |  |  | not mapped |  |");
+    expect(summary).not.toContain("## AI Source Extraction");
+    expect(summary).not.toContain("## Intake to OpenEMR Field Mapping");
   });
 
-  it("renders OpenEMR success evidence with raw input records and proof screenshots", () => {
+  it("renders OpenEMR record review when only success evidence is available", () => {
     const summary = renderSummary({
       runId: "run-test",
       totalRecords: 1,
@@ -549,8 +578,9 @@ describe("FileAuditStore", () => {
       },
     });
 
-    expect(summary).toContain("## OpenEMR Success Evidence");
+    expect(summary).toContain("## OpenEMR Record Review");
     expect(summary).toContain("### Record demo-001");
+    expect(summary).toContain("#### Screenshots");
     expect(summary).toContain("- Filled-field screenshot: screenshots/demo-001/openemr/after-fill.png");
     expect(summary).toContain("![OpenEMR filled fields screenshot for demo-001](screenshots/demo-001/openemr/after-fill.png)");
     expect(summary).toContain("- Proof screenshot: screenshots/demo-001/openemr/after-save.png");
@@ -580,7 +610,7 @@ describe("FileAuditStore", () => {
     });
 
     expect(summary).toContain("## Issues\n\nNo issues recorded.");
-    expect(summary).not.toContain("## Intake to OpenEMR Field Mapping");
+    expect(summary).not.toContain("## OpenEMR Record Review");
   });
 
   it("renders target rows in deterministic order", () => {
