@@ -7,6 +7,20 @@ extract intake records, validates them deterministically, asks an agent driver t
 approve bounded UI actions, runs one or more target adapters, and writes a
 traceable audit package for each run.
 
+## Contents
+
+- [What It Demonstrates](#what-it-demonstrates)
+- [Current Status](#current-status)
+- [Quick Start](#quick-start)
+- [OpenEMR Smoke](#openemr-smoke)
+- [Excel Desktop Smoke](#excel-desktop-smoke)
+- [Combined Smoke](#combined-smoke)
+- [Audit Artifacts](#audit-artifacts)
+- [CLI](#cli)
+- [Development](#development)
+- [Project Layout](#project-layout)
+- [Keeping This Current](#keeping-this-current)
+
 ## What It Demonstrates
 
 - Last-mile UI automation when an API is unavailable or incomplete.
