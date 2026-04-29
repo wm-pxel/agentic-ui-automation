@@ -154,16 +154,20 @@ For each normalized valid source record, the OpenEMR adapter is expected to:
 9. Treat the record as successful only if OpenEMR no longer shows the
    new-patient create form.
 
-For the checked-in demo file, three records are intentionally invalid and stop in
-preflight validation. A clean OpenEMR target pass therefore means:
+For the checked-in demo file, four records are valid and three records are
+intentionally invalid and stop in preflight validation. One valid record is
+deliberately written with uncertain source wording so the AI confidence column in
+`summary.md` includes lower-confidence examples. A clean OpenEMR target pass
+therefore means:
 
 - `preflightExceptions` is `3`.
-- `targetCounts.openemr.succeeded` is `3`.
+- `targetCounts.openemr.succeeded` is `4`.
 - `targetCounts.openemr.exception` is `0`.
 - `exceptions/` only contains the three intentional validation exceptions.
 - Each valid record has `before-navigation`, `after-fill`, and `after-save`
   screenshots.
-- `summary.md` and `report.json` include an OpenEMR field-mapping section. On
+- `summary.md` includes an OpenEMR record review with raw intake input,
+  filled-field screenshots, AI confidence, and source-to-OpenEMR comparisons. On
   public demo layouts, optional contact fields that are unavailable may appear as
   failed mappings without causing a target exception.
 
@@ -192,11 +196,11 @@ Manual verification:
    new-patient create form.
 5. Log in to the same OpenEMR environment used by the run.
 6. Open the patient search or finder screen.
-7. Search for the three generated last names from `normalized-records.json`.
+7. Search for the four generated last names from `normalized-records.json`.
 8. Open each patient record and confirm the demographic and contact fields match
    `normalized-records.json` for the fields present in that demo layout. Use the
-   OpenEMR field-mapping table in `summary.md` to see which selectors were filled
-   and which optional fields were unavailable.
+   OpenEMR record review in `summary.md` to see source values, confidence,
+   selectors, and which optional fields were unavailable.
 9. Confirm the audit log includes an `after-save` event for each valid record:
 
    ```sh

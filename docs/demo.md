@@ -96,14 +96,15 @@ For each valid normalized record, the target should:
 For `data/demo/intake-records.json`, the expected clean OpenEMR target result is:
 
 - `preflightExceptions` is `3`.
-- `targetCounts.openemr.succeeded` is `3`.
+- `targetCounts.openemr.succeeded` is `4`.
 - `targetCounts.openemr.exception` is `0`.
 - `exceptions/` only contains the intentional validation exceptions.
 - Each valid record has three OpenEMR screenshots:
   `before-navigation.png`, `after-fill.png`, and `after-save.png`.
-- `summary.md` and `report.json` include OpenEMR field mappings. Optional
-  contact fields that are unavailable in a public demo layout may be reported as
-  failed mappings without failing the target record.
+- `summary.md` includes an OpenEMR record review with raw intake input, filled
+  screenshots, AI confidence, and source-to-OpenEMR comparisons. Optional contact
+  fields that are unavailable in a public demo layout may be reported as failed
+  mappings without failing the target record.
 
 The public OpenEMR demo keeps submitted patients for a while. If you rerun the
 same input without `--synthetic-suffix`, duplicate patient detection can make the

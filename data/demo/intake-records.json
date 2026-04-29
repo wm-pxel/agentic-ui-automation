@@ -56,6 +56,18 @@
     "prefers": "text"
   },
   {
+    "packet_ref": "demo-low-confidence",
+    "about the person": "Patient: Riley Kim",
+    "date noted as": "06/09/1984",
+    "sex marker": "F",
+    "phone-ish": "patient callback: 312-555-0164, written under mobile",
+    "reply inbox": "riley.kim@example.test",
+    "mail goes to": "318 West Erie Street / Chicago / IL / 60654",
+    "coverage scribble": "Blue Cross Blue Shield of Illinois; card id RKM7742",
+    "why coming in": "knee pain after weekend run",
+    "best contact guess": "text is probably best"
+  },
+  {
     "record": "demo-missing-dob",
     "name": {
       "first": "Noah",
