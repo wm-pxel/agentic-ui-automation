@@ -102,6 +102,7 @@ describe("FileAuditStore", () => {
       target: "openemr",
       status: "succeeded",
       screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+      fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
       targetRecordId: "openemr-demo-001",
       message: "submitted OpenEMR patient form",
     });
@@ -160,6 +161,7 @@ describe("FileAuditStore", () => {
           target: "openemr",
           status: "succeeded",
           screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+          fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
           targetRecordId: "openemr-demo-001",
           message: "submitted OpenEMR patient form",
         },
@@ -229,6 +231,7 @@ describe("FileAuditStore", () => {
       target: "openemr",
       status: "succeeded",
       screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+      fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
     });
   });
 
@@ -535,6 +538,7 @@ describe("FileAuditStore", () => {
             target: "openemr",
             status: "succeeded",
             screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+            fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
             targetRecordId: "openemr-demo-001",
             message: "submitted OpenEMR patient form",
           },
@@ -547,6 +551,8 @@ describe("FileAuditStore", () => {
 
     expect(summary).toContain("## OpenEMR Success Evidence");
     expect(summary).toContain("### Record demo-001");
+    expect(summary).toContain("- Filled-field screenshot: screenshots/demo-001/openemr/after-fill.png");
+    expect(summary).toContain("![OpenEMR filled fields screenshot for demo-001](screenshots/demo-001/openemr/after-fill.png)");
     expect(summary).toContain("- Proof screenshot: screenshots/demo-001/openemr/after-save.png");
     expect(summary).toContain("![OpenEMR success screenshot for demo-001](screenshots/demo-001/openemr/after-save.png)");
     expect(summary).toContain("- Target record: openemr-demo-001");

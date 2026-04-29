@@ -126,6 +126,10 @@ function appendOpenEmrSuccessEvidence(details: ReportDetails | undefined, lines:
   for (const evidence of successfulEvidence) {
     const input = inputsByRecord.get(evidence.recordId);
     lines.push(`### Record ${evidence.recordId}`, "");
+    if (evidence.fieldScreenshotPath) {
+      lines.push(`- Filled-field screenshot: ${cell(evidence.fieldScreenshotPath)}`);
+      lines.push("", `![OpenEMR filled fields screenshot for ${cell(evidence.recordId)}](${markdownImagePath(evidence.fieldScreenshotPath)})`, "");
+    }
     lines.push(`- Proof screenshot: ${cell(evidence.screenshotPath)}`);
     lines.push("", `![OpenEMR success screenshot for ${cell(evidence.recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
     if (evidence.targetRecordId) {

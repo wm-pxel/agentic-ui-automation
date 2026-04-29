@@ -278,6 +278,7 @@ export class OpenEmrAdapter implements TargetAdapter {
         target: this.name,
         status: "succeeded",
         screenshotPath: afterPath,
+        fieldScreenshotPath: filledPath,
         targetRecordId,
         message: "submitted OpenEMR patient form",
       });

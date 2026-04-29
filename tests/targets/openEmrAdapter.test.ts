@@ -425,6 +425,7 @@ describe("OpenEmrAdapter", () => {
         target: "openemr",
         status: "succeeded",
         screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+        fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
         targetRecordId: "openemr-demo-001",
       }),
     );

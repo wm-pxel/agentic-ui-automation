@@ -72,6 +72,7 @@ export interface ReportTargetEvidence {
   target: TargetName;
   status: TargetTaskStatus;
   screenshotPath?: string;
+  fieldScreenshotPath?: string;
   targetRecordId?: string;
   message?: string;
 }
@@ -308,6 +309,7 @@ function sameTargetEvidence(a: ReportTargetEvidence, b: ReportTargetEvidence): b
     a.target === b.target &&
     a.status === b.status &&
     a.screenshotPath === b.screenshotPath &&
+    a.fieldScreenshotPath === b.fieldScreenshotPath &&
     a.targetRecordId === b.targetRecordId &&
     a.message === b.message
   );
