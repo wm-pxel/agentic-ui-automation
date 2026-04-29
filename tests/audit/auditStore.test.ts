@@ -336,11 +336,20 @@ describe("FileAuditStore", () => {
 
     expect(summary).toContain("# Workflow Run run-test");
     expect(summary).toContain("## Artifacts");
-    expect(summary).toContain("| Run directory | runs/run-test |");
     expect(summary).toContain("| Source input | data/demo/intake-records.json |");
     expect(summary).toContain("| Normalized records | runs/run-test/input/normalized-records.json |");
+    expect(summary).toContain("| Exceptions | runs/run-test/exceptions/ |");
+    expect(summary).toContain("| Screenshots | runs/run-test/screenshots/ |");
     expect(summary).toContain("| Event log | runs/run-test/events.jsonl |");
     expect(summary).toContain("| Structured report | runs/run-test/report.json |");
+    expect(summary).not.toContain("| Run directory |");
+    expect(summary).not.toContain("| Summary |");
+    expect(summary).not.toContain("| Run metadata |");
+    expect(summary.indexOf("| Source input |")).toBeLessThan(summary.indexOf("| Normalized records |"));
+    expect(summary.indexOf("| Normalized records |")).toBeLessThan(summary.indexOf("| Exceptions |"));
+    expect(summary.indexOf("| Exceptions |")).toBeLessThan(summary.indexOf("| Screenshots |"));
+    expect(summary.indexOf("| Screenshots |")).toBeLessThan(summary.indexOf("| Event log |"));
+    expect(summary.indexOf("| Event log |")).toBeLessThan(summary.indexOf("| Structured report |"));
     expect(summary).toContain("| openemr | 1 | 1 | 0 |");
     expect(summary).toContain("Preflight exceptions: 1");
     expect(summary).toContain("Environment exceptions: 2");

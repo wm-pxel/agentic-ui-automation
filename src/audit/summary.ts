@@ -51,18 +51,15 @@ function appendArtifacts(lines: string[], input: SummaryInput): void {
   lines.push("## Artifacts", "");
   lines.push("| Artifact | Path |");
   lines.push("| --- | --- |");
+  if (input.sourceInputPath) {
+    lines.push(`| Source input | ${cell(input.sourceInputPath)} |`);
+  }
   if (runDir) {
-    lines.push(`| Run directory | ${cell(runDir)} |`);
-    lines.push(`| Summary | ${cell(pathInRun(runDir, "summary.md"))} |`);
-    lines.push(`| Run metadata | ${cell(pathInRun(runDir, "run.json"))} |`);
-    lines.push(`| Structured report | ${cell(pathInRun(runDir, "report.json"))} |`);
-    lines.push(`| Event log | ${cell(pathInRun(runDir, "events.jsonl"))} |`);
     lines.push(`| Normalized records | ${cell(pathInRun(runDir, "input/normalized-records.json"))} |`);
     lines.push(`| Exceptions | ${cell(pathInRun(runDir, "exceptions/"))} |`);
     lines.push(`| Screenshots | ${cell(pathInRun(runDir, "screenshots/"))} |`);
-  }
-  if (input.sourceInputPath) {
-    lines.push(`| Source input | ${cell(input.sourceInputPath)} |`);
+    lines.push(`| Event log | ${cell(pathInRun(runDir, "events.jsonl"))} |`);
+    lines.push(`| Structured report | ${cell(pathInRun(runDir, "report.json"))} |`);
   }
   lines.push("");
 }
