@@ -38,7 +38,10 @@ the README and tests are updated in the same change:
 ## Documentation
 
 Keep `README.md` and `docs/demo.md` current when CLI behavior, target behavior,
-audit artifacts, OpenEMR reset strategy, or manual validation steps change.
+audit artifacts, OpenEMR reset strategy, or manual validation steps change. When
+workflow architecture or data flow changes, also update the `README.md`
+Architecture and Data Flow sections so they reflect the current parser,
+orchestrator, agent, target adapter, audit artifact, and technology boundaries.
 
 ## Verification
 

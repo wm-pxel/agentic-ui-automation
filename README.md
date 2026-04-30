@@ -11,6 +11,8 @@ traceable audit package for each run.
 
 - [What It Demonstrates](#what-it-demonstrates)
 - [Current Status](#current-status)
+- [Architecture](#architecture)
+- [Data Flow](#data-flow)
 - [Quick Start](#quick-start)
 - [Desktop Intake App](#desktop-intake-app)
 - [Handoff Watcher](#handoff-watcher)
@@ -51,6 +53,88 @@ Use only synthetic data with this repository. The checked-in records under
   optional import, and exports CSV handoff files.
 - Handoff watcher: separate CLI command processes exported files and runs the
   existing audited workflow.
+
+## Architecture
+
+The workflow is a TypeScript CLI that turns synthetic intake source documents
+into audited UI data-entry runs. It uses OpenAI for optional source parsing and
+agent decisions, deterministic TypeScript validation for safety gates,
+Playwright for OpenEMR browser automation, and macOS automation plus ExcelJS for
+Excel workbook setup and desktop entry.
+
+| Layer | Technology | Role |
+| --- | --- | --- |
+| Runtime and CLI | ![Node.js][node-badge] ![TypeScript][typescript-badge] | Runs the CLI, orchestrator, target adapters, and audit writers. |
+| AI parsing and agent decisions | ![OpenAI][openai-badge] | Extracts variable intake documents and optionally approves bounded UI actions. |
+| Validation contract | ![Zod][zod-badge] | Defines schemas for CLI config, records, agent decisions, and target results. |
+| Web target | ![Playwright][playwright-badge] ![OpenEMR][openemr-badge] | Automates synthetic patient entry in browser-based OpenEMR demo environments. |
+| Desktop target | ![Microsoft Excel][excel-badge] ![macOS][macos-badge] | Creates or opens intake workbooks and enters normalized records through Excel. |
+| Audit and verification | ![JSON][json-badge] ![Markdown][markdown-badge] ![Vitest][vitest-badge] | Writes run artifacts, reports, event logs, screenshots, and test coverage. |
+
+[node-badge]: https://img.shields.io/badge/Node.js-5FA04E?logo=nodedotjs&logoColor=white
+[typescript-badge]: https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white
+[openai-badge]: https://img.shields.io/badge/OpenAI-412991?logo=openai&logoColor=white
+[zod-badge]: https://img.shields.io/badge/Zod-3E67B1?logo=zod&logoColor=white
+[playwright-badge]: https://img.shields.io/badge/Playwright-2EAD33?logo=playwright&logoColor=white
+[openemr-badge]: https://img.shields.io/badge/OpenEMR-698CCB
+[excel-badge]: https://img.shields.io/badge/Microsoft%20Excel-217346?logo=microsoftexcel&logoColor=white
+[macos-badge]: https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white
+[json-badge]: https://img.shields.io/badge/JSON-000000?logo=json&logoColor=white
+[markdown-badge]: https://img.shields.io/badge/Markdown-000000?logo=markdown&logoColor=white
+[vitest-badge]: https://img.shields.io/badge/Vitest-6E9F18?logo=vitest&logoColor=white
+
+```mermaid
+flowchart LR
+  Source["Synthetic source documents"] --> CLI["TypeScript CLI"]
+  CLI --> Parser["Deterministic or OpenAI parser"]
+  Parser --> Orchestrator["Workflow orchestrator"]
+  Orchestrator --> Validation["Deterministic validation"]
+  Orchestrator --> Agent["Scripted or OpenAI UI agent"]
+  Orchestrator --> Targets["Target adapters"]
+  Targets --> OpenEMR["OpenEMR via Playwright"]
+  Targets --> Excel["Excel via macOS automation"]
+  Orchestrator --> Audit["File audit package"]
+```
+
+## Data Flow
+
+```mermaid
+flowchart TD
+  Source["Source intake file<br/>JSON, CSV, TXT, PDF, or DOCX"] --> Parser{"Parser"}
+  Parser -->|deterministic| RawRecords["Raw intake records<br/>JSON, CSV, or TXT"]
+  Parser -->|openai| AiRecords["AI-extracted raw intake records<br/>with confidence and evidence"]
+  RawRecords --> Suffix["Optional synthetic suffix"]
+  AiRecords --> Suffix
+  Suffix --> Start["Start run and create audit directories"]
+
+  Start --> Prepare["Prepare selected targets"]
+  Prepare --> Ready{"Target ready?"}
+  Ready -->|no| EnvException["Environment exception<br/>exceptions/*.json + report issue"]
+  Ready -->|yes| RecordLoop["For each source record"]
+
+  RecordLoop --> CaptureInput["Write raw record input<br/>and AI extraction details"]
+  CaptureInput --> Validate["Validate and normalize"]
+  Validate -->|invalid| PreflightException["Preflight exception<br/>events + exceptions/*.json"]
+  Validate -->|valid| Normalized["Normalized record<br/>input/normalized-records.json"]
+
+  Normalized --> TargetLoop["Run each ready target adapter"]
+  TargetLoop --> AgentDecision["Agent decision<br/>scripted or OpenAI"]
+  AgentDecision --> UiAction["Bounded UI action<br/>Fake, OpenEMR, or Excel"]
+  UiAction --> Evidence["Screenshots, events,<br/>field mappings, target evidence"]
+  Evidence --> TargetResult{"Target result"}
+  TargetResult -->|succeeded or skipped| Counts["Update target counts"]
+  TargetResult -->|exception| TargetException["Target exception<br/>events + exceptions/*.json"]
+
+  EnvException --> Reports["Finalize reports"]
+  PreflightException --> Reports
+  Counts --> Reports
+  TargetException --> Reports
+  Reports --> AuditPackage["run.json, report.json,<br/>summary.md, executive-summary.md,<br/>events.jsonl"]
+```
+
+The data flow converts source documents into raw intake records, applies
+deterministic validation before target entry, records all successful and
+exceptional paths, and finishes with the audit contract under `runs/<run-id>/`.
 
 ## Quick Start
 
