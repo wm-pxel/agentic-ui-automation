@@ -15,8 +15,6 @@ import { OpenAiIntakeParser } from "./parsing/aiIntakeParser.js";
 import { loadSourceRecords } from "./parsing/loadRecords.js";
 import { applySyntheticSuffix } from "./parsing/syntheticRecords.js";
 import { runWorkflow } from "./orchestrator/runWorkflow.js";
-import { ExcelAdapter } from "./targets/excel/excelAdapter.js";
-import { MacExcelPort } from "./targets/excel/macExcelPort.js";
 import { OpenEmrAdapter } from "./targets/openemr/openEmrAdapter.js";
 import { defaultIntakeInbox } from "./handoff/intakeHandoff.js";
 import { processReadyIntakeFiles, watchIntakeInbox, type IntakeWatchJobResult } from "./watcher/intakeWatcher.js";
@@ -37,7 +35,6 @@ interface RunCommandOptions {
   agent?: CliRunConfig["agent"];
   parser?: CliRunConfig["parser"];
   parserModel?: string;
-  excelWorkbookPath?: string;
   syntheticSuffix?: string;
 }
 
@@ -46,7 +43,6 @@ interface WatchCommandOptions {
   targets: string;
   runsDir?: string;
   agent?: CliRunConfig["agent"];
-  excelWorkbookPath?: string;
   syntheticSuffix?: string;
   once?: boolean;
 }
@@ -102,7 +98,6 @@ function createProgram(io: Required<CliIo>): Command {
     .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
     .addOption(new Option("--parser <parser>", "Input parser to use.").choices(["openai", "deterministic"]))
     .option("--parser-model <model>", "OpenAI model to use for AI source parsing.")
-    .option("--excel-workbook-path <path>", "Workbook path for the Excel target.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .action(async (options: RunCommandOptions) => {
       await runCommand(options, io.stdout);
@@ -115,7 +110,6 @@ function createProgram(io: Required<CliIo>): Command {
     .option("--targets <targets>", "Comma-separated target adapters to run.", "openemr")
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
     .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
-    .option("--excel-workbook-path <path>", "Workbook path for the Excel target.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .option("--once", "Process currently ready files once and exit.")
     .action(async (options: WatchCommandOptions) => {
@@ -146,7 +140,6 @@ async function watchCommand(options: WatchCommandOptions, stdout: CliWritable): 
     runsDir: options.runsDir,
     agent: options.agent,
     parser: "deterministic",
-    excelWorkbookPath: options.excelWorkbookPath,
     syntheticSuffix: options.syntheticSuffix,
   });
   const inbox = options.inbox ?? defaultIntakeInbox();
@@ -211,8 +204,6 @@ function buildAdapters(config: CliRunConfig): TargetAdapter[] {
         return new FakeAdapter("success");
       case "openemr":
         return new OpenEmrAdapter(config.openEmr);
-      case "excel":
-        return new ExcelAdapter({ workbookPath: config.excelWorkbookPath, port: new MacExcelPort() });
     }
   });
 }

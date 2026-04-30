@@ -3,7 +3,6 @@ import { buildRunConfig, parseTargets } from "../src/config.js";
 
 const ENV_KEYS = [
   "RUNS_DIR",
-  "EXCEL_WORKBOOK_PATH",
   "OPENEMR_BASE_URL",
   "OPENEMR_USERNAME",
   "OPENEMR_PASSWORD",
@@ -30,11 +29,11 @@ afterEach(() => {
 
 describe("parseTargets", () => {
   it("parses comma-separated target names", () => {
-    expect(parseTargets("fake,openemr,excel")).toEqual(["fake", "openemr", "excel"]);
+    expect(parseTargets("fake,openemr")).toEqual(["fake", "openemr"]);
   });
 
   it("trims whitespace around target names", () => {
-    expect(parseTargets(" fake, openemr , excel ")).toEqual(["fake", "openemr", "excel"]);
+    expect(parseTargets(" fake, openemr ")).toEqual(["fake", "openemr"]);
   });
 
   it("throws for invalid target names", () => {
@@ -42,7 +41,7 @@ describe("parseTargets", () => {
   });
 
   it("throws for empty target segments", () => {
-    expect(() => parseTargets("fake,,excel")).toThrow();
+    expect(() => parseTargets("fake,,openemr")).toThrow();
   });
 });
 
@@ -52,7 +51,6 @@ describe("buildRunConfig", () => {
       input: "data/demo/intake-records.json",
       targets: "fake",
       runsDir: "runs",
-      excelWorkbookPath: "runs/intake-workbook.xlsx",
     });
 
     expect(config).toMatchObject({
@@ -61,7 +59,6 @@ describe("buildRunConfig", () => {
       runsDir: "runs",
       agent: "scripted",
       parser: "openai",
-      excelWorkbookPath: "runs/intake-workbook.xlsx",
     });
   });
 
@@ -82,12 +79,10 @@ describe("buildRunConfig", () => {
     });
 
     expect(config.runsDir).toBe("runs");
-    expect(config.excelWorkbookPath).toBe("runs/intake-workbook.xlsx");
   });
 
   it("uses environment defaults when options omit paths", () => {
     process.env.RUNS_DIR = "tmp/runs";
-    process.env.EXCEL_WORKBOOK_PATH = "tmp/workbook.xlsx";
 
     const config = buildRunConfig({
       input: "data/demo/intake-records.json",
@@ -95,7 +90,6 @@ describe("buildRunConfig", () => {
     });
 
     expect(config.runsDir).toBe("tmp/runs");
-    expect(config.excelWorkbookPath).toBe("tmp/workbook.xlsx");
   });
 
   it("copies OpenEMR environment variables into the config", () => {

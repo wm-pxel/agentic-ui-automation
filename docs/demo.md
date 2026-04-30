@@ -40,7 +40,7 @@ npm run desktop:dev
 ```
 
 Use the app to select export-ready records and export them. The handoff is a CSV
-file so it can be opened directly in Excel or Numbers:
+file so it can be opened directly in a spreadsheet app:
 
 ```text
 ~/Downloads/agentic-ui-intake/*.ready.csv
@@ -154,84 +154,6 @@ The public OpenEMR demo keeps submitted patients for a while. If you rerun the
 same input without `--synthetic-suffix`, duplicate patient detection can make the
 run fail correctly. Use `runs/<run-id>/input/normalized-records.json` to see the
 generated names and identifiers to search for during manual validation.
-
-## Excel Desktop Smoke Demo
-
-The Excel smoke run drives Microsoft Excel on macOS and writes synthetic records to
-an intake workbook.
-
-Prerequisites:
-
-- Microsoft Excel is installed and licensed.
-- macOS Accessibility permissions allow the terminal or runner app to control Excel
-  and System Events.
-- macOS Screen Recording permission allows the terminal or runner app to capture
-  screenshots for audit artifacts.
-- Close existing dirty workbooks before the smoke run, or use a fresh workbook path
-  so the automation is not blocked by save prompts or workbook focus ambiguity.
-
-```sh
-npm run dev -- run \
-  --input data/demo/intake-records-normalized.json \
-  --targets excel \
-  --runs-dir runs \
-  --excel-workbook-path runs/intake-workbook.xlsx \
-  --parser deterministic
-```
-
-### Excel Success Criteria
-
-The Excel target uses Microsoft Excel as the desktop intake system. For each
-valid source record, it should:
-
-1. Create or reuse the workbook at `--excel-workbook-path`.
-2. Create or reuse the `Intake` worksheet with the fixed intake columns.
-3. Open the workbook in Excel.
-4. Capture a `before-entry.png` screenshot.
-5. Ask the agent to approve the `paste-row` action.
-6. Paste one normalized tab-separated row into the first empty row.
-7. Capture an `after-entry.png` screenshot.
-8. Save the workbook when the target closes.
-
-A clean Excel smoke run with `data/demo/intake-records-normalized.json` means:
-
-- `preflightExceptions` is `3`.
-- `targetCounts.excel.succeeded` is `3`.
-- `targetCounts.excel.exception` is `0`.
-- `exceptions/` only contains the intentional validation exceptions.
-- A fresh workbook has an `Intake` sheet with the header row and `demo-001`,
-  `demo-002`, and `demo-003` in rows 2 through 4.
-- Each valid record has two Excel screenshots: `before-entry.png` and
-  `after-entry.png`.
-- `events.jsonl` has one `paste` event per valid record, including the row
-  number used in Excel.
-
-Open the workbook directly, or inspect it from the command line:
-
-```sh
-node --input-type=module -e "import ExcelJS from 'exceljs'; const workbook = new ExcelJS.Workbook(); await workbook.xlsx.readFile('runs/intake-workbook.xlsx'); const sheet = workbook.getWorksheet('Intake'); const rows = []; sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => rows.push({ rowNumber, values: row.values.slice(1, 4) })); console.log(JSON.stringify(rows, null, 2));"
-```
-
-The Excel target appends to an existing workbook. Use a fresh workbook path when
-you want rows 2 through 4 to map exactly to the three demo records.
-
-## Combined Demo
-
-Run OpenEMR and Excel together only after each target has passed its individual
-smoke run in the current environment. The same synthetic-data-only rule applies.
-
-```sh
-set -a
-. ./.env
-set +a
-npm run dev -- run \
-  --input data/demo/intake-records-normalized.json \
-  --targets openemr,excel \
-  --runs-dir runs \
-  --excel-workbook-path runs/intake-workbook.xlsx \
-  --synthetic-suffix auto \
-  --parser deterministic
-```
 
 ## Audit Review Commands
 

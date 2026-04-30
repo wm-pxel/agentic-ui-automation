@@ -6,7 +6,7 @@ import type {
   ReportIssue,
 } from "./auditStore.js";
 
-const TARGET_ORDER: TargetName[] = ["openemr", "excel", "fake"];
+const TARGET_ORDER: TargetName[] = ["openemr", "fake"];
 
 export interface SummaryInput {
   runId: string;

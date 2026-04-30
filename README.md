@@ -17,8 +17,6 @@ traceable audit package for each run.
 - [Desktop Intake App](#desktop-intake-app)
 - [Handoff Watcher](#handoff-watcher)
 - [OpenEMR Smoke](#openemr-smoke)
-- [Excel Desktop Smoke](#excel-desktop-smoke)
-- [Combined Smoke](#combined-smoke)
 - [Audit Artifacts](#audit-artifacts)
 - [CLI](#cli)
 - [Development](#development)
@@ -34,9 +32,9 @@ traceable audit package for each run.
 - Structured exception handling instead of silent target failures.
 - Audit evidence for every run: screenshots, event logs, normalized input,
   exception JSON, run metadata, a Markdown summary, and structured report JSON.
-- Two target styles:
+- Target adapters for audited EMR entry:
   - Web app: OpenEMR through Playwright.
-  - Desktop app: Microsoft Excel on macOS.
+  - Fake target: deterministic local smoke target for orchestration and audit.
 
 Use only synthetic data with this repository. The checked-in records under
 `data/demo/` are intentionally synthetic.
@@ -45,8 +43,6 @@ Use only synthetic data with this repository. The checked-in records under
 
 - Core workflow: implemented and covered by tests.
 - Fake target: deterministic local smoke target for orchestration and audit.
-- Excel desktop target: smoke-tested on macOS after Accessibility and Screen
-  Recording permissions were granted.
 - OpenEMR web target: adapter and tests are implemented; live smoke requires a
   reachable synthetic/demo OpenEMR instance and current credentials.
 - Desktop intake app: Electron shell opens with seeded synthetic records, supports
@@ -59,8 +55,8 @@ Use only synthetic data with this repository. The checked-in records under
 The workflow is a TypeScript CLI that turns synthetic intake source documents
 into audited UI data-entry runs. It uses OpenAI for optional source parsing and
 agent decisions, deterministic TypeScript validation for safety gates,
-Playwright for OpenEMR browser automation, and macOS automation plus ExcelJS for
-Excel workbook setup and desktop entry.
+Playwright for OpenEMR browser automation, and Electron for the local intake
+queue and CSV handoff app.
 
 | Layer | Technology | Role |
 | --- | --- | --- |
@@ -68,7 +64,7 @@ Excel workbook setup and desktop entry.
 | AI parsing and agent decisions | ![OpenAI][openai-badge] | Extracts variable intake documents and optionally approves bounded UI actions. |
 | Validation contract | ![Zod][zod-badge] | Defines schemas for CLI config, records, agent decisions, and target results. |
 | Web target | ![Playwright][playwright-badge] ![OpenEMR][openemr-badge] | Automates synthetic patient entry in browser-based OpenEMR demo environments. |
-| Desktop target | ![Microsoft Excel][excel-badge] ![macOS][macos-badge] | Creates or opens intake workbooks and enters normalized records through Excel. |
+| Desktop intake app | Electron | Reviews seeded or imported synthetic intake records and exports CSV handoff files. |
 | Audit and verification | ![JSON][json-badge] ![Markdown][markdown-badge] ![Vitest][vitest-badge] | Writes run artifacts, reports, event logs, screenshots, and test coverage. |
 
 [node-badge]: https://img.shields.io/badge/Node.js-5FA04E?logo=nodedotjs&logoColor=white
@@ -77,8 +73,6 @@ Excel workbook setup and desktop entry.
 [zod-badge]: https://img.shields.io/badge/Zod-3E67B1?logo=zod&logoColor=white
 [playwright-badge]: https://img.shields.io/badge/Playwright-2EAD33?logo=playwright&logoColor=white
 [openemr-badge]: https://img.shields.io/badge/OpenEMR-698CCB
-[excel-badge]: https://img.shields.io/badge/Microsoft%20Excel-217346?logo=microsoftexcel&logoColor=white
-[macos-badge]: https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white
 [json-badge]: https://img.shields.io/badge/JSON-000000?logo=json&logoColor=white
 [markdown-badge]: https://img.shields.io/badge/Markdown-000000?logo=markdown&logoColor=white
 [vitest-badge]: https://img.shields.io/badge/Vitest-6E9F18?logo=vitest&logoColor=white
@@ -92,7 +86,8 @@ flowchart LR
   Orchestrator --> Agent["Scripted or OpenAI UI agent"]
   Orchestrator --> Targets["Target adapters"]
   Targets --> OpenEMR["OpenEMR via Playwright"]
-  Targets --> Excel["Excel via macOS automation"]
+  CLI --> DesktopApp["Electron intake app"]
+  DesktopApp --> Handoff["CSV handoff files"]
   Orchestrator --> Audit["File audit package"]
 ```
 
@@ -119,7 +114,7 @@ flowchart TD
 
   Normalized --> TargetLoop["Run each ready target adapter"]
   TargetLoop --> AgentDecision["Agent decision<br/>scripted or OpenAI"]
-  AgentDecision --> UiAction["Bounded UI action<br/>Fake, OpenEMR, or Excel"]
+  AgentDecision --> UiAction["Bounded UI action<br/>Fake or OpenEMR"]
   UiAction --> Evidence["Screenshots, events,<br/>field mappings, target evidence"]
   Evidence --> TargetResult{"Target result"}
   TargetResult -->|succeeded or skipped| Counts["Update target counts"]
@@ -179,7 +174,7 @@ Export writes selected export-ready records to:
 ~/Downloads/agentic-ui-intake/*.ready.csv
 ```
 
-The CSV is meant to be easy to inspect in Excel or Numbers. The app does not run
+The CSV is meant to be easy to inspect in a spreadsheet app. The app does not run
 OpenEMR automation directly.
 
 ## Handoff Watcher
@@ -354,122 +349,6 @@ The public OpenEMR demo keeps data for a while. If you run without
 exceptions. Use `--synthetic-suffix auto` when you need a clean end-to-end
 OpenEMR success run.
 
-## Excel Desktop Smoke
-
-Prerequisites:
-
-- Microsoft Excel is installed and licensed.
-- The terminal or runner app has macOS Accessibility permission.
-- The terminal or runner app has macOS Screen Recording permission.
-- Existing dirty Excel workbooks are closed, or a fresh workbook path is used.
-
-Run:
-
-```sh
-npm run dev -- run \
-  --input data/demo/intake-records-normalized.json \
-  --targets excel \
-  --runs-dir runs \
-  --excel-workbook-path runs/intake-workbook.xlsx \
-  --parser deterministic
-```
-
-Expected target result:
-
-- `targetCounts.excel.succeeded` is `3`.
-- `targetCounts.excel.exception` is `0`.
-- The workbook contains rows for `demo-001`, `demo-002`, and `demo-003`.
-- Six screenshots are written: before and after each valid record.
-
-### What The Excel Target Does
-
-For each normalized valid source record, the Excel adapter is expected to:
-
-1. Create the workbook at `--excel-workbook-path` if it does not exist.
-2. Create or reuse an `Intake` worksheet with the fixed intake columns.
-3. Open the workbook in Microsoft Excel.
-4. Determine the first empty row before starting desktop entry.
-5. Capture a `before-entry` screenshot.
-6. Ask the agent to approve the `paste-row` action from the current Excel screen.
-7. Paste the normalized record as one tab-separated row into Excel.
-8. Capture an `after-entry` screenshot.
-9. Log the row number, for example `pasted record into Excel row 2`.
-10. Save the workbook when the Excel target closes.
-
-The `Intake` worksheet columns are:
-
-```text
-Source Record ID, First Name, Last Name, Date of Birth, Sex/Gender, Phone,
-Email, Street Address, City, State, ZIP, Insurance Payer, Member ID, Group ID,
-Reason for Visit, Preferred Contact, Notes
-```
-
-For `data/demo/intake-records-normalized.json`, three records are intentionally
-invalid and stop in preflight validation. A clean Excel target pass therefore
-means:
-
-- `preflightExceptions` is `3`.
-- `targetCounts.excel.succeeded` is `3`.
-- `targetCounts.excel.exception` is `0`.
-- `exceptions/` only contains the three intentional validation exceptions.
-- A fresh workbook contains the header row plus `demo-001`, `demo-002`, and
-  `demo-003` in rows 2 through 4.
-- Each valid record has `before-entry` and `after-entry` screenshots.
-- `events.jsonl` includes one `paste` event per valid record with the Excel row
-  number.
-
-Manual verification:
-
-1. Copy the `runId` from the CLI output and inspect the run summary:
-
-   ```sh
-   RUN_ID="<run-id-from-cli-output>"
-   cat "runs/$RUN_ID/summary.md"
-   cat "runs/$RUN_ID/run.json"
-   ```
-
-2. Open the workbook passed to `--excel-workbook-path` in Microsoft Excel.
-3. Confirm the `Intake` sheet exists and row 1 contains the fixed column headers.
-4. For a fresh workbook, confirm rows 2 through 4 contain:
-   - `demo-001`, `Ava`, `Nguyen`
-   - `demo-002`, `Marcus`, `Lee`
-   - `demo-003`, `Priya`, `Shah`
-5. Confirm each row includes the expected DOB, contact, address, insurance, reason
-   for visit, preferred contact, and notes fields from
-   `data/demo/intake-records-normalized.json`.
-6. Confirm the audit screenshots exist:
-
-   ```sh
-   find "runs/$RUN_ID/screenshots" -path "*/excel/*.png" | sort
-   ```
-
-7. Confirm the audit log includes one paste event per valid record:
-
-   ```sh
-   grep "pasted record into Excel row" "runs/$RUN_ID/events.jsonl"
-   ```
-
-The Excel target appends to the first empty row in an existing workbook. Use a
-fresh workbook path when you need an easy row-by-row validation run.
-
-## Combined Smoke
-
-Run targets together only after each target has passed individually in the
-current environment:
-
-```sh
-set -a
-. ./.env
-set +a
-npm run dev -- run \
-  --input data/demo/intake-records-normalized.json \
-  --targets openemr,excel \
-  --runs-dir runs \
-  --excel-workbook-path runs/openemr-excel-demo.xlsx \
-  --synthetic-suffix auto \
-  --parser deterministic
-```
-
 ## Audit Artifacts
 
 Each run writes to `runs/<run-id>/`:
@@ -506,9 +385,8 @@ answer what the workflow saw for a specific record in a specific app.
 ```sh
 npm run dev -- run \
   --input <path-to-json-csv-text-pdf-or-docx-source> \
-  --targets fake,excel,openemr \
+  --targets fake,openemr \
   --runs-dir runs \
-  --excel-workbook-path runs/intake-workbook.xlsx \
   --parser openai \
   --agent scripted \
   --synthetic-suffix auto
@@ -518,9 +396,8 @@ Options:
 
 - `--input`: required source file. AI parsing supports JSON, CSV, TXT, PDF, and
   DOCX text-bearing inputs.
-- `--targets`: comma-separated targets: `fake`, `excel`, `openemr`.
+- `--targets`: comma-separated targets: `fake`, `openemr`.
 - `--runs-dir`: audit output directory. Defaults to `runs`.
-- `--excel-workbook-path`: workbook path for the Excel target.
 - `--parser`: `openai` or `deterministic`. Defaults to `openai`; use
   `deterministic` for local fixture/smoke runs that should not call OpenAI.
 - `--parser-model`: OpenAI model for source parsing. Defaults to
@@ -535,7 +412,6 @@ Environment variables:
 - `OPENEMR_BASE_URL`
 - `OPENEMR_USERNAME`
 - `OPENEMR_PASSWORD`
-- `EXCEL_WORKBOOK_PATH`
 - `RUNS_DIR`
 - `OPENAI_API_KEY`
 - `OPENAI_PARSER_MODEL`
@@ -558,8 +434,7 @@ Options:
 - `--inbox`: folder containing exported `*.ready.csv` or `*.ready.json` files.
   Defaults to `~/Downloads/agentic-ui-intake`.
 - `--targets`: comma-separated target adapters. Defaults to `openemr`.
-- `--runs-dir`, `--excel-workbook-path`, `--agent`, and `--synthetic-suffix`:
-  same meaning as `run`.
+- `--runs-dir`, `--agent`, and `--synthetic-suffix`: same meaning as `run`.
 - `--once`: process currently ready files once and exit.
 
 ## Development
@@ -601,7 +476,7 @@ src/adapters/      Shared target adapter contract and fake adapter
 src/desktop/       Electron intake app and seeded/imported queue service
 src/handoff/       CSV/JSON handoff file writer
 src/watcher/       Separate handoff watcher and workflow launcher
-src/targets/       OpenEMR and Excel implementations
+src/targets/       OpenEMR implementation
 tests/             Unit and integration-style coverage
 docs/demo.md       Longer smoke-demo walkthrough
 ```

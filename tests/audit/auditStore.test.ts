@@ -390,7 +390,7 @@ describe("FileAuditStore", () => {
       totalRecords: 2,
       targetCounts: {
         openemr: { succeeded: 1, exception: 1, skipped: 0 },
-        excel: { succeeded: 2, exception: 0, skipped: 0 },
+        fake: { succeeded: 2, exception: 0, skipped: 0 },
       },
       preflightExceptions: 1,
       environmentExceptions: 2,
@@ -740,7 +740,6 @@ describe("FileAuditStore", () => {
       totalRecords: 3,
       targetCounts: {
         fake: { succeeded: 3, exception: 0, skipped: 0 },
-        excel: { succeeded: 2, exception: 1, skipped: 0 },
         openemr: { succeeded: 1, exception: 2, skipped: 0 },
       },
       preflightExceptions: 0,
@@ -748,7 +747,6 @@ describe("FileAuditStore", () => {
       closeExceptions: 0,
     });
 
-    expect(summary.indexOf("| openemr | 1 | 2 | 0 |")).toBeLessThan(summary.indexOf("| excel | 2 | 1 | 0 |"));
-    expect(summary.indexOf("| excel | 2 | 1 | 0 |")).toBeLessThan(summary.indexOf("| fake | 3 | 0 | 0 |"));
+    expect(summary.indexOf("| openemr | 1 | 2 | 0 |")).toBeLessThan(summary.indexOf("| fake | 3 | 0 | 0 |"));
   });
 });

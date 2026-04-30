@@ -14,6 +14,4 @@ export * from "./adapters/fakeAdapter.js";
 export * from "./handoff/intakeHandoff.js";
 export * from "./desktop/intakeQueue.js";
 export * from "./watcher/intakeWatcher.js";
-export * from "./targets/excel/excelAdapter.js";
-export * from "./targets/excel/macExcelPort.js";
 export * from "./targets/openemr/openEmrAdapter.js";
