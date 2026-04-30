@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCli } from "../src/cli.js";
+import { writeIntakeHandoff } from "../src/handoff/intakeHandoff.js";
 
 const tempDirs: string[] = [];
 
@@ -133,6 +134,67 @@ describe("runCli", () => {
     expect(exitCode).toBe(1);
     expect(io.stdoutText()).toBe("");
     expect(io.stderrText()).toBe("error: required option '--input <path>' not specified\n");
+  });
+
+  it("processes ready intake exports with the watch command in once mode", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentic-ui-cli-watch-"));
+    tempDirs.push(root);
+    const inbox = join(root, "inbox");
+    const runsDir = join(root, "runs");
+    await writeIntakeHandoff({
+      inbox,
+      records: [
+        {
+          sourceRecordId: "cli-watch-001",
+          firstName: "Ava",
+          lastName: "Nguyen",
+          dateOfBirth: "1987-03-14",
+          sexOrGender: "female",
+          phone: "312-555-0198",
+          email: "ava.nguyen@example.test",
+          streetAddress: "1200 West Lake Street",
+          city: "Chicago",
+          state: "IL",
+          zip: "60607",
+          insurancePayer: "Aetna",
+          insuranceMemberId: "AET123456",
+          reasonForVisit: "Annual wellness visit",
+          preferredContactMethod: "phone",
+          sourceFormat: "json",
+          rawSourceExcerpt: "cli-watch-001",
+        },
+      ],
+    });
+    const io = captureIo();
+
+    const exitCode = await runCli(
+      [
+        "node",
+        "agentic-ui",
+        "watch",
+        "--once",
+        "--inbox",
+        inbox,
+        "--targets",
+        "fake",
+        "--runs-dir",
+        runsDir,
+      ],
+      io,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.stderrText()).toBe("");
+    const result = JSON.parse(io.stdoutText()) as { status: string; run?: { runId: string } };
+    expect(result.status).toBe("processed");
+    await expect(readJson(join(runsDir, result.run?.runId ?? "", "run.json"))).resolves.toMatchObject({
+      status: "completed",
+      targetCounts: {
+        fake: {
+          succeeded: 1,
+        },
+      },
+    });
   });
 
   it("defaults to AI parsing and fails clearly without an OpenAI API key", async () => {

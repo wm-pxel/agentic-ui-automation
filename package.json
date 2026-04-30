@@ -13,6 +13,9 @@
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "dev": "tsx src/cli.ts",
+    "desktop:dev": "npm run desktop:build && electron dist/src/desktop/main.js",
+    "desktop:build": "npm run build && node scripts/copy-desktop-assets.mjs",
+    "watch:intake": "tsx src/cli.ts watch --inbox ~/Downloads/agentic-ui-intake --targets openemr --runs-dir runs --synthetic-suffix auto",
     "smoke:openemr": "tsx src/cli.ts run --input data/demo/intake-records.json --targets openemr --agent scripted --synthetic-suffix auto",
     "smoke:excel": "tsx src/cli.ts run --input data/demo/intake-records-normalized.json --targets excel --agent scripted --parser deterministic"
   },
@@ -27,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.5.0",
+    "electron": "^41.3.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5"

@@ -18,6 +18,8 @@ import { runWorkflow } from "./orchestrator/runWorkflow.js";
 import { ExcelAdapter } from "./targets/excel/excelAdapter.js";
 import { MacExcelPort } from "./targets/excel/macExcelPort.js";
 import { OpenEmrAdapter } from "./targets/openemr/openEmrAdapter.js";
+import { defaultIntakeInbox } from "./handoff/intakeHandoff.js";
+import { processReadyIntakeFiles, watchIntakeInbox, type IntakeWatchJobResult } from "./watcher/intakeWatcher.js";
 
 interface CliWritable {
   write(chunk: string): unknown;
@@ -37,6 +39,16 @@ interface RunCommandOptions {
   parserModel?: string;
   excelWorkbookPath?: string;
   syntheticSuffix?: string;
+}
+
+interface WatchCommandOptions {
+  inbox?: string;
+  targets: string;
+  runsDir?: string;
+  agent?: CliRunConfig["agent"];
+  excelWorkbookPath?: string;
+  syntheticSuffix?: string;
+  once?: boolean;
 }
 
 const defaultIo = {
@@ -96,6 +108,20 @@ function createProgram(io: Required<CliIo>): Command {
       await runCommand(options, io.stdout);
     });
 
+  program
+    .command("watch")
+    .description("Watch an intake handoff folder and run workflows for ready exports.")
+    .option("--inbox <path>", "Folder to watch for *.ready.csv or *.ready.json intake handoff files.")
+    .option("--targets <targets>", "Comma-separated target adapters to run.", "openemr")
+    .option("--runs-dir <path>", "Directory where run artifacts are written.")
+    .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
+    .option("--excel-workbook-path <path>", "Workbook path for the Excel target.")
+    .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
+    .option("--once", "Process currently ready files once and exit.")
+    .action(async (options: WatchCommandOptions) => {
+      await watchCommand(options, io.stdout);
+    });
+
   return program;
 }
 
@@ -111,6 +137,41 @@ async function runCommand(options: RunCommandOptions, stdout: CliWritable): Prom
   });
 
   stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+async function watchCommand(options: WatchCommandOptions, stdout: CliWritable): Promise<void> {
+  const config = buildRunConfig({
+    input: options.inbox ?? defaultIntakeInbox(),
+    targets: options.targets,
+    runsDir: options.runsDir,
+    agent: options.agent,
+    parser: "deterministic",
+    excelWorkbookPath: options.excelWorkbookPath,
+    syntheticSuffix: options.syntheticSuffix,
+  });
+  const inbox = options.inbox ?? defaultIntakeInbox();
+  const watcherInput = {
+    inbox,
+    runsDir: config.runsDir,
+    targets: config.targets,
+    syntheticSuffix: config.syntheticSuffix,
+    buildAgent: () => buildAgent(config.agent),
+    buildAdapters: () => buildAdapters(config),
+    onResult: (result: IntakeWatchJobResult) => {
+      stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    },
+  };
+
+  if (options.once) {
+    const results = await processReadyIntakeFiles(watcherInput);
+    if (results.length === 0) {
+      stdout.write(`${JSON.stringify({ status: "idle", inbox }, null, 2)}\n`);
+    }
+    return;
+  }
+
+  stdout.write(`${JSON.stringify({ status: "watching", inbox, targets: config.targets }, null, 2)}\n`);
+  await watchIntakeInbox(watcherInput);
 }
 
 async function loadRecords(config: CliRunConfig) {

@@ -18,7 +18,7 @@ export function parseJsonRecords(content: string): RawIntakeRecord[] {
     ...record,
     sourceRecordId: String(record.sourceRecordId ?? `json-${index + 1}`),
     sourceFormat: "json",
-    rawSourceExcerpt: JSON.stringify(record),
+    rawSourceExcerpt: rawSourceExcerptFor(record),
   }));
 }
 
@@ -43,4 +43,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   }
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function rawSourceExcerptFor(record: Record<string, unknown>): string {
+  return typeof record.rawSourceExcerpt === "string" && record.rawSourceExcerpt.trim().length > 0
+    ? record.rawSourceExcerpt
+    : JSON.stringify(record);
 }

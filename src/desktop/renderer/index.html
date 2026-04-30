@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Intake Queue</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Intake Queue</h1>
+          <p id="source-label">Loading seeded intake records</p>
+        </div>
+        <div class="actions">
+          <button id="seed-button" type="button">Seed Data</button>
+          <button id="import-button" type="button">Import</button>
+          <button id="export-button" type="button" class="primary">Export Selected</button>
+        </div>
+      </header>
+
+      <section class="summary-band" aria-label="Queue summary">
+        <div><span id="total-count">0</span><small>Total</small></div>
+        <div><span id="ready-count">0</span><small>Ready</small></div>
+        <div><span id="exception-count">0</span><small>Needs Review</small></div>
+        <div><span id="selected-count">0</span><small>Selected</small></div>
+      </section>
+
+      <section class="workspace">
+        <aside class="queue-panel" aria-label="Records">
+          <div class="panel-toolbar">
+            <label><input id="select-all" type="checkbox" /> Select ready</label>
+          </div>
+          <div id="record-list" class="record-list"></div>
+        </aside>
+
+        <section class="detail-panel" aria-label="Record detail">
+          <div class="detail-header">
+            <div>
+              <h2 id="detail-name">Select a record</h2>
+              <p id="detail-id"></p>
+            </div>
+            <span id="detail-status" class="status neutral">Idle</span>
+          </div>
+
+          <div class="tabs" role="tablist">
+            <button class="tab active" type="button" data-tab="fields">Fields</button>
+            <button class="tab" type="button" data-tab="source">Source</button>
+            <button class="tab" type="button" data-tab="issues">Issues</button>
+          </div>
+
+          <div id="fields-tab" class="tab-panel active">
+            <div id="field-grid" class="field-grid"></div>
+          </div>
+          <div id="source-tab" class="tab-panel">
+            <pre id="source-text"></pre>
+          </div>
+          <div id="issues-tab" class="tab-panel">
+            <div id="issues-list" class="issues-list"></div>
+          </div>
+        </section>
+      </section>
+
+      <footer class="statusbar">
+        <span>Synthetic demo data only</span>
+        <span id="handoff-label"></span>
+        <button id="show-export-button" type="button" disabled>Show Export</button>
+      </footer>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

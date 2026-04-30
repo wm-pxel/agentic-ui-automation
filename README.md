@@ -12,6 +12,8 @@ traceable audit package for each run.
 - [What It Demonstrates](#what-it-demonstrates)
 - [Current Status](#current-status)
 - [Quick Start](#quick-start)
+- [Desktop Intake App](#desktop-intake-app)
+- [Handoff Watcher](#handoff-watcher)
 - [OpenEMR Smoke](#openemr-smoke)
 - [Excel Desktop Smoke](#excel-desktop-smoke)
 - [Combined Smoke](#combined-smoke)
@@ -45,6 +47,10 @@ Use only synthetic data with this repository. The checked-in records under
   Recording permissions were granted.
 - OpenEMR web target: adapter and tests are implemented; live smoke requires a
   reachable synthetic/demo OpenEMR instance and current credentials.
+- Desktop intake app: Electron shell opens with seeded synthetic records, supports
+  optional import, and exports CSV handoff files.
+- Handoff watcher: separate CLI command processes exported files and runs the
+  existing audited workflow.
 
 ## Quick Start
 
@@ -68,6 +74,56 @@ Expected result:
 
 The status includes exceptions because the demo file contains three intentionally
 invalid records that should stop during validation.
+
+## Desktop Intake App
+
+The desktop app is a synthetic intake queue. It opens with
+`data/demo/intake-seed-records.json`, which includes complete records, missing
+required fields, malformed contact data, ambiguous insurance, address variation,
+and low-confidence extraction examples. The app also has an optional import flow
+for synthetic JSON, CSV, TXT, PDF, or DOCX sources.
+
+Run the app:
+
+```sh
+npm run desktop:dev
+```
+
+Export writes selected export-ready records to:
+
+```text
+~/Downloads/agentic-ui-intake/*.ready.csv
+```
+
+The CSV is meant to be easy to inspect in Excel or Numbers. The app does not run
+OpenEMR automation directly.
+
+## Handoff Watcher
+
+Start the watcher separately when exported intake files should run through the
+workflow:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run dev -- watch \
+  --inbox ~/Downloads/agentic-ui-intake \
+  --targets openemr \
+  --runs-dir runs \
+  --synthetic-suffix auto
+```
+
+The watcher accepts `.ready.csv` and `.ready.json` handoff files. It moves files
+through `processing/`, then to `processed/<runId>.csv` or `processed/<runId>.json`
+based on the source format, or to `failed/`, and writes the normal audit package
+under `runs/<run-id>/`.
+
+For a one-shot local check with the fake target:
+
+```sh
+npm run dev -- watch --once --inbox ~/Downloads/agentic-ui-intake --targets fake --runs-dir runs
+```
 
 ## OpenEMR Smoke
 
@@ -403,6 +459,25 @@ Environment variables:
 
 See `.env.example` for the full list.
 
+### Watch Command
+
+```sh
+npm run dev -- watch \
+  --inbox ~/Downloads/agentic-ui-intake \
+  --targets openemr \
+  --runs-dir runs \
+  --synthetic-suffix auto
+```
+
+Options:
+
+- `--inbox`: folder containing exported `*.ready.csv` or `*.ready.json` files.
+  Defaults to `~/Downloads/agentic-ui-intake`.
+- `--targets`: comma-separated target adapters. Defaults to `openemr`.
+- `--runs-dir`, `--excel-workbook-path`, `--agent`, and `--synthetic-suffix`:
+  same meaning as `run`.
+- `--once`: process currently ready files once and exit.
+
 ## Development
 
 Run verification:
@@ -416,6 +491,12 @@ Build:
 
 ```sh
 npm run build
+```
+
+Run the desktop app:
+
+```sh
+npm run desktop:dev
 ```
 
 Packaging dry run:
@@ -433,6 +514,9 @@ src/orchestrator/  Workflow coordination and exception handling
 src/audit/         Run metadata, events, summaries, screenshots, exceptions
 src/agent/         Scripted and OpenAI-backed agent drivers
 src/adapters/      Shared target adapter contract and fake adapter
+src/desktop/       Electron intake app and seeded/imported queue service
+src/handoff/       CSV/JSON handoff file writer
+src/watcher/       Separate handoff watcher and workflow launcher
 src/targets/       OpenEMR and Excel implementations
 tests/             Unit and integration-style coverage
 docs/demo.md       Longer smoke-demo walkthrough

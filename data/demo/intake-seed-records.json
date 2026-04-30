@@ -1,0 +1,222 @@
+[
+  {
+    "sourceRecordId": "seed-complete-001",
+    "firstName": "Ava",
+    "lastName": "Nguyen",
+    "dateOfBirth": "03/14/1987",
+    "sexOrGender": "Female",
+    "phone": "(312) 555-0198",
+    "email": "ava.nguyen@example.test",
+    "streetAddress": "1200 West Lake Street",
+    "city": "Chicago",
+    "state": "Illinois",
+    "zip": "60607-1234",
+    "insurancePayer": "Aetna",
+    "insuranceMemberId": "AET123456",
+    "insuranceGroupId": "GRP9",
+    "reasonForVisit": "Annual wellness visit",
+    "preferredContactMethod": "phone",
+    "notes": "Prefers morning appointments.",
+    "rawSourceExcerpt": "Intake ID seed-complete-001. Patient Ava Nguyen. DOB 03/14/1987. Phone (312) 555-0198. Aetna member AET123456.",
+    "aiExtraction": {
+      "parser": "openai",
+      "model": "seeded-demo",
+      "sourceDocumentName": "seeded-intake-queue.json",
+      "sourceFormat": "json",
+      "fields": {
+        "firstName": { "sourceLabel": "Patient", "value": "Ava", "confidence": 0.99, "evidence": "Patient Ava Nguyen" },
+        "lastName": { "sourceLabel": "Patient", "value": "Nguyen", "confidence": 0.99, "evidence": "Patient Ava Nguyen" },
+        "insurancePayer": { "sourceLabel": "Coverage", "value": "Aetna", "confidence": 0.98, "evidence": "Aetna member AET123456" }
+      },
+      "additionalFields": {},
+      "issues": []
+    }
+  },
+  {
+    "sourceRecordId": "seed-complete-002",
+    "firstName": "Marcus",
+    "lastName": "Lee",
+    "dateOfBirth": "1979-11-02",
+    "sexOrGender": "Male",
+    "phone": "773-555-0144",
+    "email": "marcus.lee@example.test",
+    "streetAddress": "47 North Dearborn Street",
+    "city": "Chicago",
+    "state": "IL",
+    "zip": "60602",
+    "insurancePayer": "UnitedHealthcare",
+    "insuranceMemberId": "UHC99881",
+    "reasonForVisit": "Medication follow-up",
+    "preferredContactMethod": "email",
+    "notes": "Insurance card scanned clearly.",
+    "rawSourceExcerpt": "Marcus Lee, DOB 1979-11-02. Preferred email. Coverage: UnitedHealthcare / UHC99881.",
+    "aiExtraction": {
+      "parser": "openai",
+      "model": "seeded-demo",
+      "sourceDocumentName": "seeded-intake-queue.json",
+      "sourceFormat": "json",
+      "fields": {
+        "preferredContactMethod": { "sourceLabel": "Preferred", "value": "email", "confidence": 0.96, "evidence": "Preferred email" },
+        "insuranceMemberId": { "sourceLabel": "Coverage", "value": "UHC99881", "confidence": 0.95, "evidence": "UnitedHealthcare / UHC99881" }
+      },
+      "additionalFields": {},
+      "issues": []
+    }
+  },
+  {
+    "sourceRecordId": "seed-low-confidence-003",
+    "firstName": "Priya",
+    "lastName": "Shah",
+    "dateOfBirth": "1992-05-19",
+    "sexOrGender": "Female",
+    "phone": "3125550177",
+    "email": "priya.shah@example.test",
+    "streetAddress": "804 South Wabash Avenue",
+    "city": "Chicago",
+    "state": "IL",
+    "zip": "60605",
+    "insurancePayer": "Cigna",
+    "insuranceMemberId": "CIG44220",
+    "reasonForVisit": "New patient consult",
+    "preferredContactMethod": "text",
+    "rawSourceExcerpt": "Priya Shah. DOB appears as 1992-05-19. Coverage line reads Cigna member CIG44220, but note quality is low.",
+    "aiExtraction": {
+      "parser": "openai",
+      "model": "seeded-demo",
+      "sourceDocumentName": "seeded-intake-queue.json",
+      "sourceFormat": "json",
+      "fields": {
+        "dateOfBirth": { "sourceLabel": "DOB appears as", "value": "1992-05-19", "confidence": 0.68, "evidence": "DOB appears as 1992-05-19" },
+        "insuranceMemberId": { "sourceLabel": "Coverage line", "value": "CIG44220", "confidence": 0.61, "evidence": "Cigna member CIG44220" }
+      },
+      "additionalFields": {},
+      "issues": [
+        { "field": "insuranceMemberId", "message": "Insurance member ID came from a low-quality source note.", "severity": "warning" }
+      ]
+    }
+  },
+  {
+    "sourceRecordId": "seed-address-variation-004",
+    "firstName": "Jordan",
+    "lastName": "Patel",
+    "dateOfBirth": "1984-07-08",
+    "sexOrGender": "Non-binary",
+    "phone": "1-312-555-0185",
+    "email": "jordan.patel@example.test",
+    "streetAddress": "10 South Michigan Avenue Apt 4B",
+    "city": "Chicago",
+    "state": "Illinois",
+    "zip": "60603",
+    "insurancePayer": "Blue Cross Blue Shield of Illinois",
+    "insuranceMemberId": "BCBSIL77550",
+    "reasonForVisit": "Physical therapy referral",
+    "preferredContactMethod": "mail",
+    "rawSourceExcerpt": "Address was supplied as one line: 10 South Michigan Avenue Apt 4B, Chicago IL 60603. Coverage BCBSIL77550.",
+    "aiExtraction": {
+      "parser": "openai",
+      "model": "seeded-demo",
+      "sourceDocumentName": "seeded-intake-queue.json",
+      "sourceFormat": "json",
+      "fields": {
+        "streetAddress": { "sourceLabel": "Address", "value": "10 South Michigan Avenue Apt 4B", "confidence": 0.9, "evidence": "10 South Michigan Avenue Apt 4B, Chicago IL 60603" },
+        "city": { "sourceLabel": "Address", "value": "Chicago", "confidence": 0.9, "evidence": "Chicago IL 60603" },
+        "state": { "sourceLabel": "Address", "value": "Illinois", "confidence": 0.88, "evidence": "Chicago IL 60603" }
+      },
+      "additionalFields": {},
+      "issues": []
+    }
+  },
+  {
+    "sourceRecordId": "seed-missing-dob-005",
+    "firstName": "Noah",
+    "lastName": "Brooks",
+    "dateOfBirth": "",
+    "sexOrGender": "Male",
+    "phone": "312-555-0188",
+    "email": "noah.brooks@example.test",
+    "streetAddress": "1 Main Street",
+    "city": "Chicago",
+    "state": "IL",
+    "zip": "60601",
+    "insurancePayer": "Aetna",
+    "insuranceMemberId": "AET999",
+    "reasonForVisit": "Initial intake",
+    "preferredContactMethod": "phone",
+    "rawSourceExcerpt": "Noah Brooks. DOB field was left blank on the intake form. Aetna member AET999.",
+    "aiExtraction": {
+      "parser": "openai",
+      "model": "seeded-demo",
+      "sourceDocumentName": "seeded-intake-queue.json",
+      "sourceFormat": "json",
+      "fields": {
+        "dateOfBirth": { "sourceLabel": "DOB", "value": "", "confidence": 0.2, "evidence": "DOB field was left blank" }
+      },
+      "additionalFields": {},
+      "issues": [
+        { "field": "dateOfBirth", "message": "Required date of birth is missing.", "severity": "error" }
+      ]
+    }
+  },
+  {
+    "sourceRecordId": "seed-ambiguous-insurance-006",
+    "firstName": "Sam",
+    "lastName": "Rivera",
+    "dateOfBirth": "1980-10-05",
+    "sexOrGender": "Other",
+    "phone": "312-555-0199",
+    "email": "sam.rivera@example.test",
+    "streetAddress": "99 State Street",
+    "city": "Chicago",
+    "state": "IL",
+    "zip": "60601",
+    "insurancePayer": "Blue",
+    "insuranceMemberId": "BLUE9",
+    "reasonForVisit": "New patient",
+    "preferredContactMethod": "email",
+    "rawSourceExcerpt": "Insurance listed only as Blue, member BLUE9. Full payer name was not supplied.",
+    "aiExtraction": {
+      "parser": "openai",
+      "model": "seeded-demo",
+      "sourceDocumentName": "seeded-intake-queue.json",
+      "sourceFormat": "json",
+      "fields": {
+        "insurancePayer": { "sourceLabel": "Insurance", "value": "Blue", "confidence": 0.52, "evidence": "Insurance listed only as Blue" }
+      },
+      "additionalFields": {},
+      "issues": [
+        { "field": "insurancePayer", "message": "Payer name is ambiguous and needs review.", "severity": "error" }
+      ]
+    }
+  },
+  {
+    "sourceRecordId": "seed-invalid-phone-007",
+    "firstName": "Elena",
+    "lastName": "Garcia",
+    "dateOfBirth": "1988-02-28",
+    "sexOrGender": "Female",
+    "phone": "call office",
+    "email": "elena.garcia@example.test",
+    "streetAddress": "222 West Adams Street",
+    "city": "Chicago",
+    "state": "IL",
+    "zip": "60606",
+    "insurancePayer": "Cigna",
+    "insuranceMemberId": "CIG1100",
+    "reasonForVisit": "Follow-up",
+    "preferredContactMethod": "phone",
+    "rawSourceExcerpt": "Elena Garcia. Contact phone says call office instead of listing a number.",
+    "aiExtraction": {
+      "parser": "openai",
+      "model": "seeded-demo",
+      "sourceDocumentName": "seeded-intake-queue.json",
+      "sourceFormat": "json",
+      "fields": {
+        "phone": { "sourceLabel": "Contact phone", "value": "call office", "confidence": 0.4, "evidence": "Contact phone says call office" }
+      },
+      "additionalFields": {},
+      "issues": [
+        { "field": "phone", "message": "Phone field is not a usable phone number.", "severity": "error" }
+      ]
+    }
+  }
+]

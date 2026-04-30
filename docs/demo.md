@@ -27,6 +27,50 @@ Expected fake run result:
   `executive-summary.md`, `summary.md`, `report.json`, `events.jsonl`,
   normalized input, and exception JSON files.
 
+## Desktop Intake Export Demo
+
+The Electron intake app opens with `data/demo/intake-seed-records.json`. The
+seeded queue includes valid synthetic records plus records that need review for
+missing DOB, malformed phone, ambiguous payer, address variation, and low
+extraction confidence. Import remains available for synthetic JSON, CSV, TXT,
+PDF, or DOCX sources.
+
+```sh
+npm run desktop:dev
+```
+
+Use the app to select export-ready records and export them. The handoff is a CSV
+file so it can be opened directly in Excel or Numbers:
+
+```text
+~/Downloads/agentic-ui-intake/*.ready.csv
+```
+
+The desktop app only exports. Start the watcher separately when ready files should
+run through the EMR workflow:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run dev -- watch \
+  --inbox ~/Downloads/agentic-ui-intake \
+  --targets openemr \
+  --runs-dir runs \
+  --synthetic-suffix auto
+```
+
+For a local dry run that does not open OpenEMR:
+
+```sh
+npm run dev -- watch --once --inbox ~/Downloads/agentic-ui-intake --targets fake --runs-dir runs
+```
+
+The watcher accepts `.ready.csv` and `.ready.json`, moves files through
+`processing/`, then to `processed/<runId>.csv` or `processed/<runId>.json` based
+on the source format, or to `failed/`, and writes the same audit package as
+direct CLI runs.
+
 ## OpenEMR Smoke Demo
 
 The OpenEMR smoke run drives the public or configured OpenEMR UI through Chromium.
