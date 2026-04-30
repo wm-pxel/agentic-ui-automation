@@ -108,7 +108,28 @@ export class OpenEmrAdapter implements TargetAdapter {
         };
       }
 
-      await navigateToNewPatient(page, this.config.baseUrl);
+      try {
+        await navigateToNewPatient(page, this.config.baseUrl);
+      } catch (error) {
+        const exception = {
+          code: "ui_state_unexpected",
+          severity: "error",
+          message: error instanceof Error ? error.message : String(error),
+          suggestedRemediation: "Review the OpenEMR navigation screenshot and demo environment state.",
+          screenshotPath: beforePath,
+        } satisfies ValidationException & { screenshotPath: string };
+        await context.audit.writeTargetEvidence({
+          recordId: context.record.sourceRecordId,
+          target: this.name,
+          status: "exception",
+          screenshotPath: beforePath,
+          message: exception.message,
+        });
+        return {
+          status: "exception",
+          exception,
+        };
+      }
       await context.audit.writeEvent({
         recordId: context.record.sourceRecordId,
         target: this.name,

@@ -180,6 +180,57 @@ describe("OpenEmrAdapter", () => {
     expect(page.clicked).not.toContain('text="New/Search"');
   });
 
+  it("records failure evidence when OpenEMR navigation does not reveal the patient form", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openemr-navigation-timeout-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openemr" });
+    const page = new FakeOpenEmrPage({
+      availableSelectors: [...loginSelectors(), 'text="Patient"', 'text="New/Search"'],
+      visibleSelectors: [...loginSelectors(), 'text="Patient"'],
+      hoverReveals: {
+        'text="Patient"': ['text="New/Search"'],
+      },
+      bodyTexts: ["OpenEMR dashboard"],
+    });
+    const adapter = new OpenEmrAdapter(openEmrConfig(), {
+      launchBrowser: async () => new FakeOpenEmrBrowser(page),
+    });
+    const agent = new QueuedAgent([
+      {
+        actionId: "navigate-new-patient",
+        confidence: 0.91,
+        rationale: "The patient menu is visible.",
+      },
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({
+      runId: "run-openemr",
+      record: record("demo-001"),
+      audit,
+      agent,
+    });
+
+    expect(result).toEqual({
+      status: "exception",
+      exception: {
+        code: "ui_state_unexpected",
+        severity: "error",
+        message: expect.stringContaining("Timed out waiting for visible OpenEMR new patient form"),
+        suggestedRemediation: "Review the OpenEMR navigation screenshot and demo environment state.",
+        screenshotPath: "screenshots/demo-001/openemr/before-navigation.png",
+      },
+    });
+    expect(audit.getReportDetails().targetEvidence).toContainEqual(
+      expect.objectContaining({
+        recordId: "demo-001",
+        target: "openemr",
+        status: "exception",
+        screenshotPath: "screenshots/demo-001/openemr/before-navigation.png",
+        message: expect.stringContaining("Timed out waiting for visible OpenEMR new patient form"),
+      }),
+    );
+  }, 15000);
+
   it("fills patient fields and returns a possible-duplicate exception when OpenEMR reports a match", async () => {
     const root = await mkdtemp(join(tmpdir(), "openemr-duplicate-"));
     const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openemr" });

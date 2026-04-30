@@ -598,6 +598,39 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("\"given_name\": \"Ava\"");
   });
 
+  it("renders OpenEMR failure context screenshots when no filled-field screenshot is available", () => {
+    const summary = renderSummary({
+      runId: "run-test",
+      totalRecords: 1,
+      targetCounts: {
+        openemr: { succeeded: 0, exception: 1, skipped: 0 },
+      },
+      preflightExceptions: 0,
+      environmentExceptions: 0,
+      closeExceptions: 0,
+      details: {
+        recordInputs: [],
+        targetEvidence: [
+          {
+            recordId: "demo-001",
+            target: "openemr",
+            status: "exception",
+            screenshotPath: "screenshots/demo-001/openemr/before-navigation.png",
+            message: "Timed out waiting for visible OpenEMR new patient form.",
+          },
+        ],
+        aiExtractions: [],
+        issues: [],
+        fieldMappings: [],
+      },
+    });
+
+    expect(summary).toContain("## OpenEMR Record Review");
+    expect(summary).toContain("- Context screenshot: screenshots/demo-001/openemr/before-navigation.png");
+    expect(summary).toContain("![OpenEMR context screenshot for demo-001](screenshots/demo-001/openemr/before-navigation.png)");
+    expect(summary).not.toContain("- Filled-field screenshot:");
+  });
+
   it("renders clean no-issue and no-mapping sections for non-OpenEMR runs", () => {
     const summary = renderSummary({
       runId: "run-test",

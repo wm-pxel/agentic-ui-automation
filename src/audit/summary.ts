@@ -141,6 +141,9 @@ function appendOpenEmrRecordReviews(lines: string[], details: ReportDetails | un
       if (evidence.fieldScreenshotPath) {
         lines.push(`- Filled-field screenshot: ${cell(evidence.fieldScreenshotPath)}`);
         lines.push("", `![OpenEMR filled fields screenshot for ${cell(recordId)}](${markdownImagePath(evidence.fieldScreenshotPath)})`, "");
+      } else if (evidence.screenshotPath) {
+        lines.push(`- Context screenshot: ${cell(evidence.screenshotPath)}`);
+        lines.push("", `![OpenEMR context screenshot for ${cell(recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
       }
       if (evidence.targetRecordId) {
         lines.push(`- Target record: ${cell(evidence.targetRecordId)}`);
