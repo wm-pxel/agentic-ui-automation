@@ -16,7 +16,7 @@ traceable audit package for each run.
 - [Quick Start](#quick-start)
 - [Desktop Intake App](#desktop-intake-app)
 - [Handoff Watcher](#handoff-watcher)
-- [OpenEMR Smoke](#openemr-smoke)
+- [OpenMRS Smoke](#openmrs-smoke)
 - [Audit Artifacts](#audit-artifacts)
 - [CLI](#cli)
 - [Development](#development)
@@ -33,7 +33,7 @@ traceable audit package for each run.
 - Audit evidence for every run: screenshots, event logs, normalized input,
   exception JSON, run metadata, a Markdown summary, and structured report JSON.
 - Target adapters for audited EMR entry:
-  - Web app: OpenEMR through Playwright.
+  - Web app: OpenMRS through Playwright.
   - Fake target: deterministic local smoke target for orchestration and audit.
 
 Use only synthetic data with this repository. The checked-in records under
@@ -43,10 +43,10 @@ Use only synthetic data with this repository. The checked-in records under
 
 - Core workflow: implemented and covered by tests.
 - Fake target: deterministic local smoke target for orchestration and audit.
-- OpenEMR web target: adapter and tests are implemented; live smoke requires a
-  reachable synthetic/demo OpenEMR instance and current credentials.
-- Desktop intake app: Electron shell opens with seeded synthetic records, supports
-  optional import, and exports CSV handoff files.
+- OpenMRS web target: adapter and tests are implemented; live smoke requires a
+  reachable synthetic/demo OpenMRS instance and current credentials.
+- Desktop intake app: Electron shell opens with seeded synthetic records,
+  supports optional import, and exports CSV handoff files.
 - Handoff watcher: separate CLI command processes exported files and runs the
   existing audited workflow.
 
@@ -55,7 +55,7 @@ Use only synthetic data with this repository. The checked-in records under
 The workflow is a TypeScript CLI that turns synthetic intake source documents
 into audited UI data-entry runs. It uses OpenAI for optional source parsing and
 agent decisions, deterministic TypeScript validation for safety gates,
-Playwright for OpenEMR browser automation, and Electron for the local intake
+Playwright for OpenMRS browser automation, and Electron for the local intake
 queue and CSV handoff app.
 
 | Layer | Technology | Role |
@@ -63,7 +63,7 @@ queue and CSV handoff app.
 | Runtime and CLI | ![Node.js][node-badge] ![TypeScript][typescript-badge] | Runs the CLI, orchestrator, target adapters, and audit writers. |
 | AI parsing and agent decisions | ![OpenAI][openai-badge] | Extracts variable intake documents and optionally approves bounded UI actions. |
 | Validation contract | ![Zod][zod-badge] | Defines schemas for CLI config, records, agent decisions, and target results. |
-| Web target | ![Playwright][playwright-badge] ![OpenEMR][openemr-badge] | Automates synthetic patient entry in browser-based OpenEMR demo environments. |
+| Web target | ![Playwright][playwright-badge] ![OpenMRS][openmrs-badge] | Automates synthetic patient entry in browser-based OpenMRS demo environments. |
 | Desktop intake app | Electron | Reviews seeded or imported synthetic intake records and exports CSV handoff files. |
 | Audit and verification | ![JSON][json-badge] ![Markdown][markdown-badge] ![Vitest][vitest-badge] | Writes run artifacts, reports, event logs, screenshots, and test coverage. |
 
@@ -72,7 +72,7 @@ queue and CSV handoff app.
 [openai-badge]: https://img.shields.io/badge/OpenAI-412991?logo=openai&logoColor=white
 [zod-badge]: https://img.shields.io/badge/Zod-3E67B1?logo=zod&logoColor=white
 [playwright-badge]: https://img.shields.io/badge/Playwright-2EAD33?logo=playwright&logoColor=white
-[openemr-badge]: https://img.shields.io/badge/OpenEMR-698CCB
+[openmrs-badge]: https://img.shields.io/badge/OpenMRS-005A70
 [json-badge]: https://img.shields.io/badge/JSON-000000?logo=json&logoColor=white
 [markdown-badge]: https://img.shields.io/badge/Markdown-000000?logo=markdown&logoColor=white
 [vitest-badge]: https://img.shields.io/badge/Vitest-6E9F18?logo=vitest&logoColor=white
@@ -85,7 +85,8 @@ flowchart LR
   Orchestrator --> Validation["Deterministic validation"]
   Orchestrator --> Agent["Scripted or OpenAI UI agent"]
   Orchestrator --> Targets["Target adapters"]
-  Targets --> OpenEMR["OpenEMR via Playwright"]
+  Targets --> OpenMRS["OpenMRS via Playwright"]
+  Targets --> Fake["Fake target"]
   CLI --> DesktopApp["Electron intake app"]
   DesktopApp --> Handoff["CSV handoff files"]
   Orchestrator --> Audit["File audit package"]
@@ -114,7 +115,7 @@ flowchart TD
 
   Normalized --> TargetLoop["Run each ready target adapter"]
   TargetLoop --> AgentDecision["Agent decision<br/>scripted or OpenAI"]
-  AgentDecision --> UiAction["Bounded UI action<br/>Fake or OpenEMR"]
+  AgentDecision --> UiAction["Bounded UI action<br/>Fake or OpenMRS"]
   UiAction --> Evidence["Screenshots, events,<br/>field mappings, target evidence"]
   Evidence --> TargetResult{"Target result"}
   TargetResult -->|succeeded or skipped| Counts["Update target counts"]
@@ -151,8 +152,8 @@ Expected result:
 - `preflightExceptions` is `3`.
 - `targetCounts.fake.succeeded` is `3`.
 
-The status includes exceptions because the demo file contains three intentionally
-invalid records that should stop during validation.
+The status includes exceptions because the demo file contains three
+intentionally invalid records that should stop during validation.
 
 ## Desktop Intake App
 
@@ -175,7 +176,7 @@ Export writes selected export-ready records to:
 ```
 
 The CSV is meant to be easy to inspect in a spreadsheet app. The app does not run
-OpenEMR automation directly.
+OpenMRS automation directly.
 
 ## Handoff Watcher
 
@@ -188,15 +189,15 @@ set -a
 set +a
 npm run dev -- watch \
   --inbox ~/Downloads/agentic-ui-intake \
-  --targets openemr \
+  --targets openmrs \
   --runs-dir runs \
   --synthetic-suffix auto
 ```
 
 The watcher accepts `.ready.csv` and `.ready.json` handoff files. It moves files
-through `processing/`, then to `processed/<runId>.csv` or `processed/<runId>.json`
-based on the source format, or to `failed/`, and writes the normal audit package
-under `runs/<run-id>/`.
+through `processing/`, then to `processed/<runId>.csv` or
+`processed/<runId>.json` based on the source format, or to `failed/`, and writes
+the normal audit package under `runs/<run-id>/`.
 
 For a one-shot local check with the fake target:
 
@@ -204,15 +205,15 @@ For a one-shot local check with the fake target:
 npm run dev -- watch --once --inbox ~/Downloads/agentic-ui-intake --targets fake --runs-dir runs
 ```
 
-## OpenEMR Smoke
+## OpenMRS Smoke
 
 Prerequisites:
 
 - Playwright Chromium is installed.
-- `OPENEMR_BASE_URL`, `OPENEMR_USERNAME`, and `OPENEMR_PASSWORD` point to a
-  synthetic/demo OpenEMR environment.
-- `.env` contains the OpenEMR values and `OPENAI_API_KEY` when using the default
-  OpenAI parser.
+- The default OpenMRS demo settings are acceptable, or `OPENMRS_BASE_URL`,
+  `OPENMRS_USERNAME`, and `OPENMRS_PASSWORD` point to another synthetic/demo
+  OpenMRS environment.
+- `.env` contains `OPENAI_API_KEY` when using the default OpenAI parser.
 
 Install Chromium if needed:
 
@@ -220,26 +221,27 @@ Install Chromium if needed:
 npx playwright install chromium
 ```
 
-OpenEMR publishes multiple public demo environments. If one is stale, broken, or
-returns unexpected UI/database errors, try another before treating the adapter as
-broken:
+OpenMRS publishes current demo links at `https://openmrs.org/demo/`. This
+adapter uses the OpenMRS 2 Reference Application because the workflow is a
+patient registration smoke and O2 exposes a stable registration wizard.
 
-- Main demo: `https://demo.openemr.io/openemr`
-- Alternate demo: `https://demo.openemr.io/a/openemr`
-- Another alternate demo: `https://demo.openemr.io/b/openemr`
+- Demo page: `https://openmrs.org/demo/`
+- Default app URL: `https://o2.openmrs.org/openmrs`
+- Default username: `admin`
+- Default password: `Admin123`
+- Default location: `Registration Desk`
 
-Populate `.env` with the demo values you want to use. The `/b/openemr`
-environment with `admin` / `pass` is the most recently smoke-tested demo for this
-repo:
+The defaults are built into the CLI. Populate `.env` only when overriding them
+or when using the OpenAI parser:
 
 ```dotenv
-OPENEMR_BASE_URL=https://demo.openemr.io/b/openemr
-OPENEMR_USERNAME=admin
-OPENEMR_PASSWORD=pass
+OPENMRS_BASE_URL=https://o2.openmrs.org/openmrs
+OPENMRS_USERNAME=admin
+OPENMRS_PASSWORD=Admin123
 OPENAI_API_KEY=<your-api-key>
 ```
 
-Run against the configured OpenEMR environment with the default OpenAI source
+Run against the configured OpenMRS environment with the default OpenAI source
 parser:
 
 ```sh
@@ -248,7 +250,7 @@ set -a
 set +a
 npm run dev -- run \
   --input data/demo/intake-records.json \
-  --targets openemr \
+  --targets openmrs \
   --runs-dir runs \
   --synthetic-suffix auto
 ```
@@ -264,48 +266,47 @@ Public demo credentials and screens can change. If login, navigation, selectors,
 or save behavior drift, the run should finish with auditable environment or
 UI-state exceptions rather than silently claiming success.
 
-OpenEMR can expose patient deletion when `Admin` -> `Config` -> `Features` ->
+OpenMRS can expose patient deletion when `Admin` -> `Config` -> `Features` ->
 `Allow Administrators to Delete Patients` is enabled. The current public demo has
 that setting off, and enabling it would mutate shared demo configuration. The
 smoke run therefore uses `--synthetic-suffix auto` to create fresh synthetic
 patient names and identifiers instead of deleting prior demo patients.
 
-### What The OpenEMR Target Does
+### What The OpenMRS Target Does
 
-For each normalized valid source record, the OpenEMR adapter is expected to:
+For each normalized valid source record, the OpenMRS adapter is expected to:
 
-1. Log in to the configured OpenEMR environment.
+1. Log in to the configured OpenMRS environment.
 2. Capture a `before-navigation` screenshot.
-3. Open `Patient` -> `New/Search`.
-4. Fill the Search or Add Patient form:
-   - first name, last name, DOB, birth sex
-   - available contact fields such as street, city/province, state, ZIP, mobile
-     phone, and contact email
+3. Open the O2 `Register a patient` app.
+4. Fill the registration wizard with demographics and available contact fields.
 5. Capture an `after-fill` screenshot.
-6. Click `Create New Patient`.
-7. If OpenEMR shows the search confirmation with no matches, click
-   `Confirm Create New Patient`.
-8. Capture an `after-save` screenshot.
-9. Treat the record as successful only if OpenEMR no longer shows the
-   new-patient create form.
+6. Advance to the confirmation step and click `Confirm`.
+7. Treat similar-patient prompts as duplicate exceptions for manual review.
+8. Wait for the newly created patient's dashboard.
+9. Expand `Show Contact Info` when available so address and phone are visible.
+10. Capture an `after-save` proof screenshot from that dashboard.
+11. Treat the record as successful only if the dashboard shows the synthetic
+    patient name and patient-detail context.
 
 For the checked-in demo file, four records are valid and three records are
 intentionally invalid and stop in preflight validation. One valid record is
 deliberately written with uncertain source wording so the AI confidence column in
-`summary.md` includes lower-confidence examples. A clean OpenEMR target pass
+`summary.md` includes lower-confidence examples. A clean OpenMRS target pass
 therefore means:
 
 - `preflightExceptions` is `3`.
-- `targetCounts.openemr.succeeded` is `4`.
-- `targetCounts.openemr.exception` is `0`.
+- `targetCounts.openmrs.succeeded` is `4`.
+- `targetCounts.openmrs.exception` is `0`.
 - `exceptions/` only contains the three intentional validation exceptions.
-- Each valid record has `before-navigation`, `after-fill`, and `after-save`
-  screenshots.
+- Each valid record has `before-navigation`, `after-fill`, and an `after-save`
+  proof screenshot from the patient dashboard with contact info expanded when
+  OpenMRS exposes it.
 - `executive-summary.md` gives a quick run outcome, while `summary.md` includes
-  an OpenEMR record review with raw intake input, filled-field screenshots, AI
-  confidence, and source-to-OpenEMR comparisons. On public demo layouts, optional
-  contact fields that are unavailable may appear as failed mappings without
-  causing a target exception.
+  an OpenMRS record review with raw intake input, patient-dashboard proof
+  screenshots, AI confidence, and source-to-OpenMRS comparisons. On public demo
+  layouts, optional contact fields that are unavailable may appear as failed
+  mappings without causing a target exception.
 
 Manual verification:
 
@@ -323,20 +324,20 @@ Manual verification:
    values in `normalized-records.json`. With `--synthetic-suffix auto`, the
    valid demo patients are renamed to values like `Nguyen Run-...`,
    `Lee Run-...`, and `Shah Run-...`.
-3. Confirm the OpenEMR screenshot sequence exists for each valid record:
+3. Confirm the OpenMRS screenshot sequence exists for each valid record:
 
    ```sh
-   find "runs/$RUN_ID/screenshots" -path "*/openemr/*.png" | sort
+   find "runs/$RUN_ID/screenshots" -path "*/openmrs/*.png" | sort
    ```
 
-4. Open each `after-save.png` screenshot and confirm OpenEMR has left the
-   new-patient create form.
-5. Log in to the same OpenEMR environment used by the run.
+4. Open each `after-save.png` screenshot and confirm it shows the newly created
+   patient's dashboard with the generated synthetic patient name.
+5. Log in to the same OpenMRS environment used by the run.
 6. Open the patient search or finder screen.
 7. Search for the four generated last names from `normalized-records.json`.
 8. Open each patient record and confirm the demographic and contact fields match
    `normalized-records.json` for the fields present in that demo layout. Use the
-   OpenEMR record review in `summary.md` to see source values, confidence,
+   OpenMRS record review in `summary.md` to see source values, confidence,
    selectors, and which optional fields were unavailable.
 9. Confirm the audit log includes an `after-save` event for each valid record:
 
@@ -344,10 +345,10 @@ Manual verification:
    grep "after-save" "runs/$RUN_ID/events.jsonl"
    ```
 
-The public OpenEMR demo keeps data for a while. If you run without
+The public OpenMRS demo keeps data for a while. If you run without
 `--synthetic-suffix`, existing demo patients may cause duplicate or verification
 exceptions. Use `--synthetic-suffix auto` when you need a clean end-to-end
-OpenEMR success run.
+OpenMRS success run.
 
 ## Audit Artifacts
 
@@ -385,7 +386,7 @@ answer what the workflow saw for a specific record in a specific app.
 ```sh
 npm run dev -- run \
   --input <path-to-json-csv-text-pdf-or-docx-source> \
-  --targets fake,openemr \
+  --targets fake,openmrs \
   --runs-dir runs \
   --parser openai \
   --agent scripted \
@@ -396,7 +397,7 @@ Options:
 
 - `--input`: required source file. AI parsing supports JSON, CSV, TXT, PDF, and
   DOCX text-bearing inputs.
-- `--targets`: comma-separated targets: `fake`, `openemr`.
+- `--targets`: comma-separated targets: `fake`, `openmrs`.
 - `--runs-dir`: audit output directory. Defaults to `runs`.
 - `--parser`: `openai` or `deterministic`. Defaults to `openai`; use
   `deterministic` for local fixture/smoke runs that should not call OpenAI.
@@ -404,14 +405,14 @@ Options:
   `OPENAI_PARSER_MODEL`, then `OPENAI_MODEL`, then `gpt-5.4-mini`.
 - `--agent`: `scripted` or `openai`. Defaults to `scripted`.
 - `--synthetic-suffix`: appends a suffix to valid synthetic records before
-  validation and target entry. Use `auto` for OpenEMR demo runs so each run uses
+  validation and target entry. Use `auto` for OpenMRS demo runs so each run uses
   fresh patient names and identifiers.
 
 Environment variables:
 
-- `OPENEMR_BASE_URL`
-- `OPENEMR_USERNAME`
-- `OPENEMR_PASSWORD`
+- `OPENMRS_BASE_URL`
+- `OPENMRS_USERNAME`
+- `OPENMRS_PASSWORD`
 - `RUNS_DIR`
 - `OPENAI_API_KEY`
 - `OPENAI_PARSER_MODEL`
@@ -424,7 +425,7 @@ See `.env.example` for the full list.
 ```sh
 npm run dev -- watch \
   --inbox ~/Downloads/agentic-ui-intake \
-  --targets openemr \
+  --targets openmrs \
   --runs-dir runs \
   --synthetic-suffix auto
 ```
@@ -433,7 +434,7 @@ Options:
 
 - `--inbox`: folder containing exported `*.ready.csv` or `*.ready.json` files.
   Defaults to `~/Downloads/agentic-ui-intake`.
-- `--targets`: comma-separated target adapters. Defaults to `openemr`.
+- `--targets`: comma-separated target adapters. Defaults to `openmrs`.
 - `--runs-dir`, `--agent`, and `--synthetic-suffix`: same meaning as `run`.
 - `--once`: process currently ready files once and exit.
 
@@ -476,13 +477,13 @@ src/adapters/      Shared target adapter contract and fake adapter
 src/desktop/       Electron intake app and seeded/imported queue service
 src/handoff/       CSV/JSON handoff file writer
 src/watcher/       Separate handoff watcher and workflow launcher
-src/targets/       OpenEMR implementation
+src/targets/       OpenMRS implementation
 tests/             Unit and integration-style coverage
 docs/demo.md       Longer smoke-demo walkthrough
 ```
 
 ## Keeping This Current
 
-When behavior, commands, targets, audit paths, or prerequisites change, update this
-README and `docs/demo.md` in the same change. After edits, run `npm run typecheck`
-and `npm test` before treating the repo as current.
+When behavior, commands, targets, audit paths, or prerequisites change, update
+this README and `docs/demo.md` in the same change. After edits, run
+`npm run typecheck` and `npm test` before treating the repo as current.

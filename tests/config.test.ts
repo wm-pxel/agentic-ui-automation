@@ -3,9 +3,9 @@ import { buildRunConfig, parseTargets } from "../src/config.js";
 
 const ENV_KEYS = [
   "RUNS_DIR",
-  "OPENEMR_BASE_URL",
-  "OPENEMR_USERNAME",
-  "OPENEMR_PASSWORD",
+  "OPENMRS_BASE_URL",
+  "OPENMRS_USERNAME",
+  "OPENMRS_PASSWORD",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -29,11 +29,11 @@ afterEach(() => {
 
 describe("parseTargets", () => {
   it("parses comma-separated target names", () => {
-    expect(parseTargets("fake,openemr")).toEqual(["fake", "openemr"]);
+    expect(parseTargets("fake,openmrs")).toEqual(["fake", "openmrs"]);
   });
 
   it("trims whitespace around target names", () => {
-    expect(parseTargets(" fake, openemr ")).toEqual(["fake", "openemr"]);
+    expect(parseTargets(" fake, openmrs ")).toEqual(["fake", "openmrs"]);
   });
 
   it("throws for invalid target names", () => {
@@ -41,7 +41,7 @@ describe("parseTargets", () => {
   });
 
   it("throws for empty target segments", () => {
-    expect(() => parseTargets("fake,,openemr")).toThrow();
+    expect(() => parseTargets("fake,,openmrs")).toThrow();
   });
 });
 
@@ -92,18 +92,18 @@ describe("buildRunConfig", () => {
     expect(config.runsDir).toBe("tmp/runs");
   });
 
-  it("copies OpenEMR environment variables into the config", () => {
-    process.env.OPENEMR_BASE_URL = "https://openemr.example.test";
-    process.env.OPENEMR_USERNAME = "admin";
-    process.env.OPENEMR_PASSWORD = "secret";
+  it("copies OpenMRS environment variables into the config", () => {
+    process.env.OPENMRS_BASE_URL = "https://openmrs.example.test";
+    process.env.OPENMRS_USERNAME = "admin";
+    process.env.OPENMRS_PASSWORD = "secret";
 
     const config = buildRunConfig({
       input: "data/demo/intake-records.json",
-      targets: "openemr",
+      targets: "openmrs",
     });
 
-    expect(config.openEmr).toEqual({
-      baseUrl: "https://openemr.example.test",
+    expect(config.openMrs).toEqual({
+      baseUrl: "https://openmrs.example.test",
       username: "admin",
       password: "secret",
     });

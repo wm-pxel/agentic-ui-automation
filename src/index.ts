@@ -14,4 +14,4 @@ export * from "./adapters/fakeAdapter.js";
 export * from "./handoff/intakeHandoff.js";
 export * from "./desktop/intakeQueue.js";
 export * from "./watcher/intakeWatcher.js";
-export * from "./targets/openemr/openEmrAdapter.js";
+export * from "./targets/openmrs/openMrsAdapter.js";

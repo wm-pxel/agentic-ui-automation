@@ -15,9 +15,9 @@ import { OpenAiIntakeParser } from "./parsing/aiIntakeParser.js";
 import { loadSourceRecords } from "./parsing/loadRecords.js";
 import { applySyntheticSuffix } from "./parsing/syntheticRecords.js";
 import { runWorkflow } from "./orchestrator/runWorkflow.js";
-import { OpenEmrAdapter } from "./targets/openemr/openEmrAdapter.js";
 import { defaultIntakeInbox } from "./handoff/intakeHandoff.js";
 import { processReadyIntakeFiles, watchIntakeInbox, type IntakeWatchJobResult } from "./watcher/intakeWatcher.js";
+import { OpenMrsAdapter } from "./targets/openmrs/openMrsAdapter.js";
 
 interface CliWritable {
   write(chunk: string): unknown;
@@ -107,7 +107,7 @@ function createProgram(io: Required<CliIo>): Command {
     .command("watch")
     .description("Watch an intake handoff folder and run workflows for ready exports.")
     .option("--inbox <path>", "Folder to watch for *.ready.csv or *.ready.json intake handoff files.")
-    .option("--targets <targets>", "Comma-separated target adapters to run.", "openemr")
+    .option("--targets <targets>", "Comma-separated target adapters to run.", "openmrs")
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
     .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
@@ -202,8 +202,8 @@ function buildAdapters(config: CliRunConfig): TargetAdapter[] {
     switch (target) {
       case "fake":
         return new FakeAdapter("success");
-      case "openemr":
-        return new OpenEmrAdapter(config.openEmr);
+      case "openmrs":
+        return new OpenMrsAdapter(config.openMrs);
     }
   });
 }

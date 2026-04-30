@@ -57,7 +57,7 @@ describe("FileAuditStore", () => {
 
     await store.writeFieldMapping({
       recordId: "demo-001",
-      target: "openemr",
+      target: "openmrs",
       sourceField: "sexOrGender",
       targetField: "Birth Sex",
       normalizedValue: "Female",
@@ -103,21 +103,21 @@ describe("FileAuditStore", () => {
     });
     await store.writeTargetEvidence({
       recordId: "demo-001",
-      target: "openemr",
+      target: "openmrs",
       status: "succeeded",
-      screenshotPath: "screenshots/demo-001/openemr/after-save.png",
-      fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
-      targetRecordId: "openemr-demo-001",
-      message: "submitted OpenEMR patient form",
+      screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
+      fieldScreenshotPath: "screenshots/demo-001/openmrs/after-fill.png",
+      targetRecordId: "openmrs-demo-001",
+      message: "submitted OpenMRS patient form",
     });
     await store.writeReportIssue({
       phase: "target",
-      target: "openemr",
+      target: "openmrs",
       recordId: "demo-001",
       exceptionCode: "verification_failed",
-      message: "OpenEMR still showed the new-patient form after save.",
+      message: "OpenMRS still showed the new-patient form after save.",
       suggestedRemediation: "Review required fields and the after-save screenshot before retrying.",
-      screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+      screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
     });
     await store.writeReportJson({
       runId: "run-test",
@@ -127,7 +127,7 @@ describe("FileAuditStore", () => {
         preflightExceptions: 0,
         environmentExceptions: 0,
         closeExceptions: 0,
-        targetCounts: { openemr: { succeeded: 0, exception: 1, skipped: 0 } },
+        targetCounts: { openmrs: { succeeded: 0, exception: 1, skipped: 0 } },
       },
       details: store.getReportDetails(),
     });
@@ -136,7 +136,7 @@ describe("FileAuditStore", () => {
       fieldMappings: [
         {
           recordId: "demo-001",
-          target: "openemr",
+          target: "openmrs",
           sourceField: "sexOrGender",
           targetField: "Birth Sex",
           normalizedValue: "Female",
@@ -162,12 +162,12 @@ describe("FileAuditStore", () => {
       targetEvidence: [
         {
           recordId: "demo-001",
-          target: "openemr",
+          target: "openmrs",
           status: "succeeded",
-          screenshotPath: "screenshots/demo-001/openemr/after-save.png",
-          fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
-          targetRecordId: "openemr-demo-001",
-          message: "submitted OpenEMR patient form",
+          screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
+          fieldScreenshotPath: "screenshots/demo-001/openmrs/after-fill.png",
+          targetRecordId: "openmrs-demo-001",
+          message: "submitted OpenMRS patient form",
         },
       ],
       aiExtractions: [
@@ -199,12 +199,12 @@ describe("FileAuditStore", () => {
       issues: [
         {
           phase: "target",
-          target: "openemr",
+          target: "openmrs",
           recordId: "demo-001",
           exceptionCode: "verification_failed",
-          message: "OpenEMR still showed the new-patient form after save.",
+          message: "OpenMRS still showed the new-patient form after save.",
           suggestedRemediation: "Review required fields and the after-save screenshot before retrying.",
-          screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+          screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
         },
       ],
     });
@@ -224,7 +224,7 @@ describe("FileAuditStore", () => {
     });
     expect(report.details.issues[0]).toMatchObject({
       exceptionCode: "verification_failed",
-      screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+      screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
     });
     expect(report.details.recordInputs[0]).toMatchObject({
       recordId: "demo-001",
@@ -232,10 +232,10 @@ describe("FileAuditStore", () => {
     });
     expect(report.details.targetEvidence[0]).toMatchObject({
       recordId: "demo-001",
-      target: "openemr",
+      target: "openmrs",
       status: "succeeded",
-      screenshotPath: "screenshots/demo-001/openemr/after-save.png",
-      fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
+      screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
+      fieldScreenshotPath: "screenshots/demo-001/openmrs/after-fill.png",
     });
   });
 
@@ -389,7 +389,7 @@ describe("FileAuditStore", () => {
       sourceInputPath: "data/demo/intake-records.json",
       totalRecords: 2,
       targetCounts: {
-        openemr: { succeeded: 1, exception: 1, skipped: 0 },
+        openmrs: { succeeded: 1, exception: 1, skipped: 0 },
         fake: { succeeded: 2, exception: 0, skipped: 0 },
       },
       preflightExceptions: 1,
@@ -420,18 +420,18 @@ describe("FileAuditStore", () => {
     expect(summary.indexOf("| Screenshots |")).toBeLessThan(summary.indexOf("| Event log |"));
     expect(summary.indexOf("| Event log |")).toBeLessThan(summary.indexOf("| Executive summary |"));
     expect(summary.indexOf("| Executive summary |")).toBeLessThan(summary.indexOf("| Structured report |"));
-    expect(summary).toContain("| openemr | 1 | 1 | 0 |");
+    expect(summary).toContain("| openmrs | 1 | 1 | 0 |");
     expect(summary).toContain("Preflight exceptions: 1");
     expect(summary).toContain("Environment exceptions: 2");
     expect(summary).toContain("Close exceptions: 1");
   });
 
-  it("renders OpenEMR record review with intake input, screenshots, and side-by-side field comparisons", () => {
+  it("renders OpenMRS record review with intake input, screenshots, and side-by-side field comparisons", () => {
     const summary = renderSummary({
       runId: "run-test",
       totalRecords: 1,
       targetCounts: {
-        openemr: { succeeded: 0, exception: 1, skipped: 0 },
+        openmrs: { succeeded: 0, exception: 1, skipped: 0 },
       },
       preflightExceptions: 0,
       environmentExceptions: 0,
@@ -453,12 +453,12 @@ describe("FileAuditStore", () => {
         targetEvidence: [
           {
             recordId: "demo-001",
-            target: "openemr",
+            target: "openmrs",
             status: "succeeded",
-            screenshotPath: "screenshots/demo-001/openemr/after-save.png",
-            fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
-            targetRecordId: "openemr-demo-001",
-            message: "submitted OpenEMR patient form",
+            screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
+            fieldScreenshotPath: "screenshots/demo-001/openmrs/after-fill.png",
+            targetRecordId: "openmrs-demo-001",
+            message: "submitted OpenMRS patient form",
           },
         ],
         aiExtractions: [
@@ -496,18 +496,18 @@ describe("FileAuditStore", () => {
         issues: [
           {
             phase: "target",
-            target: "openemr",
+            target: "openmrs",
             recordId: "demo-001",
             exceptionCode: "verification_failed",
-            message: "OpenEMR still showed the new-patient form after save.",
+            message: "OpenMRS still showed the new-patient form after save.",
             suggestedRemediation: "Review required fields.",
-            screenshotPath: "screenshots/demo-001/openemr/after-save.png",
+            screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
           },
         ],
         fieldMappings: [
           {
             recordId: "demo-001",
-            target: "openemr",
+            target: "openmrs",
             sourceField: "sexOrGender",
             targetField: "Birth Sex",
             normalizedValue: "Female",
@@ -518,7 +518,7 @@ describe("FileAuditStore", () => {
           },
           {
             recordId: "demo-001",
-            target: "openemr",
+            target: "openmrs",
             sourceField: "state",
             targetField: "State",
             normalizedValue: "Illinois",
@@ -532,23 +532,23 @@ describe("FileAuditStore", () => {
     });
 
     expect(summary).toContain("## Issues");
-    expect(summary).toContain("- [OpenEMR Record Review](#openemr-record-review)");
+    expect(summary).toContain("- [OpenMRS Record Review](#openmrs-record-review)");
     expect(summary).toContain("  - [Record demo-001](#record-demo-001)");
-    expect(summary).toContain("| demo-001 | openemr | target | verification_failed | OpenEMR still showed the new-patient form after save. | Review required fields. | screenshots/demo-001/openemr/after-save.png |");
-    expect(summary).toContain("## OpenEMR Record Review");
+    expect(summary).toContain("| demo-001 | openmrs | target | verification_failed | OpenMRS still showed the new-patient form after save. | Review required fields. | screenshots/demo-001/openmrs/after-save.png |");
+    expect(summary).toContain("## OpenMRS Record Review");
     expect(summary).toContain("### Record demo-001");
     expect(summary).toContain("#### Intake Input");
     expect(summary).toContain("\"intake_id\": \"demo-001\"");
     expect(summary).toContain("#### Screenshots");
-    expect(summary).toContain("![OpenEMR filled fields screenshot for demo-001](screenshots/demo-001/openemr/after-fill.png)");
-    expect(summary).not.toContain("![OpenEMR success screenshot for demo-001](screenshots/demo-001/openemr/after-save.png)");
-    expect(summary).toContain("#### Intake to OpenEMR Comparison");
-    expect(summary).toContain("| Intake Field | Intake Value | AI Confidence | Intake Evidence | Normalized Field | OpenEMR Field | EMR Value | Action | Status | Selector or Error |");
+    expect(summary).not.toContain("![OpenMRS filled fields screenshot for demo-001](screenshots/demo-001/openmrs/after-fill.png)");
+    expect(summary).toContain("![OpenMRS proof screenshot for demo-001](screenshots/demo-001/openmrs/after-save.png)");
+    expect(summary).toContain("#### Intake to OpenMRS Comparison");
+    expect(summary).toContain("| Intake Field | Intake Value | AI Confidence | Intake Evidence | Normalized Field | OpenMRS Field | EMR Value | Action | Status | Selector or Error |");
     expect(summary).toContain("| sex_at_birth | female | 0.94 | sex_at_birth: female | sexOrGender | Birth Sex | Female | select | succeeded | select[name=\"form_sex\"] |");
     expect(summary).toContain("| province | IL | 0.93 | province: IL | state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
     expect(summary).toContain("| given_name | Ava | 0.96 | Name: Ava Nguyen | firstName |  |  |  | not mapped |  |");
     expect(summary).not.toContain("## AI Source Extraction");
-    expect(summary).not.toContain("## Intake to OpenEMR Field Mapping");
+    expect(summary).not.toContain("## Intake to OpenMRS Field Mapping");
   });
 
   it("renders a concise executive summary with outcome, counts, key findings, and review links", () => {
@@ -559,7 +559,7 @@ describe("FileAuditStore", () => {
       sourceInputPath: "data/demo/intake-records.json",
       totalRecords: 2,
       targetCounts: {
-        openemr: { succeeded: 1, exception: 1, skipped: 0 },
+        openmrs: { succeeded: 1, exception: 1, skipped: 0 },
       },
       preflightExceptions: 1,
       environmentExceptions: 0,
@@ -575,28 +575,28 @@ describe("FileAuditStore", () => {
         targetEvidence: [
           {
             recordId: "demo-001",
-            target: "openemr",
+            target: "openmrs",
             status: "succeeded",
-            fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
-            targetRecordId: "openemr-demo-001",
+            fieldScreenshotPath: "screenshots/demo-001/openmrs/after-fill.png",
+            targetRecordId: "openmrs-demo-001",
           },
         ],
         aiExtractions: [],
         issues: [
           {
             phase: "target",
-            target: "openemr",
+            target: "openmrs",
             recordId: "demo-002",
             exceptionCode: "verification_failed",
-            message: "OpenEMR could not verify the saved patient.",
+            message: "OpenMRS could not verify the saved patient.",
             suggestedRemediation: "Review the filled-field screenshot.",
-            screenshotPath: "screenshots/demo-002/openemr/after-fill.png",
+            screenshotPath: "screenshots/demo-002/openmrs/after-fill.png",
           },
         ],
         fieldMappings: [
           {
             recordId: "demo-002",
-            target: "openemr",
+            target: "openmrs",
             sourceField: "state",
             targetField: "State",
             normalizedValue: "Illinois",
@@ -612,11 +612,11 @@ describe("FileAuditStore", () => {
     expect(executiveSummary).toContain("| Status | completed_with_exceptions |");
     expect(executiveSummary).toContain("| Source records | 2 |");
     expect(executiveSummary).toContain("| Preflight exceptions | 1 |");
-    expect(executiveSummary).toContain("| openemr | 1 | 1 | 0 |");
+    expect(executiveSummary).toContain("| openmrs | 1 | 1 | 0 |");
     expect(executiveSummary).toContain("- 1 issue recorded.");
-    expect(executiveSummary).toContain("- 1 OpenEMR field mapping failed.");
-    expect(executiveSummary).toContain("- 1 OpenEMR record has screenshot evidence.");
-    expect(executiveSummary).toContain("| demo-002 | openemr | target | verification_failed | OpenEMR could not verify the saved patient. | screenshots/demo-002/openemr/after-fill.png |");
+    expect(executiveSummary).toContain("- 1 OpenMRS field mapping failed.");
+    expect(executiveSummary).toContain("- 1 OpenMRS record has screenshot evidence.");
+    expect(executiveSummary).toContain("| demo-002 | openmrs | target | verification_failed | OpenMRS could not verify the saved patient. | screenshots/demo-002/openmrs/after-fill.png |");
     expect(executiveSummary).toContain("| Full summary | runs/run-test/summary.md |");
     expect(executiveSummary).toContain("| Structured report | runs/run-test/report.json |");
     expect(executiveSummary).toContain("| Source input | data/demo/intake-records.json |");
@@ -625,12 +625,12 @@ describe("FileAuditStore", () => {
     expect(executiveSummary).not.toContain("#### Intake Input");
   });
 
-  it("renders OpenEMR record review when only success evidence is available", () => {
+  it("renders OpenMRS record review when only success evidence is available", () => {
     const summary = renderSummary({
       runId: "run-test",
       totalRecords: 1,
       targetCounts: {
-        openemr: { succeeded: 1, exception: 0, skipped: 0 },
+        openmrs: { succeeded: 1, exception: 0, skipped: 0 },
       },
       preflightExceptions: 0,
       environmentExceptions: 0,
@@ -652,12 +652,12 @@ describe("FileAuditStore", () => {
         targetEvidence: [
           {
             recordId: "demo-001",
-            target: "openemr",
+            target: "openmrs",
             status: "succeeded",
-            screenshotPath: "screenshots/demo-001/openemr/after-save.png",
-            fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
-            targetRecordId: "openemr-demo-001",
-            message: "submitted OpenEMR patient form",
+            screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
+            fieldScreenshotPath: "screenshots/demo-001/openmrs/after-fill.png",
+            targetRecordId: "openmrs-demo-001",
+            message: "submitted OpenMRS patient form",
           },
         ],
         aiExtractions: [],
@@ -666,24 +666,24 @@ describe("FileAuditStore", () => {
       },
     });
 
-    expect(summary).toContain("## OpenEMR Record Review");
+    expect(summary).toContain("## OpenMRS Record Review");
     expect(summary).toContain("### Record demo-001");
     expect(summary).toContain("#### Screenshots");
-    expect(summary).toContain("- Filled-field screenshot: screenshots/demo-001/openemr/after-fill.png");
-    expect(summary).toContain("![OpenEMR filled fields screenshot for demo-001](screenshots/demo-001/openemr/after-fill.png)");
-    expect(summary).not.toContain("- Proof screenshot: screenshots/demo-001/openemr/after-save.png");
-    expect(summary).not.toContain("![OpenEMR success screenshot for demo-001](screenshots/demo-001/openemr/after-save.png)");
-    expect(summary).toContain("- Target record: openemr-demo-001");
+    expect(summary).not.toContain("- Filled-field screenshot: screenshots/demo-001/openmrs/after-fill.png");
+    expect(summary).not.toContain("![OpenMRS filled fields screenshot for demo-001](screenshots/demo-001/openmrs/after-fill.png)");
+    expect(summary).toContain("- Proof screenshot: screenshots/demo-001/openmrs/after-save.png");
+    expect(summary).toContain("![OpenMRS proof screenshot for demo-001](screenshots/demo-001/openmrs/after-save.png)");
+    expect(summary).toContain("- Target record: openmrs-demo-001");
     expect(summary).toContain("\"intake_id\": \"demo-001\"");
     expect(summary).toContain("\"given_name\": \"Ava\"");
   });
 
-  it("renders OpenEMR failure context screenshots when no filled-field screenshot is available", () => {
+  it("renders OpenMRS failure context screenshots when no filled-field screenshot is available", () => {
     const summary = renderSummary({
       runId: "run-test",
       totalRecords: 1,
       targetCounts: {
-        openemr: { succeeded: 0, exception: 1, skipped: 0 },
+        openmrs: { succeeded: 0, exception: 1, skipped: 0 },
       },
       preflightExceptions: 0,
       environmentExceptions: 0,
@@ -693,10 +693,10 @@ describe("FileAuditStore", () => {
         targetEvidence: [
           {
             recordId: "demo-001",
-            target: "openemr",
+            target: "openmrs",
             status: "exception",
-            screenshotPath: "screenshots/demo-001/openemr/before-navigation.png",
-            message: "Timed out waiting for visible OpenEMR new patient form.",
+            screenshotPath: "screenshots/demo-001/openmrs/before-navigation.png",
+            message: "Timed out waiting for visible OpenMRS new patient form.",
           },
         ],
         aiExtractions: [],
@@ -705,13 +705,47 @@ describe("FileAuditStore", () => {
       },
     });
 
-    expect(summary).toContain("## OpenEMR Record Review");
-    expect(summary).toContain("- Context screenshot: screenshots/demo-001/openemr/before-navigation.png");
-    expect(summary).toContain("![OpenEMR context screenshot for demo-001](screenshots/demo-001/openemr/before-navigation.png)");
+    expect(summary).toContain("## OpenMRS Record Review");
+    expect(summary).toContain("- Context screenshot: screenshots/demo-001/openmrs/before-navigation.png");
+    expect(summary).toContain("![OpenMRS context screenshot for demo-001](screenshots/demo-001/openmrs/before-navigation.png)");
     expect(summary).not.toContain("- Filled-field screenshot:");
   });
 
-  it("renders clean no-issue and no-mapping sections for non-OpenEMR runs", () => {
+  it("renders OpenMRS issue screenshots when exception evidence only exists on issues", () => {
+    const summary = renderSummary({
+      runId: "run-test",
+      totalRecords: 1,
+      targetCounts: {
+        openmrs: { succeeded: 0, exception: 1, skipped: 0 },
+      },
+      preflightExceptions: 0,
+      environmentExceptions: 0,
+      closeExceptions: 0,
+      details: {
+        recordInputs: [],
+        targetEvidence: [],
+        aiExtractions: [],
+        issues: [
+          {
+            phase: "target",
+            target: "openmrs",
+            recordId: "demo-001",
+            exceptionCode: "possible_duplicate",
+            message: "OpenMRS indicated a possible duplicate patient.",
+            screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
+          },
+        ],
+        fieldMappings: [],
+      },
+    });
+
+    expect(summary).toContain("## OpenMRS Record Review");
+    expect(summary).toContain("- Exception screenshot: screenshots/demo-001/openmrs/after-save.png");
+    expect(summary).toContain("![OpenMRS exception screenshot for demo-001](screenshots/demo-001/openmrs/after-save.png)");
+    expect(summary).toContain("- Result: OpenMRS indicated a possible duplicate patient.");
+  });
+
+  it("renders clean no-issue and no-mapping sections for non-OpenMRS runs", () => {
     const summary = renderSummary({
       runId: "run-test",
       totalRecords: 1,
@@ -731,7 +765,7 @@ describe("FileAuditStore", () => {
     });
 
     expect(summary).toContain("## Issues\n\nNo issues recorded.");
-    expect(summary).not.toContain("## OpenEMR Record Review");
+    expect(summary).not.toContain("## OpenMRS Record Review");
   });
 
   it("renders target rows in deterministic order", () => {
@@ -740,13 +774,13 @@ describe("FileAuditStore", () => {
       totalRecords: 3,
       targetCounts: {
         fake: { succeeded: 3, exception: 0, skipped: 0 },
-        openemr: { succeeded: 1, exception: 2, skipped: 0 },
+        openmrs: { succeeded: 1, exception: 2, skipped: 0 },
       },
       preflightExceptions: 0,
       environmentExceptions: 0,
       closeExceptions: 0,
     });
 
-    expect(summary.indexOf("| openemr | 1 | 2 | 0 |")).toBeLessThan(summary.indexOf("| fake | 3 | 0 | 0 |"));
+    expect(summary.indexOf("| openmrs | 1 | 2 | 0 |")).toBeLessThan(summary.indexOf("| fake | 3 | 0 | 0 |"));
   });
 });

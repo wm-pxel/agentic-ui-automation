@@ -1,15 +1,15 @@
 # Agentic UI Automation Demo
 
-Use only synthetic data for demos and smoke runs. The checked-in demo records under
-`data/demo/` are intentionally synthetic; do not run this workflow with real patient,
-customer, or production data.
+Use only synthetic data for demos and smoke runs. The checked-in demo records
+under `data/demo/` are intentionally synthetic; do not run this workflow with
+real patient, customer, or production data.
 
 ## Local Deterministic Demo
 
-Run the fake target first. It does not open a browser or desktop app, so it is the
-fastest way to verify deterministic parsing, validation, orchestration, and audit
-artifact writes. Production runs default to AI source parsing; this fixture uses
-`--parser deterministic` so it does not require an API key.
+Run the fake target first. It does not open a browser or desktop app, so it is
+the fastest way to verify deterministic parsing, validation, orchestration, and
+audit artifact writes. Production runs default to AI source parsing; this
+fixture uses `--parser deterministic` so it does not require an API key.
 
 ```sh
 npm install
@@ -46,8 +46,8 @@ file so it can be opened directly in a spreadsheet app:
 ~/Downloads/agentic-ui-intake/*.ready.csv
 ```
 
-The desktop app only exports. Start the watcher separately when ready files should
-run through the EMR workflow:
+The desktop app only exports. Start the watcher separately when ready files
+should run through the EMR workflow:
 
 ```sh
 set -a
@@ -55,12 +55,12 @@ set -a
 set +a
 npm run dev -- watch \
   --inbox ~/Downloads/agentic-ui-intake \
-  --targets openemr \
+  --targets openmrs \
   --runs-dir runs \
   --synthetic-suffix auto
 ```
 
-For a local dry run that does not open OpenEMR:
+For a local dry run that does not open OpenMRS:
 
 ```sh
 npm run dev -- watch --once --inbox ~/Downloads/agentic-ui-intake --targets fake --runs-dir runs
@@ -71,29 +71,31 @@ The watcher accepts `.ready.csv` and `.ready.json`, moves files through
 on the source format, or to `failed/`, and writes the same audit package as
 direct CLI runs.
 
-## OpenEMR Smoke Demo
+## OpenMRS Smoke Demo
 
-The OpenEMR smoke run drives the public or configured OpenEMR UI through Chromium.
-Public/demo OpenEMR screens can drift, credentials can rotate, and target selectors
-may need updates. If the environment is unavailable or the UI state changes, the run
-should stop that target with an environment or UI-state exception and still write
-audit artifacts for review.
+The OpenMRS smoke run drives the public or configured OpenMRS UI through
+Chromium. Public/demo OpenMRS screens can drift, credentials can rotate, and
+target selectors may need updates. If the environment is unavailable or the UI
+state changes, the run should stop that target with an environment or UI-state
+exception and still write audit artifacts for review.
 
 Prerequisites:
 
 - Playwright Chromium is installed.
-- `OPENEMR_BASE_URL`, `OPENEMR_USERNAME`, and `OPENEMR_PASSWORD` are set for a
-  synthetic demo OpenEMR environment.
-- `.env` contains the OpenEMR values and `OPENAI_API_KEY` when using the default
-  OpenAI parser.
+- The default OpenMRS demo settings are acceptable, or `OPENMRS_BASE_URL`,
+  `OPENMRS_USERNAME`, and `OPENMRS_PASSWORD` are set for another synthetic demo
+  OpenMRS environment.
+- `.env` contains `OPENAI_API_KEY` when using the default OpenAI parser.
 
-OpenEMR publishes multiple public demo environments. If one is stale, broken, or
-returns unexpected UI/database errors, try another before treating the adapter as
-broken:
+OpenMRS publishes current demo links at `https://openmrs.org/demo/`. This
+adapter uses the OpenMRS 2 Reference Application because this demo automates
+patient registration and O2 exposes a stable registration wizard.
 
-- Main demo: `https://demo.openemr.io/openemr`
-- Alternate demo: `https://demo.openemr.io/a/openemr`
-- Another alternate demo: `https://demo.openemr.io/b/openemr`
+- Demo page: `https://openmrs.org/demo/`
+- Default app URL: `https://o2.openmrs.org/openmrs`
+- Default username: `admin`
+- Default password: `Admin123`
+- Default location: `Registration Desk`
 
 ```sh
 npx playwright install chromium
@@ -102,7 +104,7 @@ set -a
 set +a
 npm run dev -- run \
   --input data/demo/intake-records.json \
-  --targets openemr \
+  --targets openmrs \
   --runs-dir runs \
   --synthetic-suffix auto
 ```
@@ -115,53 +117,55 @@ For local smoke checks that should not call OpenAI, use
 `data/demo/intake-records-normalized.json` and add `--parser deterministic`.
 
 The public demo URL, credentials, and UI can change. If login, navigation,
-selectors, or save behavior drift, the run should stop with auditable environment
-or UI-state exceptions rather than silently claiming success.
+selectors, or save behavior drift, the run should stop with auditable
+environment or UI-state exceptions rather than silently claiming success.
 
-OpenEMR supports patient deletion only when administrator patient deletion is
-enabled in global feature configuration. The public demo has that setting off, so
-the smoke run uses `--synthetic-suffix auto` to avoid duplicate patients instead
-of trying to reset shared demo state.
+OpenMRS supports patient deletion only when administrator patient deletion is
+enabled in global feature configuration. The public demo has that setting off,
+so the smoke run uses `--synthetic-suffix auto` to avoid duplicate patients
+instead of trying to reset shared demo state.
 
-### OpenEMR Success Criteria
+### OpenMRS Success Criteria
 
 For each valid normalized record, the target should:
 
-1. Log in to OpenEMR.
+1. Log in to OpenMRS.
 2. Take a `before-navigation` screenshot.
-3. Open `Patient` -> `New/Search`.
-4. Fill the Search or Add Patient form with demographics and available contact
-   fields.
+3. Open the O2 `Register a patient` app.
+4. Fill the registration wizard with demographics and available contact fields.
 5. Take an `after-fill` screenshot.
-6. Click `Create New Patient`.
-7. Click `Confirm Create New Patient` when OpenEMR reports no matches.
-8. Take an `after-save` screenshot after OpenEMR leaves the create form.
+6. Advance to the confirmation step and click `Confirm`.
+7. Treat similar-patient prompts as duplicate exceptions for manual review.
+8. Expand contact info when available, then take an `after-save` proof
+   screenshot from the newly created patient's dashboard.
 
-For `data/demo/intake-records.json`, the expected clean OpenEMR target result is:
+For `data/demo/intake-records.json`, the expected clean OpenMRS target result is:
 
 - `preflightExceptions` is `3`.
-- `targetCounts.openemr.succeeded` is `4`.
-- `targetCounts.openemr.exception` is `0`.
+- `targetCounts.openmrs.succeeded` is `4`.
+- `targetCounts.openmrs.exception` is `0`.
 - `exceptions/` only contains the intentional validation exceptions.
-- Each valid record has three OpenEMR screenshots:
-  `before-navigation.png`, `after-fill.png`, and `after-save.png`.
-- `summary.md` includes an OpenEMR record review with raw intake input, filled
-  screenshots, AI confidence, and source-to-OpenEMR comparisons. Optional contact
-  fields that are unavailable in a public demo layout may be reported as failed
-  mappings without failing the target record.
+- Each valid record has three OpenMRS screenshots: `before-navigation.png`,
+  `after-fill.png`, and a patient-dashboard `after-save.png` with contact info
+  expanded when OpenMRS exposes it.
+- `summary.md` includes an OpenMRS record review with raw intake input,
+  patient-dashboard proof screenshots, AI confidence, and source-to-OpenMRS
+  comparisons. Optional contact fields that are unavailable in a public demo
+  layout may be reported as failed mappings without failing the target record.
 
-The public OpenEMR demo keeps submitted patients for a while. If you rerun the
-same input without `--synthetic-suffix`, duplicate patient detection can make the
-run fail correctly. Use `runs/<run-id>/input/normalized-records.json` to see the
-generated names and identifiers to search for during manual validation.
+The public OpenMRS demo keeps submitted patients for a while. If you rerun the
+same input without `--synthetic-suffix`, duplicate patient detection can make
+the run fail correctly. Use `runs/<run-id>/input/normalized-records.json` to see
+the generated names and identifiers to search for during manual validation.
 
 ## Audit Review Commands
 
-Use the audit artifacts to confirm what happened before trusting a smoke run result.
-Copy the `runId` from the CLI JSON output and inspect that exact run directory.
-A controlled target failure can still exit cleanly with `completed_with_exceptions`;
-do not treat a target smoke as passed unless that target has the expected success
-count and no environment or target exceptions in `run.json`.
+Use the audit artifacts to confirm what happened before trusting a smoke run
+result. Copy the `runId` from the CLI JSON output and inspect that exact run
+directory. A controlled target failure can still exit cleanly with
+`completed_with_exceptions`; do not treat a target smoke as passed unless that
+target has the expected success count and no environment or target exceptions in
+`run.json`.
 
 ```sh
 RUN_ID="<run-id-from-cli-output>"

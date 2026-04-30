@@ -2,24 +2,31 @@
 
 ## Data Safety
 
-Use synthetic/demo data only. Do not put real patient data or PHI into OpenEMR,
+Use synthetic/demo data only. Do not put real patient data or PHI into OpenMRS,
 fixtures, logs, screenshots, audit artifacts, or generated test inputs.
 
-## OpenEMR Demo Environments
+## OpenMRS Demo Environment
 
-OpenEMR publishes three demo environments. If one environment is broken, stale, or returns unexpected UI/database errors during automation testing, try the next one before assuming the adapter is broken:
+OpenMRS publishes demo links at `https://openmrs.org/demo/`. This repo's
+OpenMRS adapter targets the OpenMRS 2 Reference Application registration flow
+because the workflow creates synthetic patient-registration audit artifacts.
 
-- OpenEMR 8.0.0 Main Demo: `https://demo.openemr.io/openemr`
-- Alternate Demo: `https://demo.openemr.io/a/openemr`
-- Another Alternate Demo: `https://demo.openemr.io/b/openemr`
+- Default app URL: `https://o2.openmrs.org/openmrs`
+- Default username: `admin`
+- Default password: `Admin123`
+- Default location: `Registration Desk`
 
-Do not reset shared OpenEMR demo state by deleting patients. Patient deletion is
+If the O2 demo is broken, stale, or returns unexpected UI/database errors during
+automation testing, verify the current links and credentials on
+`https://openmrs.org/demo/` before assuming the adapter is broken.
+
+Do not reset shared OpenMRS demo state by deleting patients. Patient deletion is
 gated behind a global admin setting and mutates shared demo configuration. For
-repeatable OpenEMR smoke runs, use `--synthetic-suffix auto` so each run creates
+repeatable OpenMRS smoke runs, use `--synthetic-suffix auto` so each run creates
 fresh synthetic patient names and identifiers.
 
-When OpenEMR selectors, field mappings, or navigation behavior change, update
-`tests/targets/openEmrAdapter.test.ts` and keep report field mappings useful for
+When OpenMRS selectors, field mappings, or navigation behavior change, update
+`tests/targets/openMrsAdapter.test.ts` and keep report field mappings useful for
 manual audit review.
 
 ## Audit Contract
@@ -38,7 +45,7 @@ the README and tests are updated in the same change:
 ## Documentation
 
 Keep `README.md` and `docs/demo.md` current when CLI behavior, target behavior,
-audit artifacts, OpenEMR reset strategy, or manual validation steps change. When
+audit artifacts, OpenMRS reset strategy, or manual validation steps change. When
 workflow architecture or data flow changes, also update the `README.md`
 Architecture and Data Flow sections so they reflect the current parser,
 orchestrator, agent, target adapter, audit artifact, and technology boundaries.

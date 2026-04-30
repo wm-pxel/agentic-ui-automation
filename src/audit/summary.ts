@@ -6,7 +6,7 @@ import type {
   ReportIssue,
 } from "./auditStore.js";
 
-const TARGET_ORDER: TargetName[] = ["openemr", "fake"];
+const TARGET_ORDER: TargetName[] = ["openmrs", "fake"];
 
 export interface SummaryInput {
   runId: string;
@@ -45,7 +45,7 @@ export function renderSummary(input: SummaryInput): string {
   }
 
   appendIssues(lines, input.details?.issues ?? []);
-  appendOpenEmrRecordReviews(lines, input.details);
+  appendOpenMrsRecordReviews(lines, input.details);
 
   lines.push("");
   return `${lines.join("\n")}\n`;
@@ -58,10 +58,10 @@ function appendContents(lines: string[], input: SummaryInput): void {
   }
   lines.push("- [Target Counts](#target-counts)", "- [Issues](#issues)");
 
-  const openEmrRecordIds = openEmrReviewRecordIds(input.details);
-  if (openEmrRecordIds.length > 0) {
-    lines.push("- [OpenEMR Record Review](#openemr-record-review)");
-    for (const recordId of openEmrRecordIds) {
+  const openMrsRecordIds = openMrsReviewRecordIds(input.details);
+  if (openMrsRecordIds.length > 0) {
+    lines.push("- [OpenMRS Record Review](#openmrs-record-review)");
+    for (const recordId of openMrsRecordIds) {
       lines.push(`  - [Record ${recordId}](#${markdownAnchor(`Record ${recordId}`)})`);
     }
   }
@@ -91,11 +91,11 @@ function appendArtifacts(lines: string[], input: SummaryInput): void {
 
 export function renderExecutiveSummary(input: SummaryInput): string {
   const issues = input.details?.issues ?? [];
-  const openEmrMappings = input.details?.fieldMappings.filter((mapping) => mapping.target === "openemr") ?? [];
-  const failedOpenEmrMappings = openEmrMappings.filter((mapping) => mapping.status === "failed");
-  const openEmrEvidenceRecords = new Set(
+  const openMrsMappings = input.details?.fieldMappings.filter((mapping) => mapping.target === "openmrs") ?? [];
+  const failedOpenMrsMappings = openMrsMappings.filter((mapping) => mapping.status === "failed");
+  const openMrsEvidenceRecords = new Set(
     (input.details?.targetEvidence ?? [])
-      .filter((evidence) => evidence.target === "openemr" && (evidence.fieldScreenshotPath || evidence.screenshotPath))
+      .filter((evidence) => evidence.target === "openmrs" && (evidence.fieldScreenshotPath || evidence.screenshotPath))
       .map((evidence) => evidence.recordId),
   );
 
@@ -129,12 +129,12 @@ export function renderExecutiveSummary(input: SummaryInput): string {
   } else {
     lines.push(`- ${issues.length} ${plural(issues.length, "issue")} recorded.`);
   }
-  if (failedOpenEmrMappings.length > 0) {
-    lines.push(`- ${failedOpenEmrMappings.length} OpenEMR field ${plural(failedOpenEmrMappings.length, "mapping")} failed.`);
+  if (failedOpenMrsMappings.length > 0) {
+    lines.push(`- ${failedOpenMrsMappings.length} OpenMRS field ${plural(failedOpenMrsMappings.length, "mapping")} failed.`);
   }
-  if (openEmrEvidenceRecords.size > 0) {
+  if (openMrsEvidenceRecords.size > 0) {
     lines.push(
-      `- ${openEmrEvidenceRecords.size} OpenEMR ${plural(openEmrEvidenceRecords.size, "record")} ${hasVerb(openEmrEvidenceRecords.size)} screenshot evidence.`,
+      `- ${openMrsEvidenceRecords.size} OpenMRS ${plural(openMrsEvidenceRecords.size, "record")} ${hasVerb(openMrsEvidenceRecords.size)} screenshot evidence.`,
     );
   }
   lines.push("");
@@ -213,22 +213,24 @@ function appendIssues(lines: string[], issues: ReportIssue[]): void {
   }
 }
 
-function appendOpenEmrRecordReviews(lines: string[], details: ReportDetails | undefined): void {
+function appendOpenMrsRecordReviews(lines: string[], details: ReportDetails | undefined): void {
   if (!details) return;
 
-  const openEmrMappings = details.fieldMappings.filter((mapping) => mapping.target === "openemr");
-  const mappingsByRecord = groupByRecord(openEmrMappings);
-  const evidenceByRecord = groupEvidenceByRecord(details.targetEvidence.filter((evidence) => evidence.target === "openemr"));
-  const recordIds = openEmrReviewRecordIds(details);
+  const openMrsMappings = details.fieldMappings.filter((mapping) => mapping.target === "openmrs");
+  const mappingsByRecord = groupByRecord(openMrsMappings);
+  const evidenceByRecord = groupEvidenceByRecord(details.targetEvidence.filter((evidence) => evidence.target === "openmrs"));
+  const issuesByRecord = groupByRecordIssue(details.issues.filter((issue) => issue.target === "openmrs" && issue.recordId));
+  const recordIds = openMrsReviewRecordIds(details);
 
   if (recordIds.length === 0) return;
 
   const aiByRecord = new Map(details.aiExtractions.map((extraction) => [extraction.recordId, extraction]));
   const inputsByRecord = new Map((details.recordInputs ?? []).map((input) => [input.recordId, input]));
-  lines.push("", "## OpenEMR Record Review", "");
+  lines.push("", "## OpenMRS Record Review", "");
   for (const recordId of recordIds) {
     const input = inputsByRecord.get(recordId);
     const evidence = evidenceByRecord.get(recordId)?.[0];
+    const issue = issuesByRecord.get(recordId)?.[0];
     const mappings = mappingsByRecord.get(recordId) ?? [];
     const extraction = aiByRecord.get(recordId);
 
@@ -240,28 +242,33 @@ function appendOpenEmrRecordReviews(lines: string[], details: ReportDetails | un
       lines.push("Raw input record: not available.", "");
     }
 
-    if (evidence) {
+    if (evidence || issue?.screenshotPath) {
       lines.push("#### Screenshots", "");
-      if (evidence.fieldScreenshotPath) {
-        lines.push(`- Filled-field screenshot: ${cell(evidence.fieldScreenshotPath)}`);
-        lines.push("", `![OpenEMR filled fields screenshot for ${cell(recordId)}](${markdownImagePath(evidence.fieldScreenshotPath)})`, "");
-      } else if (evidence.screenshotPath) {
+      if (evidence?.screenshotPath && evidence.fieldScreenshotPath) {
+        lines.push(`- Proof screenshot: ${cell(evidence.screenshotPath)}`);
+        lines.push("", `![OpenMRS proof screenshot for ${cell(recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
+      } else if (evidence?.screenshotPath) {
         lines.push(`- Context screenshot: ${cell(evidence.screenshotPath)}`);
-        lines.push("", `![OpenEMR context screenshot for ${cell(recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
+        lines.push("", `![OpenMRS context screenshot for ${cell(recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
+      } else if (issue?.screenshotPath) {
+        lines.push(`- Exception screenshot: ${cell(issue.screenshotPath)}`);
+        lines.push("", `![OpenMRS exception screenshot for ${cell(recordId)}](${markdownImagePath(issue.screenshotPath)})`, "");
       }
-      if (evidence.targetRecordId) {
+      if (evidence?.targetRecordId) {
         lines.push(`- Target record: ${cell(evidence.targetRecordId)}`);
       }
-      if (evidence.message) {
+      if (evidence?.message) {
         lines.push(`- Result: ${cell(evidence.message)}`);
+      } else if (issue?.message) {
+        lines.push(`- Result: ${cell(issue.message)}`);
       }
       lines.push("");
     }
 
-    const comparisonRows = openEmrComparisonRows(mappings, extraction);
+    const comparisonRows = openMrsComparisonRows(mappings, extraction);
     if (comparisonRows.length > 0) {
-      lines.push("#### Intake to OpenEMR Comparison", "");
-      lines.push("| Intake Field | Intake Value | AI Confidence | Intake Evidence | Normalized Field | OpenEMR Field | EMR Value | Action | Status | Selector or Error |");
+      lines.push("#### Intake to OpenMRS Comparison", "");
+      lines.push("| Intake Field | Intake Value | AI Confidence | Intake Evidence | Normalized Field | OpenMRS Field | EMR Value | Action | Status | Selector or Error |");
       lines.push("| --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |");
       for (const row of comparisonRows) {
         lines.push(
@@ -273,7 +280,7 @@ function appendOpenEmrRecordReviews(lines: string[], details: ReportDetails | un
   }
 }
 
-interface OpenEmrComparisonRow {
+interface OpenMrsComparisonRow {
   sourceLabel: string;
   sourceValue: string;
   confidence?: number;
@@ -286,10 +293,10 @@ interface OpenEmrComparisonRow {
   selectorOrError: string;
 }
 
-function openEmrComparisonRows(mappings: ReportFieldMapping[], extraction: ReportAiExtraction | undefined): OpenEmrComparisonRow[] {
+function openMrsComparisonRows(mappings: ReportFieldMapping[], extraction: ReportAiExtraction | undefined): OpenMrsComparisonRow[] {
   const extracted = extractionFieldLookup(extraction);
   const mappedFields = new Set<string>();
-  const rows: OpenEmrComparisonRow[] = [];
+  const rows: OpenMrsComparisonRow[] = [];
 
   for (const mapping of mappings) {
     mappedFields.add(mapping.sourceField);
@@ -372,15 +379,26 @@ function groupByRecord(mappings: ReportFieldMapping[]): Map<string, ReportFieldM
   return groups;
 }
 
-function openEmrReviewRecordIds(details: ReportDetails | undefined): string[] {
+function groupByRecordIssue(issues: ReportIssue[]): Map<string, ReportIssue[]> {
+  const groups = new Map<string, ReportIssue[]>();
+  for (const issue of issues) {
+    if (!issue.recordId) continue;
+    const group = groups.get(issue.recordId) ?? [];
+    group.push(issue);
+    groups.set(issue.recordId, group);
+  }
+  return groups;
+}
+
+function openMrsReviewRecordIds(details: ReportDetails | undefined): string[] {
   if (!details) return [];
 
-  const openEmrMappings = details.fieldMappings.filter((mapping) => mapping.target === "openemr");
-  const openEmrIssues = details.issues.filter((issue) => issue.target === "openemr" && issue.recordId);
+  const openMrsMappings = details.fieldMappings.filter((mapping) => mapping.target === "openmrs");
+  const openMrsIssues = details.issues.filter((issue) => issue.target === "openmrs" && issue.recordId);
   return orderedUnique([
-    ...details.targetEvidence.filter((evidence) => evidence.target === "openemr").map((evidence) => evidence.recordId),
-    ...openEmrMappings.map((mapping) => mapping.recordId),
-    ...openEmrIssues.map((issue) => issue.recordId ?? ""),
+    ...details.targetEvidence.filter((evidence) => evidence.target === "openmrs").map((evidence) => evidence.recordId),
+    ...openMrsMappings.map((mapping) => mapping.recordId),
+    ...openMrsIssues.map((issue) => issue.recordId ?? ""),
   ]);
 }
 

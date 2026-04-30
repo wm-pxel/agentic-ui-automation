@@ -9,7 +9,7 @@ export const CliRunConfigSchema = z.object({
   parser: z.enum(["openai", "deterministic"]).default("openai"),
   parserModel: z.string().optional(),
   syntheticSuffix: z.string().optional(),
-  openEmr: z.object({
+  openMrs: z.object({
     baseUrl: z.string().optional(),
     username: z.string().optional(),
     password: z.string().optional(),
@@ -44,10 +44,10 @@ export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
     parser: options.parser,
     parserModel: options.parserModel ?? process.env.OPENAI_PARSER_MODEL ?? process.env.OPENAI_MODEL,
     syntheticSuffix: options.syntheticSuffix,
-    openEmr: {
-      baseUrl: process.env.OPENEMR_BASE_URL,
-      username: process.env.OPENEMR_USERNAME,
-      password: process.env.OPENEMR_PASSWORD,
+    openMrs: {
+      baseUrl: process.env.OPENMRS_BASE_URL ?? "https://o2.openmrs.org/openmrs",
+      username: process.env.OPENMRS_USERNAME ?? "admin",
+      password: process.env.OPENMRS_PASSWORD ?? "Admin123",
     },
   });
 }
