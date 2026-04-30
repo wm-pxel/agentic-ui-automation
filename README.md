@@ -166,10 +166,11 @@ therefore means:
 - `exceptions/` only contains the three intentional validation exceptions.
 - Each valid record has `before-navigation`, `after-fill`, and `after-save`
   screenshots.
-- `summary.md` includes an OpenEMR record review with raw intake input,
-  filled-field screenshots, AI confidence, and source-to-OpenEMR comparisons. On
-  public demo layouts, optional contact fields that are unavailable may appear as
-  failed mappings without causing a target exception.
+- `executive-summary.md` gives a quick run outcome, while `summary.md` includes
+  an OpenEMR record review with raw intake input, filled-field screenshots, AI
+  confidence, and source-to-OpenEMR comparisons. On public demo layouts, optional
+  contact fields that are unavailable may appear as failed mappings without
+  causing a target exception.
 
 Manual verification:
 
@@ -177,6 +178,7 @@ Manual verification:
 
    ```sh
    RUN_ID="<run-id-from-cli-output>"
+   cat "runs/$RUN_ID/executive-summary.md"
    cat "runs/$RUN_ID/summary.md"
    cat "runs/$RUN_ID/run.json"
    cat "runs/$RUN_ID/input/normalized-records.json"
@@ -334,6 +336,7 @@ Each run writes to `runs/<run-id>/`:
 
 ```text
 run.json
+executive-summary.md
 summary.md
 report.json
 events.jsonl
@@ -346,6 +349,7 @@ Use the `runId` from CLI output to inspect a specific run:
 
 ```sh
 RUN_ID="<run-id-from-cli-output>"
+cat "runs/$RUN_ID/executive-summary.md"
 cat "runs/$RUN_ID/summary.md"
 cat "runs/$RUN_ID/report.json"
 cat "runs/$RUN_ID/run.json"

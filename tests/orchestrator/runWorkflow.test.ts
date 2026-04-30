@@ -34,6 +34,12 @@ describe("runWorkflow", () => {
     expect(summary).toContain("Environment exceptions: 0");
     expect(summary).toContain("Close exceptions: 0");
 
+    const executiveSummary = await readFile(join(runsDir, "run-orchestrator", "executive-summary.md"), "utf8");
+    expect(executiveSummary).toContain("# Executive Summary run-orchestrator");
+    expect(executiveSummary).toContain("| Status | completed_with_exceptions |");
+    expect(executiveSummary).toContain("| fake | 1 | 0 | 0 |");
+    expect(executiveSummary).toContain("| Full summary |");
+
     const exceptionDir = join(runsDir, "run-orchestrator", "exceptions");
     const exceptionFile = (await readdir(exceptionDir)).find((name) => name.startsWith("demo-missing"));
     expect(exceptionFile).toBeDefined();
@@ -144,6 +150,11 @@ describe("runWorkflow", () => {
     expect(summary).toContain("## Issues");
     expect(summary).toContain("| demo-validation-exception |  | validation | missing_required_field |");
     expect(summary).toContain("| demo-target-exception | fake | target | ui_state_unexpected | Run record failed. |");
+
+    const executiveSummary = await readFile(join(runsDir, "run-report", "executive-summary.md"), "utf8");
+    expect(executiveSummary).toContain("- 2 issues recorded.");
+    expect(executiveSummary).toContain("| demo-validation-exception |  | validation | missing_required_field |");
+    expect(executiveSummary).toContain("| demo-target-exception | fake | target | ui_state_unexpected | Run record failed. |");
   });
 
   it("audits target exceptions for path-unsafe record IDs without failing the run", async () => {
@@ -280,6 +291,10 @@ describe("runWorkflow", () => {
         exceptionCode: "ui_state_unexpected",
       }),
     );
+
+    const executiveSummary = await readFile(join(runsDir, "run-failed-report", "executive-summary.md"), "utf8");
+    expect(executiveSummary).toContain("| Status | failed |");
+    expect(executiveSummary).toContain("|  |  | run | ui_state_unexpected |");
   });
 
   it("passes the audit run directory to agent decisions so run-relative screenshots can be resolved", async () => {

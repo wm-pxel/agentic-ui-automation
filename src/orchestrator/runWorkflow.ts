@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { FileAuditStore } from "../audit/auditStore.js";
-import { renderSummary } from "../audit/summary.js";
+import { renderExecutiveSummary, renderSummary } from "../audit/summary.js";
 import { validateAgentDecision } from "../agent/types.js";
 import type { AgentDriver } from "../agent/types.js";
 import { TargetAdapterResultSchema } from "../adapters/contract.js";
@@ -420,6 +420,21 @@ async function writeRunReportArtifacts(input: {
   await input.audit.writeSummary(
     renderSummary({
       runId: input.runId,
+      status: input.status,
+      runDir: input.audit.runDir,
+      sourceInputPath: input.sourceInputPath,
+      totalRecords: input.totalRecords,
+      preflightExceptions: input.preflightExceptions,
+      environmentExceptions: input.environmentExceptions,
+      closeExceptions: input.closeExceptions,
+      targetCounts: input.targetCounts,
+      details,
+    }),
+  );
+  await input.audit.writeExecutiveSummary(
+    renderExecutiveSummary({
+      runId: input.runId,
+      status: input.status,
       runDir: input.audit.runDir,
       sourceInputPath: input.sourceInputPath,
       totalRecords: input.totalRecords,

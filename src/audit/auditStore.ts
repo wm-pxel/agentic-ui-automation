@@ -174,6 +174,10 @@ export class FileAuditStore {
     await writeFile(join(this.runDir, "summary.md"), markdown);
   }
 
+  async writeExecutiveSummary(markdown: string): Promise<void> {
+    await writeFile(join(this.runDir, "executive-summary.md"), markdown);
+  }
+
   async writeFieldMapping(mapping: ReportFieldMapping): Promise<void> {
     this.reportDetails.fieldMappings.push({
       ...mapping,

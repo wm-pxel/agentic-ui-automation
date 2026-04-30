@@ -24,8 +24,8 @@ Expected fake run result:
 - `preflightExceptions` is `3`.
 - `targetCounts.fake.succeeded` is `3`.
 - Audit files are written under `runs/<run-id>/`, including `run.json`,
-  `report.json`, `events.jsonl`, `summary.md`, normalized input, and exception
-  JSON files.
+  `executive-summary.md`, `summary.md`, `report.json`, `events.jsonl`,
+  normalized input, and exception JSON files.
 
 ## OpenEMR Smoke Demo
 
@@ -200,6 +200,7 @@ count and no environment or target exceptions in `run.json`.
 ```sh
 RUN_ID="<run-id-from-cli-output>"
 find "runs/${RUN_ID}" -maxdepth 3 -type f | sort
+cat "runs/${RUN_ID}/executive-summary.md"
 cat "runs/${RUN_ID}/summary.md"
 cat "runs/${RUN_ID}/report.json"
 cat "runs/${RUN_ID}/run.json"

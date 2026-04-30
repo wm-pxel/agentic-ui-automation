@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FileAuditStore } from "../../src/audit/auditStore.js";
-import { renderSummary } from "../../src/audit/summary.js";
+import { renderExecutiveSummary, renderSummary } from "../../src/audit/summary.js";
 
 describe("FileAuditStore", () => {
   it("writes events, screenshots, exceptions, and summary artifacts", async () => {
@@ -29,6 +29,7 @@ describe("FileAuditStore", () => {
       suggestedRemediation: "Review target screen.",
     });
     await store.writeSummary("# Summary\n");
+    await store.writeExecutiveSummary("# Executive Summary\n");
 
     expect(screenshotPath).toContain("screenshots/demo-001/fake/after-save.png");
 
@@ -41,6 +42,9 @@ describe("FileAuditStore", () => {
 
     const summary = await readFile(join(root, "run-test", "summary.md"), "utf8");
     expect(summary).toBe("# Summary\n");
+
+    const executiveSummary = await readFile(join(root, "run-test", "executive-summary.md"), "utf8");
+    expect(executiveSummary).toBe("# Executive Summary\n");
   });
 
   it("collects structured report details and writes parseable report JSON", async () => {
@@ -405,6 +409,7 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("| Exceptions | runs/run-test/exceptions/ |");
     expect(summary).toContain("| Screenshots | runs/run-test/screenshots/ |");
     expect(summary).toContain("| Event log | runs/run-test/events.jsonl |");
+    expect(summary).toContain("| Executive summary | runs/run-test/executive-summary.md |");
     expect(summary).toContain("| Structured report | runs/run-test/report.json |");
     expect(summary).not.toContain("| Run directory |");
     expect(summary).not.toContain("| Summary |");
@@ -413,7 +418,8 @@ describe("FileAuditStore", () => {
     expect(summary.indexOf("| Normalized records |")).toBeLessThan(summary.indexOf("| Exceptions |"));
     expect(summary.indexOf("| Exceptions |")).toBeLessThan(summary.indexOf("| Screenshots |"));
     expect(summary.indexOf("| Screenshots |")).toBeLessThan(summary.indexOf("| Event log |"));
-    expect(summary.indexOf("| Event log |")).toBeLessThan(summary.indexOf("| Structured report |"));
+    expect(summary.indexOf("| Event log |")).toBeLessThan(summary.indexOf("| Executive summary |"));
+    expect(summary.indexOf("| Executive summary |")).toBeLessThan(summary.indexOf("| Structured report |"));
     expect(summary).toContain("| openemr | 1 | 1 | 0 |");
     expect(summary).toContain("Preflight exceptions: 1");
     expect(summary).toContain("Environment exceptions: 2");
@@ -543,6 +549,80 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("| given_name | Ava | 0.96 | Name: Ava Nguyen | firstName |  |  |  | not mapped |  |");
     expect(summary).not.toContain("## AI Source Extraction");
     expect(summary).not.toContain("## Intake to OpenEMR Field Mapping");
+  });
+
+  it("renders a concise executive summary with outcome, counts, key findings, and review links", () => {
+    const executiveSummary = renderExecutiveSummary({
+      runId: "run-test",
+      status: "completed_with_exceptions",
+      runDir: "runs/run-test",
+      sourceInputPath: "data/demo/intake-records.json",
+      totalRecords: 2,
+      targetCounts: {
+        openemr: { succeeded: 1, exception: 1, skipped: 0 },
+      },
+      preflightExceptions: 1,
+      environmentExceptions: 0,
+      closeExceptions: 0,
+      details: {
+        recordInputs: [
+          {
+            recordId: "demo-001",
+            sourceFormat: "json",
+            rawInput: { intake_id: "demo-001", notes: "raw intake content should stay out of the executive summary" },
+          },
+        ],
+        targetEvidence: [
+          {
+            recordId: "demo-001",
+            target: "openemr",
+            status: "succeeded",
+            fieldScreenshotPath: "screenshots/demo-001/openemr/after-fill.png",
+            targetRecordId: "openemr-demo-001",
+          },
+        ],
+        aiExtractions: [],
+        issues: [
+          {
+            phase: "target",
+            target: "openemr",
+            recordId: "demo-002",
+            exceptionCode: "verification_failed",
+            message: "OpenEMR could not verify the saved patient.",
+            suggestedRemediation: "Review the filled-field screenshot.",
+            screenshotPath: "screenshots/demo-002/openemr/after-fill.png",
+          },
+        ],
+        fieldMappings: [
+          {
+            recordId: "demo-002",
+            target: "openemr",
+            sourceField: "state",
+            targetField: "State",
+            normalizedValue: "Illinois",
+            selectorCandidates: ['select[name="form_state"]'],
+            status: "failed",
+            errorMessage: "No visible selector matched.",
+          },
+        ],
+      },
+    });
+
+    expect(executiveSummary).toContain("# Executive Summary run-test");
+    expect(executiveSummary).toContain("| Status | completed_with_exceptions |");
+    expect(executiveSummary).toContain("| Source records | 2 |");
+    expect(executiveSummary).toContain("| Preflight exceptions | 1 |");
+    expect(executiveSummary).toContain("| openemr | 1 | 1 | 0 |");
+    expect(executiveSummary).toContain("- 1 issue recorded.");
+    expect(executiveSummary).toContain("- 1 OpenEMR field mapping failed.");
+    expect(executiveSummary).toContain("- 1 OpenEMR record has screenshot evidence.");
+    expect(executiveSummary).toContain("| demo-002 | openemr | target | verification_failed | OpenEMR could not verify the saved patient. | screenshots/demo-002/openemr/after-fill.png |");
+    expect(executiveSummary).toContain("| Full summary | runs/run-test/summary.md |");
+    expect(executiveSummary).toContain("| Structured report | runs/run-test/report.json |");
+    expect(executiveSummary).toContain("| Source input | data/demo/intake-records.json |");
+    expect(executiveSummary).toContain("| Normalized records | runs/run-test/input/normalized-records.json |");
+    expect(executiveSummary).not.toContain("raw intake content should stay out of the executive summary");
+    expect(executiveSummary).not.toContain("#### Intake Input");
   });
 
   it("renders OpenEMR record review when only success evidence is available", () => {

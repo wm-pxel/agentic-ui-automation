@@ -1,4 +1,4 @@
-import type { TargetName, TargetTaskStatus } from "../domain/schema.js";
+import type { RunStatus, TargetName, TargetTaskStatus } from "../domain/schema.js";
 import type {
   ReportAiExtraction,
   ReportDetails,
@@ -10,6 +10,7 @@ const TARGET_ORDER: TargetName[] = ["openemr", "excel", "fake"];
 
 export interface SummaryInput {
   runId: string;
+  status?: RunStatus;
   runDir?: string;
   sourceInputPath?: string;
   totalRecords: number;
@@ -82,9 +83,112 @@ function appendArtifacts(lines: string[], input: SummaryInput): void {
     lines.push(`| Exceptions | ${cell(pathInRun(runDir, "exceptions/"))} |`);
     lines.push(`| Screenshots | ${cell(pathInRun(runDir, "screenshots/"))} |`);
     lines.push(`| Event log | ${cell(pathInRun(runDir, "events.jsonl"))} |`);
+    lines.push(`| Executive summary | ${cell(pathInRun(runDir, "executive-summary.md"))} |`);
     lines.push(`| Structured report | ${cell(pathInRun(runDir, "report.json"))} |`);
   }
   lines.push("");
+}
+
+export function renderExecutiveSummary(input: SummaryInput): string {
+  const issues = input.details?.issues ?? [];
+  const openEmrMappings = input.details?.fieldMappings.filter((mapping) => mapping.target === "openemr") ?? [];
+  const failedOpenEmrMappings = openEmrMappings.filter((mapping) => mapping.status === "failed");
+  const openEmrEvidenceRecords = new Set(
+    (input.details?.targetEvidence ?? [])
+      .filter((evidence) => evidence.target === "openemr" && (evidence.fieldScreenshotPath || evidence.screenshotPath))
+      .map((evidence) => evidence.recordId),
+  );
+
+  const lines = [`# Executive Summary ${input.runId}`, ""];
+
+  lines.push("## Outcome", "");
+  lines.push("| Metric | Value |", "| --- | --- |");
+  if (input.status) {
+    lines.push(`| Status | ${cell(input.status)} |`);
+  }
+  lines.push(
+    `| Source records | ${input.totalRecords} |`,
+    `| Preflight exceptions | ${input.preflightExceptions} |`,
+    `| Environment exceptions | ${input.environmentExceptions} |`,
+    `| Close exceptions | ${input.closeExceptions} |`,
+    "",
+  );
+
+  lines.push("## Target Results", "");
+  lines.push("| Target | Succeeded | Exceptions | Skipped |", "| --- | ---: | ---: | ---: |");
+  for (const target of TARGET_ORDER) {
+    const counts = input.targetCounts[target];
+    if (!counts) continue;
+    lines.push(`| ${target} | ${counts.succeeded ?? 0} | ${counts.exception ?? 0} | ${counts.skipped ?? 0} |`);
+  }
+  lines.push("");
+
+  lines.push("## Key Findings", "");
+  if (issues.length === 0) {
+    lines.push("- No issues recorded.");
+  } else {
+    lines.push(`- ${issues.length} ${plural(issues.length, "issue")} recorded.`);
+  }
+  if (failedOpenEmrMappings.length > 0) {
+    lines.push(`- ${failedOpenEmrMappings.length} OpenEMR field ${plural(failedOpenEmrMappings.length, "mapping")} failed.`);
+  }
+  if (openEmrEvidenceRecords.size > 0) {
+    lines.push(
+      `- ${openEmrEvidenceRecords.size} OpenEMR ${plural(openEmrEvidenceRecords.size, "record")} ${hasVerb(openEmrEvidenceRecords.size)} screenshot evidence.`,
+    );
+  }
+  lines.push("");
+
+  appendExecutiveIssues(lines, issues);
+  appendReviewLinks(lines, input);
+
+  return `${lines.join("\n")}\n`;
+}
+
+function appendExecutiveIssues(lines: string[], issues: ReportIssue[]): void {
+  if (issues.length === 0) return;
+
+  lines.push("## Top Issues", "");
+  lines.push(
+    "| Record | Target | Phase | Code | Message | Evidence |",
+    "| --- | --- | --- | --- | --- | --- |",
+  );
+  for (const issue of issues.slice(0, 10)) {
+    lines.push(
+      `| ${cell(issue.recordId)} | ${cell(issue.target)} | ${cell(issue.phase)} | ${cell(issue.exceptionCode)} | ${cell(issue.message)} | ${cell(issue.screenshotPath)} |`,
+    );
+  }
+  if (issues.length > 10) {
+    lines.push("", `${issues.length - 10} additional issues are available in summary.md and report.json.`);
+  }
+  lines.push("");
+}
+
+function appendReviewLinks(lines: string[], input: SummaryInput): void {
+  if (!input.runDir && !input.sourceInputPath) return;
+
+  const runDir = input.runDir;
+  lines.push("## Review Links", "");
+  lines.push("| Item | Path |", "| --- | --- |");
+  if (input.sourceInputPath) {
+    lines.push(`| Source input | ${cell(input.sourceInputPath)} |`);
+  }
+  if (runDir) {
+    lines.push(`| Normalized records | ${cell(pathInRun(runDir, "input/normalized-records.json"))} |`);
+    lines.push(`| Full summary | ${cell(pathInRun(runDir, "summary.md"))} |`);
+    lines.push(`| Structured report | ${cell(pathInRun(runDir, "report.json"))} |`);
+    lines.push(`| Screenshots | ${cell(pathInRun(runDir, "screenshots/"))} |`);
+    lines.push(`| Exceptions | ${cell(pathInRun(runDir, "exceptions/"))} |`);
+  }
+  lines.push("");
+}
+
+function plural(count: number, singular: string): string {
+  return count === 1 ? singular : `${singular}s`;
+}
+
+function hasVerb(count: number): string {
+  return count === 1 ? "has" : "have";
 }
 
 function pathInRun(runDir: string, path: string): string {
