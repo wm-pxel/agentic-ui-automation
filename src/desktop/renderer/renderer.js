@@ -40,9 +40,14 @@ const el = {
   selectAll: document.getElementById("select-all"),
   seedButton: document.getElementById("seed-button"),
   importButton: document.getElementById("import-button"),
+  newPatientButton: document.getElementById("new-patient-button"),
   exportButton: document.getElementById("export-button"),
   showExportButton: document.getElementById("show-export-button"),
   handoffLabel: document.getElementById("handoff-label"),
+  patientDialog: document.getElementById("patient-dialog"),
+  patientForm: document.getElementById("patient-form"),
+  cancelPatientButton: document.getElementById("cancel-patient-button"),
+  resetPatientButton: document.getElementById("reset-patient-button"),
 };
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -53,6 +58,7 @@ window.addEventListener("DOMContentLoaded", () => {
 function bindEvents() {
   el.seedButton.addEventListener("click", loadSeed);
   el.importButton.addEventListener("click", importFile);
+  el.newPatientButton.addEventListener("click", openNewPatientDialog);
   el.exportButton.addEventListener("click", exportSelected);
   el.showExportButton.addEventListener("click", () => {
     if (state.lastExportPath) window.intakeApp.showPath(state.lastExportPath);
@@ -66,6 +72,9 @@ function bindEvents() {
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => activateTab(tab.dataset.tab));
   });
+  el.cancelPatientButton.addEventListener("click", () => el.patientDialog.close());
+  el.resetPatientButton.addEventListener("click", seedPatientForm);
+  el.patientForm.addEventListener("submit", addPatient);
 }
 
 async function loadSeed() {
@@ -108,10 +117,49 @@ async function exportSelected() {
   }
 }
 
-function setQueue(queue) {
+function openNewPatientDialog() {
+  if (!state.queue) return;
+  seedPatientForm();
+  if (typeof el.patientDialog.showModal === "function") {
+    el.patientDialog.showModal();
+  } else {
+    el.patientDialog.setAttribute("open", "");
+  }
+}
+
+async function addPatient(event) {
+  event.preventDefault();
+  if (!state.queue) return;
+
+  setBusy("Adding synthetic intake record");
+  try {
+    const previousSelectedIds = new Set(state.selectedIds);
+    const queue = await window.intakeApp.addPatient({
+      queue: state.queue,
+      patient: patientFromForm(),
+    });
+    const created = queue.items[0];
+    setQueue(queue, { selectedIds: previousSelectedIds, activeId: created?.sourceRecordId });
+    if (created?.exportReady) {
+      state.selectedIds.add(created.sourceRecordId);
+    }
+    el.patientDialog.close();
+    el.handoffLabel.textContent = created
+      ? `Added ${created.displayName} to the intake queue`
+      : "Added synthetic intake record";
+    render();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function setQueue(queue, options = {}) {
   state.queue = queue;
-  state.activeId = queue.items[0]?.sourceRecordId ?? null;
-  state.selectedIds = new Set(queue.items.filter((item) => item.exportReady).map((item) => item.sourceRecordId));
+  state.activeId = options.activeId ?? queue.items[0]?.sourceRecordId ?? null;
+  state.selectedIds =
+    options.selectedIds instanceof Set
+      ? new Set([...options.selectedIds].filter((id) => queue.items.some((item) => item.sourceRecordId === id && item.exportReady)))
+      : new Set(queue.items.filter((item) => item.exportReady).map((item) => item.sourceRecordId));
   state.lastExportPath = null;
   el.showExportButton.disabled = true;
   el.handoffLabel.textContent = "";
@@ -257,6 +305,39 @@ function showError(error) {
   const message = error instanceof Error ? error.message : String(error);
   el.handoffLabel.textContent = message;
   render();
+}
+
+function seedPatientForm() {
+  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+  const suffix = stamp.slice(8);
+  const values = {
+    firstName: "Taylor",
+    lastName: `Morgan ${suffix}`,
+    dateOfBirth: "1990-04-18",
+    sexOrGender: "female",
+    phone: `312555${suffix.slice(-4)}`,
+    email: `taylor.morgan.${suffix}@example.test`,
+    streetAddress: "500 West Monroe Street",
+    city: "Chicago",
+    state: "IL",
+    zip: "60661",
+    insurancePayer: "Aetna",
+    insuranceMemberId: `AET${stamp.slice(-8)}`,
+    insuranceGroupId: "GRP4",
+    reasonForVisit: "New patient wellness visit",
+    preferredContactMethod: "email",
+    notes: "Created in the Electron intake app.",
+  };
+
+  for (const [name, value] of Object.entries(values)) {
+    const field = el.patientForm.elements.namedItem(name);
+    if (field) field.value = value;
+  }
+}
+
+function patientFromForm() {
+  const data = new FormData(el.patientForm);
+  return Object.fromEntries(fields.map((field) => [field, String(data.get(field) ?? "").trim()]));
 }
 
 function labelFor(value) {

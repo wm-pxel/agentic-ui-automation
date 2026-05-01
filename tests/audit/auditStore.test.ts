@@ -443,6 +443,7 @@ describe("FileAuditStore", () => {
             sourceFormat: "json",
             rawInput: {
               intake_id: "demo-001",
+              phone: "3125550198",
               patient: {
                 given_name: "Ava",
                 sex_at_birth: "female",
@@ -527,6 +528,17 @@ describe("FileAuditStore", () => {
             action: "select",
             status: "succeeded",
           },
+          {
+            recordId: "demo-001",
+            target: "openmrs",
+            sourceField: "phone",
+            targetField: "Phone Number",
+            normalizedValue: "+13125550198",
+            selectorCandidates: ['input[name="phoneNumber"]'],
+            selectedSelector: 'input[name="phoneNumber"]',
+            action: "fill",
+            status: "succeeded",
+          },
         ],
       },
     });
@@ -546,6 +558,7 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("| Intake Field | Intake Value | AI Confidence | Intake Evidence | Normalized Field | OpenMRS Field | EMR Value | Action | Status | Selector or Error |");
     expect(summary).toContain("| sex_at_birth | female | 0.94 | sex_at_birth: female | sexOrGender | Birth Sex | Female | select | succeeded | select[name=\"form_sex\"] |");
     expect(summary).toContain("| province | IL | 0.93 | province: IL | state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
+    expect(summary).toContain("| phone | 3125550198 |  |  | phone | Phone Number | +13125550198 | fill | succeeded | input[name=\"phoneNumber\"] |");
     expect(summary).toContain("| given_name | Ava | 0.96 | Name: Ava Nguyen | firstName |  |  |  | not mapped |  |");
     expect(summary).not.toContain("## AI Source Extraction");
     expect(summary).not.toContain("## Intake to OpenMRS Field Mapping");

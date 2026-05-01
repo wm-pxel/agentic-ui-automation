@@ -17,12 +17,14 @@ import {
 const DEFAULT_OPENMRS_BASE_URL = "https://o2.openmrs.org/openmrs";
 const DEFAULT_OPENMRS_USERNAME = "admin";
 const DEFAULT_OPENMRS_PASSWORD = "Admin123";
+const OPENMRS_ACTION_TIMEOUT_MS = 5000;
 
 export interface OpenMrsConfig {
   baseUrl?: string;
   username?: string;
   password?: string;
   location?: string;
+  concurrency?: number;
 }
 
 export interface OpenMrsAdapterDependencies {
@@ -46,12 +48,17 @@ interface OpenMrsSearchContext {
   locator(selector: string): OpenMrsLocator;
 }
 
+interface OpenMrsSession {
+  browser: OpenMrsBrowser;
+  page: OpenMrsPage;
+}
+
 interface OpenMrsLocator {
   first(): OpenMrsLocator;
   count(): Promise<number>;
   evaluate<T>(pageFunction: (element: Element) => T | Promise<T>): Promise<T>;
-  selectOption(option: { label: string } | string): Promise<unknown>;
-  fill(value: string): Promise<unknown>;
+  selectOption(option: { label: string } | string, options?: { timeout: number }): Promise<unknown>;
+  fill(value: string, options?: { timeout: number }): Promise<unknown>;
   click(): Promise<unknown>;
   hover?(): Promise<unknown>;
   isVisible?(): Promise<boolean>;
@@ -65,8 +72,9 @@ interface FillResult {
 
 export class OpenMrsAdapter implements TargetAdapter {
   readonly name = "openmrs" as const;
-  private browser?: OpenMrsBrowser;
-  private page?: OpenMrsPage;
+  readonly maxConcurrency: number;
+  private readonly activeBrowsers = new Set<OpenMrsBrowser>();
+  private readonly readySessions: OpenMrsSession[] = [];
   private readonly launchBrowser: (options: Parameters<typeof chromium.launch>[0]) => Promise<OpenMrsBrowser>;
 
   constructor(
@@ -74,14 +82,23 @@ export class OpenMrsAdapter implements TargetAdapter {
     dependencies: OpenMrsAdapterDependencies = {},
   ) {
     this.launchBrowser = dependencies.launchBrowser ?? ((options) => chromium.launch(options));
+    this.maxConcurrency = normalizeConcurrency(config.concurrency);
   }
 
   async prepare(): Promise<void> {
-    await this.openSession();
+    try {
+      const sessions = await Promise.all(Array.from({ length: this.maxConcurrency }, () => this.openSession()));
+      this.readySessions.push(...sessions);
+    } catch (error) {
+      await this.close().catch(() => undefined);
+      throw error;
+    }
   }
 
   async runRecord(context: TargetRunContext): Promise<TargetAdapterResult> {
-    const page = this.page ?? (await this.openSession());
+    const session = await this.acquireSession();
+    const page = session.page;
+    let reusable = false;
     try {
       const before = await page.screenshot({ fullPage: true });
       const beforePath = await context.audit.writeScreenshot(context.record.sourceRecordId, this.name, "before-navigation", before);
@@ -284,48 +301,64 @@ export class OpenMrsAdapter implements TargetAdapter {
         message: "submitted OpenMRS patient form and opened the patient dashboard",
       });
 
+      reusable = true;
       return { status: "succeeded", targetRecordId };
     } finally {
-      await this.closeSession();
+      if (reusable) {
+        this.releaseSession(session);
+      } else {
+        await this.closeSession(session);
+      }
     }
   }
 
   async close(): Promise<void> {
-    await this.closeSession();
+    this.readySessions.length = 0;
+    const browsers = [...this.activeBrowsers];
+    this.activeBrowsers.clear();
+    await Promise.all(browsers.map((browser) => browser.close()));
   }
 
-  private async openSession(): Promise<OpenMrsPage> {
+  private async acquireSession(): Promise<OpenMrsSession> {
+    return this.readySessions.pop() ?? this.openSession();
+  }
+
+  private releaseSession(session: OpenMrsSession): void {
+    if (this.activeBrowsers.has(session.browser)) {
+      this.readySessions.push(session);
+    }
+  }
+
+  private async openSession(): Promise<OpenMrsSession> {
     const config = resolveOpenMrsConfig(this.config);
 
-    this.browser = await this.launchBrowser({
+    const browser = await this.launchBrowser({
       headless: false,
       chromiumSandbox: true,
       env: {},
       args: ["--disable-extensions", "--disable-file-system"],
     });
+    this.activeBrowsers.add(browser);
 
     try {
-      this.page = await this.browser.newPage({ viewport: { width: 1280, height: 720 } });
-      await this.page.goto(openMrsLoginUrl(config.baseUrl), { waitUntil: "domcontentloaded" });
-      await fillFirst(this.page, OPENMRS_LOGIN_SELECTORS.username, config.username, "login username");
-      await fillFirst(this.page, OPENMRS_LOGIN_SELECTORS.password, config.password, "login password");
-      await clickOptional(this.page, locationSelectors(config.location));
-      await clickFirst(this.page, OPENMRS_LOGIN_SELECTORS.submit, "login submit");
-      await this.page.waitForLoadState("networkidle");
+      const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+      await page.goto(openMrsLoginUrl(config.baseUrl), { waitUntil: "domcontentloaded" });
+      await fillFirst(page, OPENMRS_LOGIN_SELECTORS.username, config.username, "login username");
+      await fillFirst(page, OPENMRS_LOGIN_SELECTORS.password, config.password, "login password");
+      await clickOptional(page, locationSelectors(config.location));
+      await clickFirst(page, OPENMRS_LOGIN_SELECTORS.submit, "login submit");
+      await page.waitForLoadState("networkidle");
+      return { browser, page };
     } catch (error) {
-      await this.browser.close().catch(() => undefined);
-      this.browser = undefined;
-      this.page = undefined;
+      this.activeBrowsers.delete(browser);
+      await browser.close().catch(() => undefined);
       throw error;
     }
-    if (!this.page) throw new Error("OpenMRS session did not create a page.");
-    return this.page;
   }
 
-  private async closeSession(): Promise<void> {
-    await this.browser?.close();
-    this.browser = undefined;
-    this.page = undefined;
+  private async closeSession(session: OpenMrsSession): Promise<void> {
+    this.activeBrowsers.delete(session.browser);
+    await session.browser.close();
   }
 }
 
@@ -367,11 +400,12 @@ async function fillFirst(page: OpenMrsPage, selectors: string[], value: string, 
   const match = await findFirstVisible(page, selectors, label);
   const locator = match.locator;
   const tagName = await locator.evaluate((element) => element.tagName.toLowerCase()).catch(() => "input");
+  const actionOptions = { timeout: OPENMRS_ACTION_TIMEOUT_MS };
   if (tagName === "select") {
-    await locator.selectOption({ label: value }).catch(() => locator.selectOption(value));
+    await locator.selectOption({ label: value }, actionOptions).catch(() => locator.selectOption(value, actionOptions));
     return { selectedSelector: match.selector, action: "select" };
   } else {
-    await locator.fill(value);
+    await locator.fill(value, actionOptions);
     return { selectedSelector: match.selector, action: "fill" };
   }
 }
@@ -565,7 +599,12 @@ function resolveOpenMrsConfig(config: OpenMrsConfig): Required<OpenMrsConfig> {
     username: config.username ?? DEFAULT_OPENMRS_USERNAME,
     password: config.password ?? DEFAULT_OPENMRS_PASSWORD,
     location: config.location ?? "Registration Desk",
+    concurrency: normalizeConcurrency(config.concurrency),
   };
+}
+
+function normalizeConcurrency(value: number | undefined): number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 2;
 }
 
 function resolveOpenMrsBaseUrl(baseUrl: string | undefined): string {

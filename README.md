@@ -161,7 +161,8 @@ The desktop app is a synthetic intake queue. It opens with
 `data/demo/intake-seed-records.json`, which includes complete records, missing
 required fields, malformed contact data, ambiguous insurance, address variation,
 and low-confidence extraction examples. The app also has an optional import flow
-for synthetic JSON, CSV, TXT, PDF, or DOCX sources.
+for synthetic JSON, CSV, TXT, PDF, or DOCX sources, and a `New Patient` flow for
+creating a synthetic intake record directly in the queue.
 
 Run the app:
 
@@ -177,6 +178,41 @@ Export writes selected export-ready records to:
 
 The CSV is meant to be easy to inspect in a spreadsheet app. The app does not run
 OpenMRS automation directly.
+
+### Full Electron To OpenMRS E2E
+
+Use this flow when you want the full desktop handoff path: Electron exports
+synthetic intake records, then the watcher picks up the handoff file and runs
+the OpenMRS target end to end.
+
+Run these commands from the repository root. In one terminal, start the handoff
+watcher:
+
+```sh
+npm run watch:intake
+```
+
+In a second terminal, start the Electron intake app for visual/manual use:
+
+```sh
+npm run desktop:dev
+```
+
+To run the Electron patient creation and export steps by script:
+
+```sh
+npm run desktop:patient-flow
+```
+
+For manual use, click `New Patient`, review or edit the generated synthetic
+intake fields, add the patient to the queue, keep the created record selected,
+and click `Export Selected`. For scripted use, `desktop:patient-flow` launches
+its own Electron app instance, creates one synthetic patient through the
+`New Patient` form, exports only that record, prints the generated patient data
+and handoff path, and exits. In both cases, the watcher processes
+`~/Downloads/agentic-ui-intake/*.ready.csv`, moves the file to
+`processed/<runId>.csv` after completion, and writes the OpenMRS audit package
+under `runs/<run-id>/`.
 
 ## Handoff Watcher
 
@@ -230,6 +266,7 @@ patient registration smoke and O2 exposes a stable registration wizard.
 - Default username: `admin`
 - Default password: `Admin123`
 - Default location: `Registration Desk`
+- Default OpenMRS record concurrency: `2`
 
 The defaults are built into the CLI. Populate `.env` only when overriding them
 or when using the OpenAI parser:
@@ -238,6 +275,7 @@ or when using the OpenAI parser:
 OPENMRS_BASE_URL=https://o2.openmrs.org/openmrs
 OPENMRS_USERNAME=admin
 OPENMRS_PASSWORD=Admin123
+OPENMRS_CONCURRENCY=2
 OPENAI_API_KEY=<your-api-key>
 ```
 
@@ -252,7 +290,8 @@ npm run dev -- run \
   --input data/demo/intake-records.json \
   --targets openmrs \
   --runs-dir runs \
-  --synthetic-suffix auto
+  --synthetic-suffix auto \
+  --openmrs-concurrency 2
 ```
 
 `data/demo/intake-records.json` intentionally uses varied source shapes and
@@ -390,7 +429,8 @@ npm run dev -- run \
   --runs-dir runs \
   --parser openai \
   --agent scripted \
-  --synthetic-suffix auto
+  --synthetic-suffix auto \
+  --openmrs-concurrency 2
 ```
 
 Options:
@@ -407,12 +447,15 @@ Options:
 - `--synthetic-suffix`: appends a suffix to valid synthetic records before
   validation and target entry. Use `auto` for OpenMRS demo runs so each run uses
   fresh patient names and identifiers.
+- `--openmrs-concurrency`: maximum number of OpenMRS records to enter at the
+  same time. Defaults to `OPENMRS_CONCURRENCY`, then `2`.
 
 Environment variables:
 
 - `OPENMRS_BASE_URL`
 - `OPENMRS_USERNAME`
 - `OPENMRS_PASSWORD`
+- `OPENMRS_CONCURRENCY`
 - `RUNS_DIR`
 - `OPENAI_API_KEY`
 - `OPENAI_PARSER_MODEL`
@@ -427,7 +470,8 @@ npm run dev -- watch \
   --inbox ~/Downloads/agentic-ui-intake \
   --targets openmrs \
   --runs-dir runs \
-  --synthetic-suffix auto
+  --synthetic-suffix auto \
+  --openmrs-concurrency 2
 ```
 
 Options:
@@ -435,7 +479,8 @@ Options:
 - `--inbox`: folder containing exported `*.ready.csv` or `*.ready.json` files.
   Defaults to `~/Downloads/agentic-ui-intake`.
 - `--targets`: comma-separated target adapters. Defaults to `openmrs`.
-- `--runs-dir`, `--agent`, and `--synthetic-suffix`: same meaning as `run`.
+- `--runs-dir`, `--agent`, `--synthetic-suffix`, and
+  `--openmrs-concurrency`: same meaning as `run`.
 - `--once`: process currently ready files once and exit.
 
 ## Development

@@ -57,11 +57,15 @@ describe("OpenMRS selectors", () => {
 });
 
 describe("OpenMrsAdapter", () => {
+  it("defaults to two concurrent OpenMRS sessions", () => {
+    expect(new OpenMrsAdapter({}).maxConcurrency).toBe(2);
+  });
+
   it("uses the official OpenMRS O2 demo defaults and submits the login form", async () => {
     const page = new FakeOpenMrsPage({ availableSelectors: loginSelectors() });
     const browser = new FakeOpenMrsBrowser(page);
     const launchOptions: unknown[] = [];
-    const adapter = new OpenMrsAdapter({}, {
+    const adapter = new OpenMrsAdapter({ concurrency: 1 }, {
       launchBrowser: async (options: unknown) => {
         launchOptions.push(options);
         return browser;
@@ -87,7 +91,7 @@ describe("OpenMrsAdapter", () => {
 
   it("maps the official demo landing page URL to the O2 demo app", async () => {
     const page = new FakeOpenMrsPage({ availableSelectors: loginSelectors() });
-    const adapter = new OpenMrsAdapter({ baseUrl: "https://openmrs.org/demo/" }, {
+    const adapter = new OpenMrsAdapter({ baseUrl: "https://openmrs.org/demo/", concurrency: 1 }, {
       launchBrowser: async () => new FakeOpenMrsBrowser(page),
     });
 
@@ -188,6 +192,34 @@ describe("OpenMrsAdapter", () => {
     );
   });
 
+  it("caps OpenMRS fill and select actions at five seconds", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-action-timeouts-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage();
+    const adapter = new OpenMrsAdapter(openMrsConfig(), {
+      launchBrowser: async () => new FakeOpenMrsBrowser(page),
+    });
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
+    ]);
+
+    await adapter.prepare();
+    await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(page.actionOptions).toContainEqual({
+      action: "select",
+      selector: 'select[name="gender"]',
+      options: { timeout: 5000 },
+    });
+    expect(page.actionOptions).toContainEqual({
+      action: "fill",
+      selector: 'input[name="givenName"]',
+      options: { timeout: 5000 },
+    });
+    expect(page.actionOptions.every((entry) => entry.options?.timeout === 5000)).toBe(true);
+  });
+
   it("returns a possible-duplicate exception when OpenMRS reports similar patients", async () => {
     const root = await mkdtemp(join(tmpdir(), "openmrs-duplicate-"));
     const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
@@ -264,6 +296,7 @@ function openMrsConfig() {
     baseUrl: "https://openmrs.example.test/openmrs",
     username: "admin",
     password: "secret",
+    concurrency: 1,
   };
 }
 
@@ -375,6 +408,7 @@ class FakeOpenMrsPage {
   readonly waitStates: string[] = [];
   readonly filled: Array<{ selector: string; value: string }> = [];
   readonly selected: Array<{ selector: string; option: unknown }> = [];
+  readonly actionOptions: Array<{ action: "fill" | "select"; selector: string; options: { timeout?: number } | undefined }> = [];
   readonly clicked: string[] = [];
   private readonly bodyTexts: string[];
   private screenshotCount = 0;
@@ -462,12 +496,14 @@ class FakeOpenMrsLocator {
     return this.page.tagName(this.selector) as T;
   }
 
-  async fill(value: string): Promise<void> {
+  async fill(value: string, options?: { timeout?: number }): Promise<void> {
     this.page.filled.push({ selector: this.selector, value });
+    this.page.actionOptions.push({ action: "fill", selector: this.selector, options });
   }
 
-  async selectOption(option: unknown): Promise<string[]> {
+  async selectOption(option: unknown, options?: { timeout?: number }): Promise<string[]> {
     this.page.selected.push({ selector: this.selector, option });
+    this.page.actionOptions.push({ action: "select", selector: this.selector, options });
     return [];
   }
 

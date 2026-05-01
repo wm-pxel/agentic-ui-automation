@@ -33,17 +33,26 @@ The Electron intake app opens with `data/demo/intake-seed-records.json`. The
 seeded queue includes valid synthetic records plus records that need review for
 missing DOB, malformed phone, ambiguous payer, address variation, and low
 extraction confidence. Import remains available for synthetic JSON, CSV, TXT,
-PDF, or DOCX sources.
+PDF, or DOCX sources, and `New Patient` creates a synthetic intake record
+directly in the queue.
 
 ```sh
 npm run desktop:dev
 ```
 
-Use the app to select export-ready records and export them. The handoff is a CSV
-file so it can be opened directly in a spreadsheet app:
+For the full desktop E2E, click `New Patient`, review or edit the generated
+synthetic intake fields, add the patient to the queue, keep that created record
+selected, and export it. The handoff is a CSV file so it can be opened directly
+in a spreadsheet app:
 
 ```text
 ~/Downloads/agentic-ui-intake/*.ready.csv
+```
+
+The Electron patient creation and export steps can also be automated:
+
+```sh
+npm run desktop:patient-flow
 ```
 
 The desktop app only exports. Start the watcher separately when ready files
@@ -96,6 +105,7 @@ patient registration and O2 exposes a stable registration wizard.
 - Default username: `admin`
 - Default password: `Admin123`
 - Default location: `Registration Desk`
+- Default OpenMRS record concurrency: `2`
 
 ```sh
 npx playwright install chromium
@@ -106,7 +116,8 @@ npm run dev -- run \
   --input data/demo/intake-records.json \
   --targets openmrs \
   --runs-dir runs \
-  --synthetic-suffix auto
+  --synthetic-suffix auto \
+  --openmrs-concurrency 2
 ```
 
 `data/demo/intake-records.json` intentionally uses varied source shapes and

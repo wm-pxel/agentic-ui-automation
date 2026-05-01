@@ -208,6 +208,23 @@ describe("runWorkflow", () => {
     expect(events).toContain("Record did not meet fake target criteria.");
   });
 
+  it("runs records for adapters up to the adapter concurrency limit", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "workflow-concurrent-target-"));
+    const adapter = new ConcurrentAdapter(2);
+    const result = await runWorkflow({
+      runId: "run-concurrent-target",
+      runsDir,
+      records: [cleanRecord("demo-001"), cleanRecord("demo-002"), cleanRecord("demo-003")],
+      adapters: [adapter],
+      agent: new ScriptedAgentDriver(),
+      now: () => "2026-04-28T12:00:00.000Z",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.targetCounts.fake).toEqual({ succeeded: 3, exception: 0, skipped: 0 });
+    expect(adapter.maxActive).toBe(2);
+  });
+
   it("closes ready adapters after successful runs", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-close-success-"));
     const adapter = new CloseTrackingAdapter();
@@ -383,6 +400,26 @@ class SkippingAdapter implements TargetAdapter {
   async close(): Promise<void> {}
 }
 
+class ConcurrentAdapter implements TargetAdapter {
+  readonly name = "fake";
+  active = 0;
+  maxActive = 0;
+
+  constructor(readonly maxConcurrency: number) {}
+
+  async prepare(): Promise<void> {}
+
+  async runRecord(_context: TargetRunContext): Promise<TargetAdapterResult> {
+    this.active += 1;
+    this.maxActive = Math.max(this.maxActive, this.active);
+    await sleep(20);
+    this.active -= 1;
+    return { status: "succeeded" };
+  }
+
+  async close(): Promise<void> {}
+}
+
 class CloseTrackingAdapter implements TargetAdapter {
   readonly name = "fake";
   closed = false;
@@ -533,4 +570,8 @@ async function readExceptions(runsDir: string, runId: string): Promise<string> {
   const exceptionFiles = await readdir(exceptionDir);
   const contents = await Promise.all(exceptionFiles.map((file) => readFile(join(exceptionDir, file), "utf8")));
   return contents.join("\n");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

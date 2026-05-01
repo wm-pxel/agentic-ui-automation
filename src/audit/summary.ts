@@ -3,6 +3,7 @@ import type {
   ReportAiExtraction,
   ReportDetails,
   ReportFieldMapping,
+  ReportRecordInput,
   ReportIssue,
 } from "./auditStore.js";
 
@@ -265,7 +266,7 @@ function appendOpenMrsRecordReviews(lines: string[], details: ReportDetails | un
       lines.push("");
     }
 
-    const comparisonRows = openMrsComparisonRows(mappings, extraction);
+    const comparisonRows = openMrsComparisonRows(mappings, extraction, input);
     if (comparisonRows.length > 0) {
       lines.push("#### Intake to OpenMRS Comparison", "");
       lines.push("| Intake Field | Intake Value | AI Confidence | Intake Evidence | Normalized Field | OpenMRS Field | EMR Value | Action | Status | Selector or Error |");
@@ -293,18 +294,25 @@ interface OpenMrsComparisonRow {
   selectorOrError: string;
 }
 
-function openMrsComparisonRows(mappings: ReportFieldMapping[], extraction: ReportAiExtraction | undefined): OpenMrsComparisonRow[] {
+function openMrsComparisonRows(
+  mappings: ReportFieldMapping[],
+  extraction: ReportAiExtraction | undefined,
+  input: ReportRecordInput | undefined,
+): OpenMrsComparisonRow[] {
   const extracted = extractionFieldLookup(extraction);
+  const inputValues = recordInputFieldLookup(input);
   const mappedFields = new Set<string>();
   const rows: OpenMrsComparisonRow[] = [];
 
   for (const mapping of mappings) {
     mappedFields.add(mapping.sourceField);
-    const source = extracted.get(mapping.sourceField) ?? {
-      sourceLabel: mapping.sourceField,
-      value: "",
-      confidence: undefined,
-      evidence: "",
+    const extractedSource = extracted.get(mapping.sourceField);
+    const inputSource = inputValues.get(mapping.sourceField);
+    const source = {
+      sourceLabel: extractedSource?.sourceLabel ?? inputSource?.sourceLabel ?? mapping.sourceField,
+      value: inputSource?.value ?? extractedSource?.value ?? "",
+      confidence: extractedSource?.confidence,
+      evidence: extractedSource?.evidence ?? "",
     };
     rows.push({
       sourceLabel: source.sourceLabel,
@@ -326,9 +334,10 @@ function openMrsComparisonRows(mappings: ReportFieldMapping[], extraction: Repor
     if (mappedFields.has(field.sourceField)) {
       continue;
     }
+    const inputSource = inputValues.get(field.sourceField);
     rows.push({
       sourceLabel: field.sourceLabel ?? field.sourceField,
-      sourceValue: field.value,
+      sourceValue: inputSource?.value ?? field.value,
       confidence: field.confidence,
       evidence: field.evidence ?? "",
       normalizedField: field.sourceField,
@@ -341,6 +350,24 @@ function openMrsComparisonRows(mappings: ReportFieldMapping[], extraction: Repor
   }
 
   return rows;
+}
+
+function recordInputFieldLookup(
+  input: ReportRecordInput | undefined,
+): Map<string, { sourceLabel: string; value: string; confidence?: number; evidence: string }> {
+  const lookup = new Map<string, { sourceLabel: string; value: string; confidence?: number; evidence: string }>();
+  if (!input || !isPlainObject(input.rawInput)) return lookup;
+
+  for (const [field, value] of Object.entries(input.rawInput)) {
+    if (value === undefined || value === null || typeof value === "object") continue;
+    lookup.set(field, {
+      sourceLabel: field,
+      value: String(value),
+      confidence: undefined,
+      evidence: "",
+    });
+  }
+  return lookup;
 }
 
 function extractionFieldLookup(
@@ -357,6 +384,12 @@ function extractionFieldLookup(
     });
   }
   return lookup;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function groupEvidenceByRecord<T extends { recordId: string }>(items: T[]): Map<string, T[]> {

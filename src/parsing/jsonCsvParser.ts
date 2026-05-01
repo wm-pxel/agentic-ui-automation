@@ -30,11 +30,33 @@ export function parseCsvRecords(content: string): RawIntakeRecord[] {
   }) as Array<Record<string, unknown>>;
 
   return rows.map((record, index) => ({
-    ...record,
+    ...parseCsvMetadataColumns(record),
     sourceRecordId: String(record.sourceRecordId ?? `csv-${index + 1}`),
     sourceFormat: "csv",
     rawSourceExcerpt: JSON.stringify(record),
   }));
+}
+
+function parseCsvMetadataColumns(record: Record<string, unknown>): Record<string, unknown> {
+  const parsed = { ...record };
+  if (Object.hasOwn(parsed, "aiExtraction")) {
+    parsed.aiExtraction = parseJsonCell(parsed.aiExtraction);
+  }
+  if (Object.hasOwn(parsed, "sourceRawRecord")) {
+    parsed.sourceRawRecord = parseJsonCell(parsed.sourceRawRecord);
+  }
+  return parsed;
+}
+
+function parseJsonCell(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const text = value.trim();
+  if (text.length === 0 || !/^[{[]/.test(text)) return value;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return value;
+  }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

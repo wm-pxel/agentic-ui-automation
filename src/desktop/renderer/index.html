@@ -16,6 +16,7 @@
         <div class="actions">
           <button id="seed-button" type="button">Seed Data</button>
           <button id="import-button" type="button">Import</button>
+          <button id="new-patient-button" type="button">New Patient</button>
           <button id="export-button" type="button" class="primary">Export Selected</button>
         </div>
       </header>
@@ -67,6 +68,100 @@
         <span id="handoff-label"></span>
         <button id="show-export-button" type="button" disabled>Show Export</button>
       </footer>
+
+      <dialog id="patient-dialog" class="patient-dialog">
+        <form id="patient-form" method="dialog">
+          <div class="dialog-header">
+            <div>
+              <h2>New Patient</h2>
+              <p>Synthetic intake record</p>
+            </div>
+            <button id="cancel-patient-button" type="button" aria-label="Close">Close</button>
+          </div>
+
+          <div class="patient-form-grid">
+            <label>
+              First Name
+              <input name="firstName" required autocomplete="off" />
+            </label>
+            <label>
+              Last Name
+              <input name="lastName" required autocomplete="off" />
+            </label>
+            <label>
+              Date Of Birth
+              <input name="dateOfBirth" type="date" required />
+            </label>
+            <label>
+              Gender
+              <select name="sexOrGender" required>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="other">Other</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </label>
+            <label>
+              Phone
+              <input name="phone" required autocomplete="off" />
+            </label>
+            <label>
+              Email
+              <input name="email" type="email" required autocomplete="off" />
+            </label>
+            <label class="wide">
+              Street Address
+              <input name="streetAddress" required autocomplete="off" />
+            </label>
+            <label>
+              City
+              <input name="city" required autocomplete="off" />
+            </label>
+            <label>
+              State
+              <input name="state" required maxlength="2" autocomplete="off" />
+            </label>
+            <label>
+              ZIP
+              <input name="zip" required autocomplete="off" />
+            </label>
+            <label>
+              Insurance Payer
+              <input name="insurancePayer" required autocomplete="off" />
+            </label>
+            <label>
+              Member ID
+              <input name="insuranceMemberId" required autocomplete="off" />
+            </label>
+            <label>
+              Group ID
+              <input name="insuranceGroupId" autocomplete="off" />
+            </label>
+            <label>
+              Preferred Contact
+              <select name="preferredContactMethod" required>
+                <option value="phone">Phone</option>
+                <option value="email">Email</option>
+                <option value="text">Text</option>
+                <option value="mail">Mail</option>
+              </select>
+            </label>
+            <label class="wide">
+              Reason For Visit
+              <input name="reasonForVisit" required autocomplete="off" />
+            </label>
+            <label class="wide">
+              Notes
+              <textarea name="notes" rows="3"></textarea>
+            </label>
+          </div>
+
+          <div class="dialog-actions">
+            <button id="reset-patient-button" type="button">Refresh Synthetic Values</button>
+            <button type="submit" class="primary">Add Patient</button>
+          </div>
+        </form>
+      </dialog>
     </main>
 
     <script src="./renderer.js"></script>

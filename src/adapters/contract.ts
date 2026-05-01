@@ -42,6 +42,7 @@ export const TargetAdapterResultSchema = z.discriminatedUnion("status", [
 
 export interface TargetAdapter {
   readonly name: TargetName;
+  readonly maxConcurrency?: number;
   prepare(): Promise<void>;
   runRecord(context: TargetRunContext): Promise<TargetAdapterResult>;
   close(): Promise<void>;

@@ -15,6 +15,7 @@ because the workflow creates synthetic patient-registration audit artifacts.
 - Default username: `admin`
 - Default password: `Admin123`
 - Default location: `Registration Desk`
+- Default OpenMRS record concurrency: `2`
 
 If the O2 demo is broken, stale, or returns unexpected UI/database errors during
 automation testing, verify the current links and credentials on
@@ -24,6 +25,10 @@ Do not reset shared OpenMRS demo state by deleting patients. Patient deletion is
 gated behind a global admin setting and mutates shared demo configuration. For
 repeatable OpenMRS smoke runs, use `--synthetic-suffix auto` so each run creates
 fresh synthetic patient names and identifiers.
+
+OpenMRS data entry is bounded-concurrent. Keep `OPENMRS_CONCURRENCY` and
+`--openmrs-concurrency` low for shared public demos so runs remain auditable and
+do not overload the demo environment.
 
 When OpenMRS selectors, field mappings, or navigation behavior change, update
 `tests/targets/openMrsAdapter.test.ts` and keep report field mappings useful for

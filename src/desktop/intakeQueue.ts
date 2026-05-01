@@ -1,4 +1,5 @@
 import { extname, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { RawIntakeRecord, ValidationException } from "../domain/schema.js";
 import { validateAndNormalizeRecord } from "../domain/validation.js";
 import { OpenAiIntakeParser } from "../parsing/aiIntakeParser.js";
@@ -30,6 +31,26 @@ export interface ExportReadyRecordsInput {
   selectedRecordIds?: string[];
   inbox?: string;
 }
+
+export type SyntheticPatientInput = Pick<
+  RawIntakeRecord,
+  | "firstName"
+  | "lastName"
+  | "dateOfBirth"
+  | "sexOrGender"
+  | "phone"
+  | "email"
+  | "streetAddress"
+  | "city"
+  | "state"
+  | "zip"
+  | "insurancePayer"
+  | "insuranceMemberId"
+  | "insuranceGroupId"
+  | "reasonForVisit"
+  | "preferredContactMethod"
+  | "notes"
+>;
 
 export async function loadSeedIntakeQueue(path = DEFAULT_SEED_DATA_PATH): Promise<IntakeQueue> {
   return loadIntakeQueueFromFile(resolve(path));
@@ -63,6 +84,24 @@ export function buildIntakeQueue(sourcePath: string, records: RawIntakeRecord[])
   };
 }
 
+export function addSyntheticPatientRecord(
+  queue: IntakeQueue,
+  input: SyntheticPatientInput,
+  now = () => new Date(),
+): IntakeQueue {
+  const isoTimestamp = now().toISOString().replace(/\D/g, "").slice(0, 14);
+  const timestamp = `${isoTimestamp.slice(0, 8)}T${isoTimestamp.slice(8)}`;
+  const sourceRecordId = `desktop-created-${timestamp}-${randomUUID().slice(0, 6)}`;
+  const record: RawIntakeRecord = {
+    ...input,
+    sourceRecordId,
+    sourceFormat: "json",
+    rawSourceExcerpt: syntheticSourceExcerpt(input, sourceRecordId),
+  };
+
+  return buildIntakeQueue(queue.sourcePath, [record, ...queue.items.map((item) => item.record)]);
+}
+
 export async function exportReadyRecords(input: ExportReadyRecordsInput): Promise<WriteIntakeHandoffResult> {
   const selected = new Set(input.selectedRecordIds ?? input.queue.items.filter((item) => item.exportReady).map((item) => item.sourceRecordId));
   const records = input.queue.items
@@ -94,6 +133,23 @@ function displayNameFor(record: RawIntakeRecord): string {
     .filter(Boolean)
     .join(" ");
   return name || String(record.sourceRecordId);
+}
+
+function syntheticSourceExcerpt(input: SyntheticPatientInput, sourceRecordId: string): string {
+  const values = [
+    `Synthetic intake record ${sourceRecordId}`,
+    `Name: ${String(input.firstName ?? "").trim()} ${String(input.lastName ?? "").trim()}`.trim(),
+    `DOB: ${String(input.dateOfBirth ?? "").trim()}`,
+    `Gender: ${String(input.sexOrGender ?? "").trim()}`,
+    `Phone: ${String(input.phone ?? "").trim()}`,
+    `Email: ${String(input.email ?? "").trim()}`,
+    `Address: ${String(input.streetAddress ?? "").trim()}, ${String(input.city ?? "").trim()}, ${String(input.state ?? "").trim()} ${String(input.zip ?? "").trim()}`,
+    `Insurance: ${String(input.insurancePayer ?? "").trim()} ${String(input.insuranceMemberId ?? "").trim()}`.trim(),
+    `Reason: ${String(input.reasonForVisit ?? "").trim()}`,
+    `Preferred contact: ${String(input.preferredContactMethod ?? "").trim()}`,
+    `Notes: ${String(input.notes ?? "").trim()}`,
+  ];
+  return values.filter((value) => !value.endsWith(":")).join("\n");
 }
 
 function aiIssuesFor(record: RawIntakeRecord): Array<{ field?: string; message: string; severity: string }> {

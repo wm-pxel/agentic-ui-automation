@@ -36,6 +36,7 @@ interface RunCommandOptions {
   parser?: CliRunConfig["parser"];
   parserModel?: string;
   syntheticSuffix?: string;
+  openmrsConcurrency?: number;
 }
 
 interface WatchCommandOptions {
@@ -44,6 +45,7 @@ interface WatchCommandOptions {
   runsDir?: string;
   agent?: CliRunConfig["agent"];
   syntheticSuffix?: string;
+  openmrsConcurrency?: number;
   once?: boolean;
 }
 
@@ -99,6 +101,7 @@ function createProgram(io: Required<CliIo>): Command {
     .addOption(new Option("--parser <parser>", "Input parser to use.").choices(["openai", "deterministic"]))
     .option("--parser-model <model>", "OpenAI model to use for AI source parsing.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
+    .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parsePositiveInteger)
     .action(async (options: RunCommandOptions) => {
       await runCommand(options, io.stdout);
     });
@@ -111,6 +114,7 @@ function createProgram(io: Required<CliIo>): Command {
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
     .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
+    .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parsePositiveInteger)
     .option("--once", "Process currently ready files once and exit.")
     .action(async (options: WatchCommandOptions) => {
       await watchCommand(options, io.stdout);
@@ -120,7 +124,10 @@ function createProgram(io: Required<CliIo>): Command {
 }
 
 async function runCommand(options: RunCommandOptions, stdout: CliWritable): Promise<void> {
-  const config = buildRunConfig(options);
+  const config = buildRunConfig({
+    ...options,
+    openMrsConcurrency: options.openmrsConcurrency,
+  });
   const records = applySyntheticSuffix(await loadRecords(config), resolveSyntheticSuffix(config.syntheticSuffix));
   const result = await runWorkflow({
     runsDir: config.runsDir,
@@ -141,6 +148,7 @@ async function watchCommand(options: WatchCommandOptions, stdout: CliWritable): 
     agent: options.agent,
     parser: "deterministic",
     syntheticSuffix: options.syntheticSuffix,
+    openMrsConcurrency: options.openmrsConcurrency,
   });
   const inbox = options.inbox ?? defaultIntakeInbox();
   const watcherInput = {
@@ -206,6 +214,14 @@ function buildAdapters(config: CliRunConfig): TargetAdapter[] {
         return new OpenMrsAdapter(config.openMrs);
     }
   });
+}
+
+function parsePositiveInteger(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error("--openmrs-concurrency must be a positive integer.");
+  }
+  return parsed;
 }
 
 function formatCliError(error: unknown): string {

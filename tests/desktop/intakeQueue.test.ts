@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { exportReadyRecords, loadSeedIntakeQueue } from "../../src/desktop/intakeQueue.js";
+import { addSyntheticPatientRecord, exportReadyRecords, loadSeedIntakeQueue } from "../../src/desktop/intakeQueue.js";
 import { loadSourceRecords } from "../../src/parsing/loadRecords.js";
 
 const tempDirs: string[] = [];
@@ -40,6 +40,14 @@ describe("desktop intake queue", () => {
     await expect(readFile(result.readyPath, "utf8")).resolves.toContain("sourceRecordId,firstName,lastName");
     const exported = await loadSourceRecords(result.readyPath);
     expect(exported).toMatchObject([{ sourceRecordId: "seed-complete-001", firstName: "Ava", lastName: "Nguyen" }]);
+    expect(exported[0].aiExtraction).toMatchObject({
+      fields: {
+        firstName: {
+          value: "Ava",
+          confidence: 0.99,
+        },
+      },
+    });
   });
 
   it("fails clearly when no export-ready records are selected", async () => {
@@ -51,5 +59,48 @@ describe("desktop intake queue", () => {
         selectedRecordIds: ["seed-missing-dob-005"],
       }),
     ).rejects.toThrow("No export-ready intake records were selected.");
+  });
+
+  it("adds a new synthetic patient record to the front of the queue", async () => {
+    const queue = await loadSeedIntakeQueue();
+
+    const updated = addSyntheticPatientRecord(queue, {
+      firstName: "Jordan",
+      lastName: "Rivera",
+      dateOfBirth: "1991-06-12",
+      sexOrGender: "female",
+      phone: "3125550199",
+      email: "jordan.rivera@example.test",
+      streetAddress: "400 West Madison Street",
+      city: "Chicago",
+      state: "IL",
+      zip: "60606",
+      insurancePayer: "Aetna",
+      insuranceMemberId: "AET998877",
+      insuranceGroupId: "GRP4",
+      reasonForVisit: "New patient wellness visit",
+      preferredContactMethod: "email",
+      notes: "Created in the Electron intake app.",
+    });
+
+    expect(updated.items).toHaveLength(queue.items.length + 1);
+    expect(updated.items[0]).toMatchObject({
+      sourceRecordId: expect.stringMatching(/^desktop-created-\d{8}T\d{6}-[a-f0-9]{6}$/),
+      displayName: "Jordan Rivera",
+      exportReady: true,
+      exceptions: [],
+      record: {
+        firstName: "Jordan",
+        lastName: "Rivera",
+        sourceFormat: "json",
+        rawSourceExcerpt: expect.stringContaining("Jordan Rivera"),
+      },
+      normalizedRecord: {
+        phone: "+13125550199",
+        preferredContactMethod: "email",
+      },
+    });
+    expect(updated.items[1]?.sourceRecordId).toBe(queue.items[0]?.sourceRecordId);
+    expect(updated.sourceName).toBe(queue.sourceName);
   });
 });

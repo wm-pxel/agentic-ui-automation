@@ -16,7 +16,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -39,6 +41,21 @@ button.primary {
   background: #0f766e;
   border-color: #0f766e;
   color: #ffffff;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #b8c2cc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2933;
+  padding: 8px 10px;
+}
+
+textarea {
+  resize: vertical;
 }
 
 .app-shell {
@@ -332,4 +349,63 @@ pre {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.patient-dialog {
+  width: min(840px, calc(100vw - 56px));
+  max-height: calc(100vh - 56px);
+  border: 1px solid #b8c2cc;
+  border-radius: 8px;
+  padding: 0;
+  color: #1f2933;
+  background: #ffffff;
+  box-shadow: 0 20px 60px rgb(31 41 51 / 20%);
+}
+
+.patient-dialog::backdrop {
+  background: rgb(31 41 51 / 35%);
+}
+
+.patient-dialog form {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.dialog-header,
+.dialog-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dialog-header h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.dialog-header p {
+  margin: 4px 0 0;
+  color: #52616f;
+  font-size: 13px;
+}
+
+.patient-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.patient-form-grid label {
+  display: grid;
+  gap: 5px;
+  color: #52616f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.patient-form-grid label.wide {
+  grid-column: 1 / -1;
 }

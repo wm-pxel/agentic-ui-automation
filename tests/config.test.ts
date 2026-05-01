@@ -6,6 +6,7 @@ const ENV_KEYS = [
   "OPENMRS_BASE_URL",
   "OPENMRS_USERNAME",
   "OPENMRS_PASSWORD",
+  "OPENMRS_CONCURRENCY",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -96,6 +97,7 @@ describe("buildRunConfig", () => {
     process.env.OPENMRS_BASE_URL = "https://openmrs.example.test";
     process.env.OPENMRS_USERNAME = "admin";
     process.env.OPENMRS_PASSWORD = "secret";
+    process.env.OPENMRS_CONCURRENCY = "3";
 
     const config = buildRunConfig({
       input: "data/demo/intake-records.json",
@@ -106,6 +108,19 @@ describe("buildRunConfig", () => {
       baseUrl: "https://openmrs.example.test",
       username: "admin",
       password: "secret",
+      concurrency: 3,
     });
+  });
+
+  it("uses explicit OpenMRS concurrency before environment defaults", () => {
+    process.env.OPENMRS_CONCURRENCY = "3";
+
+    const config = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openmrs",
+      openMrsConcurrency: 4,
+    });
+
+    expect(config.openMrs.concurrency).toBe(4);
   });
 });

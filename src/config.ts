@@ -13,6 +13,7 @@ export const CliRunConfigSchema = z.object({
     baseUrl: z.string().optional(),
     username: z.string().optional(),
     password: z.string().optional(),
+    concurrency: z.number().int().min(1).default(2),
   }),
 });
 
@@ -26,6 +27,7 @@ export interface BuildRunConfigOptions {
   parser?: "openai" | "deterministic";
   parserModel?: string;
   syntheticSuffix?: string;
+  openMrsConcurrency?: number;
 }
 
 export function parseTargets(value: string): TargetName[] {
@@ -48,6 +50,13 @@ export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
       baseUrl: process.env.OPENMRS_BASE_URL ?? "https://o2.openmrs.org/openmrs",
       username: process.env.OPENMRS_USERNAME ?? "admin",
       password: process.env.OPENMRS_PASSWORD ?? "Admin123",
+      concurrency: options.openMrsConcurrency ?? numberFromEnv(process.env.OPENMRS_CONCURRENCY),
     },
   });
+}
+
+function numberFromEnv(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }

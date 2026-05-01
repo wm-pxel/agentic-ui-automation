@@ -7,6 +7,7 @@ import { TargetAdapterResultSchema } from "../adapters/contract.js";
 import type { TargetAdapter, TargetAdapterResult } from "../adapters/contract.js";
 import type {
   RawIntakeRecord,
+  NormalizedIntakeRecord,
   RunStatus,
   TargetName,
   TargetTaskStatus,
@@ -37,6 +38,11 @@ export interface RunWorkflowResult {
 interface TargetReadiness {
   ready: boolean;
   exception?: ValidationException;
+}
+
+interface TargetRun {
+  adapter: TargetAdapter;
+  record: NormalizedIntakeRecord;
 }
 
 export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowResult> {
@@ -101,6 +107,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
     }
 
     const normalizedRecords = [];
+    const targetRuns: TargetRun[] = [];
     for (const rawRecord of input.records) {
       await audit.writeRecordInput({
         recordId: String(rawRecord.sourceRecordId),
@@ -171,33 +178,18 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
           continue;
         }
 
-        const result = await runAdapterRecord(adapter, {
-          runId,
-          record: validation.record,
-          audit,
-          agent,
-        });
-        counts[result.status] += 1;
-        await audit.writeEvent({
-          recordId: validation.record.sourceRecordId,
-          target: adapter.name,
-          phase: "target",
-          actionType: "complete",
-          result: targetCompletionResult(result),
-          exceptionCode: result.status === "exception" ? result.exception.code : undefined,
-        });
-
-        if (result.status === "exception") {
-          await audit.writeException(`${validation.record.sourceRecordId}-${adapter.name}`, result.exception);
-          await audit.writeReportIssue(issueFromException({
-            phase: "target",
-            target: adapter.name,
-            recordId: validation.record.sourceRecordId,
-            exception: result.exception,
-          }));
-        }
+        targetRuns.push({ adapter, record: validation.record });
       }
     }
+
+    await runTargetRecords({
+      targetRuns,
+      adapters: input.adapters,
+      runId,
+      audit,
+      agent,
+      targetCounts,
+    });
 
     await audit.writeInputArtifact("normalized-records.json", `${JSON.stringify(normalizedRecords, null, 2)}\n`);
 
@@ -278,6 +270,87 @@ function initializeTargetCounts(targets: TargetName[]): Partial<Record<TargetNam
     counts[target] = { succeeded: 0, exception: 0, skipped: 0 };
   }
   return counts;
+}
+
+async function runTargetRecords(input: {
+  targetRuns: TargetRun[];
+  adapters: TargetAdapter[];
+  runId: string;
+  audit: FileAuditStore;
+  agent: AgentDriver;
+  targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>;
+}): Promise<void> {
+  for (const adapter of input.adapters) {
+    const runs = input.targetRuns.filter((run) => run.adapter === adapter);
+    if (runs.length === 0) continue;
+
+    await mapWithConcurrency(runs, adapterConcurrency(adapter), async (run) => {
+      await input.audit.writeEvent({
+        recordId: run.record.sourceRecordId,
+        target: adapter.name,
+        phase: "target",
+        actionType: "start",
+        result: "target record started",
+      });
+      const result = await runAdapterRecord(adapter, {
+        runId: input.runId,
+        record: run.record,
+        audit: input.audit,
+        agent: input.agent,
+      });
+      const counts = input.targetCounts[adapter.name];
+      if (counts) {
+        counts[result.status] += 1;
+      }
+      await input.audit.writeEvent({
+        recordId: run.record.sourceRecordId,
+        target: adapter.name,
+        phase: "target",
+        actionType: "complete",
+        result: targetCompletionResult(result),
+        exceptionCode: result.status === "exception" ? result.exception.code : undefined,
+      });
+
+      if (result.status === "exception") {
+        await input.audit.writeException(`${run.record.sourceRecordId}-${adapter.name}`, result.exception);
+        await input.audit.writeReportIssue(issueFromException({
+          phase: "target",
+          target: adapter.name,
+          recordId: run.record.sourceRecordId,
+          exception: result.exception,
+        }));
+      }
+    });
+  }
+}
+
+async function mapWithConcurrency<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
+  let nextIndex = 0;
+  let firstError: unknown;
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length && firstError === undefined) {
+        const item = items[nextIndex];
+        nextIndex += 1;
+        if (item !== undefined) {
+          try {
+            await worker(item);
+          } catch (error) {
+            firstError = error;
+          }
+        }
+      }
+    }),
+  );
+  if (firstError !== undefined) {
+    throw firstError;
+  }
+}
+
+function adapterConcurrency(adapter: TargetAdapter): number {
+  const value = adapter.maxConcurrency ?? 1;
+  return Number.isInteger(value) && value > 0 ? value : 1;
 }
 
 async function runAdapterRecord(

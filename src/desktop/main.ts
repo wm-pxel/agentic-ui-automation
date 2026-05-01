@@ -3,9 +3,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import {
+  addSyntheticPatientRecord,
   exportReadyRecords,
   loadIntakeQueueFromFile,
   loadSeedIntakeQueue,
+  type SyntheticPatientInput,
   type IntakeQueue,
 } from "./intakeQueue.js";
 import { defaultIntakeInbox } from "../handoff/intakeHandoff.js";
@@ -66,6 +68,10 @@ ipcMain.handle(
       selectedRecordIds: input.selectedRecordIds,
       inbox: input.inbox,
     }),
+);
+
+ipcMain.handle("intake:add-patient", async (_event, input: { queue: IntakeQueue; patient: SyntheticPatientInput }) =>
+  addSyntheticPatientRecord(input.queue, input.patient),
 );
 
 ipcMain.handle("intake:default-inbox", () => defaultIntakeInbox());
