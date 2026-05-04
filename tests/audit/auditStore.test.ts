@@ -584,6 +584,7 @@ describe("FileAuditStore", () => {
             action: "select",
             status: "succeeded",
             confidenceThreshold: 0.99,
+            approvalSource: "operator_confirmed",
           },
           {
             recordId: "demo-001",
@@ -644,13 +645,13 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("![OpenMRS proof screenshot for demo-001](screenshots/demo-001/openmrs/after-save.png)");
     expect(summary).toContain("#### Intake to OpenMRS Comparison");
     expect(summary).toContain("Rows highlighted yellow in the viewer indicate OpenMRS mappings whose confidence is below the configured threshold.");
-    expect(summary).toContain("| Intake Field | Intake Value | Mapping Confidence | Normalized Field | OpenMRS Field | EMR Value | Action | Status | Selector or Error |");
+    expect(summary).toContain("| Intake Field | Intake Value | Mapping Confidence | Normalized Field | OpenMRS Field | AI-Mapped Value | Final Input Value | Action | Status | Selector or Error |");
     expect(summary).not.toContain("Intake Evidence");
-    expect(summary).toContain("| sex_at_birth | female | 0.97 | sexOrGender | Birth Sex | Female | select | succeeded; low confidence: 97% below threshold 99% | select[name=\"form_sex\"] |");
-    expect(summary).toContain("| province | IL | 0.96 | state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
-    expect(summary).toContain("| phone | 3125550198 | 0.99 | phone | Phone Number | +13125550198 | fill | succeeded; operator_edited; agent 62%; threshold 80%; proposed +13125550198; final <empty>; rationale The visible label could refer to another contact field. | input[name=\"phoneNumber\"] |");
-    expect(summary).toContain("| streetAddress |  | 0.98 | streetAddress | Address Line 1 | 1200 West Lake Street |  | skipped; operator_skipped; Operator skipped optional field. |  |");
-    expect(summary).toContain("| given_name | Ava |  | firstName |  |  |  | not mapped |  |");
+    expect(summary).toContain("| sex_at_birth | female | 0.97; user confirmed | sexOrGender | Birth Sex | Female | Female | select | succeeded; low confidence: 97% below threshold 99%; operator_confirmed | select[name=\"form_sex\"] |");
+    expect(summary).toContain("| province | IL | 0.96 | state | State | Illinois | Illinois | select | succeeded | select[name=\"form_state\"] |");
+    expect(summary).toContain("| phone | 3125550198 | 0.99; user edited | phone | Phone Number | +13125550198 |  | fill | succeeded; operator_edited; agent 62%; threshold 80%; proposed +13125550198; final <empty>; rationale The visible label could refer to another contact field. | input[name=\"phoneNumber\"] |");
+    expect(summary).toContain("| streetAddress |  | 0.98; user skipped | streetAddress | Address Line 1 | 1200 West Lake Street |  |  | skipped; operator_skipped; Operator skipped optional field. |  |");
+    expect(summary).toContain("| given_name | Ava |  | firstName |  |  |  |  | not mapped |  |");
     expect(summary).not.toContain("## AI Source Extraction");
     expect(summary).not.toContain("## Intake to OpenMRS Field Mapping");
   });

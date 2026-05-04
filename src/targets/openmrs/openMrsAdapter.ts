@@ -10,8 +10,10 @@ import {
   OPENMRS_PATIENT_DASHBOARD_CONTACT_CANDIDATES,
   OPENMRS_PATIENT_MENU_CANDIDATES,
   OPENMRS_SAVE_CANDIDATES,
+  OPENMRS_STATE_LABELS,
   type FieldMapping,
   openMrsFieldMappings,
+  openMrsStateLabel,
 } from "./selectors.js";
 
 const DEFAULT_OPENMRS_BASE_URL = "https://o2.openmrs.org/openmrs";
@@ -22,6 +24,7 @@ const OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MS = 5 * 60 * 1000;
 const OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MESSAGE = "OpenMRS field confirmation prompt timed out.";
 const OPENMRS_FIELD_CONFIRMATION_RETRY_DELAY_MS = 250;
 const OPENMRS_FIELD_CONFIRMATION_MAX_ATTEMPTS = 3;
+const OPENMRS_OPERATOR_VALUE_ACTION_PREFIX = "use-openmrs-operator-value:";
 
 export interface OpenMrsConfig {
   baseUrl?: string;
@@ -592,7 +595,9 @@ async function promptForMappedField(
   }
 
   if (result.action === "confirm") {
-    const value = openMrsOperatorEditedValue(mapping, result.value.trim());
+    const rawValue = result.value.trim();
+    const interpretation = rawValue === mapping.value ? { value: mapping.value } : await interpretOpenMrsOperatorValue(_context, mapping, rawValue);
+    const value = interpretation.value;
     if (mapping.required && value.length === 0) {
       return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Required OpenMRS field confirmation returned a blank value.");
     }
@@ -601,13 +606,14 @@ async function promptForMappedField(
       approvalSource: value === mapping.value ? "operator_confirmed" : "operator_edited",
       agentConfidence: decision.confidence,
       confidenceThreshold: threshold,
-      agentRationale: decision.rationale,
+      agentRationale: fieldApprovalRationale(decision.rationale, interpretation.rationale),
       originalProposedValue: value === mapping.value ? undefined : mapping.value,
     };
   }
 
   if (result.action === "edit") {
-    const value = openMrsOperatorEditedValue(mapping, result.value.trim());
+    const interpretation = await interpretOpenMrsOperatorValue(_context, mapping, result.value.trim());
+    const value = interpretation.value;
     if (mapping.required && value.length === 0) {
       return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Required OpenMRS field confirmation returned a blank value.");
     }
@@ -616,7 +622,7 @@ async function promptForMappedField(
       approvalSource: value === mapping.value ? "operator_confirmed" : "operator_edited",
       agentConfidence: decision.confidence,
       confidenceThreshold: threshold,
-      agentRationale: decision.rationale,
+      agentRationale: fieldApprovalRationale(decision.rationale, interpretation.rationale),
       originalProposedValue: mapping.value,
     };
   }
@@ -636,6 +642,83 @@ async function promptForMappedField(
   }
 
   return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Operator stopped OpenMRS field confirmation.");
+}
+
+async function interpretOpenMrsOperatorValue(
+  context: TargetRunContext,
+  mapping: FieldMapping,
+  operatorInput: string,
+): Promise<{ value: string; rationale?: string }> {
+  const candidates = openMrsOperatorEditedValueCandidates(mapping, operatorInput);
+  const fallbackValue = candidates[0] ?? operatorInput;
+  if (candidates.length <= 1) {
+    return { value: fallbackValue };
+  }
+
+  const allowedActions = candidates.map((value, index) => ({
+    id: `${OPENMRS_OPERATOR_VALUE_ACTION_PREFIX}${index}`,
+    description: `Use ${JSON.stringify(value)} as the OpenMRS ${mapping.targetField} value.`,
+  }));
+  const decision = await context.agent.decide({
+    target: "openmrs",
+    recordId: context.record.sourceRecordId,
+    step: `interpret-openmrs-field-value:${mapping.targetField}`,
+    allowedActions,
+    metadata: {
+      sourceField: mapping.sourceField,
+      targetField: mapping.targetField,
+      proposedValue: mapping.value,
+      operatorInput,
+      candidateValues: candidates,
+      selectorCandidates: mapping.selectors,
+      required: mapping.required === true,
+    },
+  });
+  const selectedIndex = selectedOperatorValueIndex(decision.actionId);
+  if (selectedIndex === undefined || selectedIndex < 0 || selectedIndex >= candidates.length) {
+    return {
+      value: fallbackValue,
+      rationale: `Operator input ${JSON.stringify(operatorInput)} fell back to ${JSON.stringify(fallbackValue)} because the agent did not choose a valid interpretation.`,
+    };
+  }
+
+  return {
+    value: candidates[selectedIndex] ?? fallbackValue,
+    rationale: decision.rationale,
+  };
+}
+
+function selectedOperatorValueIndex(actionId: string): number | undefined {
+  if (!actionId.startsWith(OPENMRS_OPERATOR_VALUE_ACTION_PREFIX)) return undefined;
+  const index = Number(actionId.slice(OPENMRS_OPERATOR_VALUE_ACTION_PREFIX.length));
+  return Number.isInteger(index) ? index : undefined;
+}
+
+function openMrsOperatorEditedValueCandidates(mapping: FieldMapping, value: string): string[] {
+  if (mapping.targetField === "Gender") {
+    return uniqueValues([openMrsOperatorEditedValue(mapping, value), "Female", "Male", "Unknown"]);
+  }
+  if (mapping.targetField === "Birthdate Month") {
+    return uniqueValues([
+      openMrsOperatorEditedValue(mapping, value),
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ]);
+  }
+  if (mapping.targetField === "State/Province") {
+    return uniqueValues([openMrsOperatorEditedValue(mapping, value), ...OPENMRS_STATE_LABELS, value]);
+  }
+  return uniqueValues([openMrsOperatorEditedValue(mapping, value), value]);
 }
 
 function openMrsOperatorEditedValue(mapping: FieldMapping, value: string): string {
@@ -658,12 +741,34 @@ function openMrsOperatorEditedValue(mapping: FieldMapping, value: string): strin
       "December",
     ]);
   }
+  if (mapping.targetField === "State/Province") {
+    return openMrsStateLabel(value);
+  }
   return value;
 }
 
 function openMrsSelectLabel(value: string, labels: string[]): string {
   const normalizedValue = value.trim().toLowerCase();
-  return labels.find((label) => label.toLowerCase() === normalizedValue) ?? value;
+  const exactMatch = labels.find((label) => label.toLowerCase() === normalizedValue);
+  if (exactMatch) return exactMatch;
+
+  const prefixMatches = labels.filter((label) => label.toLowerCase().startsWith(normalizedValue));
+  return prefixMatches.length === 1 ? prefixMatches[0] : value;
+}
+
+function uniqueValues(values: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+  return unique;
+}
+
+function fieldApprovalRationale(mappingRationale: string, interpretationRationale: string | undefined): string {
+  return interpretationRationale ? `${mappingRationale} ${interpretationRationale}` : mappingRationale;
 }
 
 async function evaluateFieldPromptWithRetry(page: OpenMrsPage, input: OperatorPromptInput): Promise<unknown> {

@@ -270,11 +270,11 @@ function appendOpenMrsRecordReviews(lines: string[], details: ReportDetails | un
     if (comparisonRows.length > 0) {
       lines.push("#### Intake to OpenMRS Comparison", "");
       lines.push("Rows highlighted yellow in the viewer indicate OpenMRS mappings whose confidence is below the configured threshold.", "");
-      lines.push("| Intake Field | Intake Value | Mapping Confidence | Normalized Field | OpenMRS Field | EMR Value | Action | Status | Selector or Error |");
-      lines.push("| --- | --- | ---: | --- | --- | --- | --- | --- | --- |");
+      lines.push("| Intake Field | Intake Value | Mapping Confidence | Normalized Field | OpenMRS Field | AI-Mapped Value | Final Input Value | Action | Status | Selector or Error |");
+      lines.push("| --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |");
       for (const row of comparisonRows) {
         lines.push(
-          `| ${cell(row.sourceLabel)} | ${cell(row.sourceValue)} | ${cell(row.confidence)} | ${cell(row.normalizedField)} | ${cell(row.targetField)} | ${cell(row.emrValue)} | ${cell(row.action)} | ${cell(row.status)} | ${cell(row.selectorOrError)} |`,
+          `| ${cell(row.sourceLabel)} | ${cell(row.sourceValue)} | ${cell(row.confidence)} | ${cell(row.normalizedField)} | ${cell(row.targetField)} | ${cell(row.aiMappedValue)} | ${cell(row.finalInputValue)} | ${cell(row.action)} | ${cell(row.status)} | ${cell(row.selectorOrError)} |`,
         );
       }
       lines.push("");
@@ -285,10 +285,11 @@ function appendOpenMrsRecordReviews(lines: string[], details: ReportDetails | un
 interface OpenMrsComparisonRow {
   sourceLabel: string;
   sourceValue: string;
-  confidence?: number;
+  confidence: string;
   normalizedField: string;
   targetField: string;
-  emrValue: string;
+  aiMappedValue: string;
+  finalInputValue: string;
   action: string;
   status: string;
   selectorOrError: string;
@@ -315,10 +316,11 @@ function openMrsComparisonRows(
     rows.push({
       sourceLabel: source.sourceLabel,
       sourceValue: source.value,
-      confidence: mapping.mappingConfidence,
+      confidence: mappingConfidenceCell(mapping),
       normalizedField: mapping.sourceField,
       targetField: mapping.targetField,
-      emrValue: mapping.normalizedValue,
+      aiMappedValue: mapping.normalizedValue,
+      finalInputValue: finalInputValue(mapping),
       action: mapping.action ?? "",
       status: [mapping.status, mappingIntervention(mapping)].filter(Boolean).join("; "),
       selectorOrError: mapping.errorMessage ?? mapping.selectedSelector ?? "",
@@ -335,9 +337,11 @@ function openMrsComparisonRows(
     rows.push({
       sourceLabel: field.sourceLabel ?? field.sourceField,
       sourceValue: inputSource?.value ?? field.value,
+      confidence: "",
       normalizedField: field.sourceField,
       targetField: "",
-      emrValue: "",
+      aiMappedValue: "",
+      finalInputValue: "",
       action: "",
       status: "not mapped",
       selectorOrError: "",
@@ -345,6 +349,36 @@ function openMrsComparisonRows(
   }
 
   return rows;
+}
+
+function finalInputValue(mapping: ReportFieldMapping): string {
+  if (mapping.status === "skipped") return "";
+  return mapping.finalValue ?? mapping.normalizedValue;
+}
+
+function mappingConfidenceCell(mapping: ReportFieldMapping): string {
+  const parts = [
+    mapping.mappingConfidence === undefined ? undefined : String(mapping.mappingConfidence),
+    mappingUserInputStatus(mapping),
+  ].filter((value): value is string => Boolean(value));
+  return parts.join("; ");
+}
+
+function mappingUserInputStatus(mapping: ReportFieldMapping): string | undefined {
+  switch (mapping.approvalSource) {
+    case "operator_confirmed":
+      return "user confirmed";
+    case "operator_edited":
+      return "user edited";
+    case "operator_skipped":
+      return "user skipped";
+    case "operator_stopped":
+      return "user stopped";
+    case "agent":
+      return "no user input";
+    case undefined:
+      return undefined;
+  }
 }
 
 function mappingIntervention(mapping: ReportFieldMapping): string {

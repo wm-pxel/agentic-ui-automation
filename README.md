@@ -13,15 +13,16 @@ Run these from the repository root when you want the full Electron-to-OpenMRS
 flow. Start the watcher, Electron intake app, and run viewer together:
 
 ```sh
-npm run dev:all -- --openmrs-field-confidence-threshold 0.99
+npm run dev:all -- --agent openai --openmrs-field-confidence-threshold 0.99
 ```
 
 This keeps the handoff watcher, desktop app, and local audit viewer running in
 one terminal with prefixed logs. Its watcher uses interactive OpenMRS field
-confirmation with a `0.99` mapping-confidence threshold. The intentionally high
-threshold is for demo purposes so below-threshold mapping review and highlighting
-are easy to see. For unattended E2E runs, disable those prompts while keeping
-the same threshold:
+confirmation with a `0.99` mapping-confidence threshold. Edited prompt input is
+interpreted through the OpenAI-backed agent before the EMR field is filled. The
+intentionally high threshold is for demo purposes so below-threshold mapping
+review and highlighting are easy to see. For unattended E2E runs, disable those
+prompts while keeping the same threshold:
 
 ```sh
 npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-confidence-threshold 0.99
@@ -236,7 +237,7 @@ Run this command from the repository root to start the handoff watcher, Electron
 intake app, and local audit viewer together:
 
 ```sh
-npm run dev:all -- --openmrs-field-confidence-threshold 0.9
+npm run dev:all -- --agent openai --openmrs-field-confidence-threshold 0.9
 ```
 
 For debugging, each long-running service can still be launched separately:
@@ -605,12 +606,13 @@ npm run desktop:dev
 Run the full local E2E service stack:
 
 ```sh
-npm run dev:all -- --openmrs-field-confidence-threshold 0.9
+npm run dev:all -- --agent openai --openmrs-field-confidence-threshold 0.9
 ```
 
 This starts `watch:intake` with interactive OpenMRS field confirmation enabled
-and a `0.9` mapping-confidence threshold, plus the Electron app and viewer.
-Disable those prompts for unattended local runs with:
+and a `0.9` mapping-confidence threshold, plus the Electron app and viewer. Use
+`--agent openai` when edited prompt input should be interpreted before filling
+the EMR field. Disable those prompts for unattended local runs with:
 
 ```sh
 npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-confidence-threshold 0.9

@@ -134,8 +134,15 @@ const MONTH_LABELS = [
   "December",
 ];
 
-function openMrsStateLabel(value: string): string {
-  return US_STATE_LABELS[value] ?? value;
+export function openMrsStateLabel(value: string): string {
+  const trimmedValue = value.trim();
+  const upperValue = trimmedValue.toUpperCase();
+  if (US_STATE_LABELS[upperValue]) {
+    return US_STATE_LABELS[upperValue];
+  }
+
+  const lowerValue = trimmedValue.toLowerCase();
+  return Object.values(US_STATE_LABELS).find((label) => label.toLowerCase() === lowerValue) ?? value;
 }
 
 const US_STATE_LABELS: Record<string, string> = {
@@ -190,6 +197,8 @@ const US_STATE_LABELS: Record<string, string> = {
   WI: "Wisconsin",
   WY: "Wyoming",
 };
+
+export const OPENMRS_STATE_LABELS = Object.values(US_STATE_LABELS);
 
 export const OPENMRS_LOGIN_SELECTORS = {
   username: ['input[name="username"]', "#username"],

@@ -44,11 +44,12 @@ For the full Electron-to-OpenMRS path, start the handoff watcher, Electron
 intake app, and local audit viewer together:
 
 ```sh
-npm run dev:all
+npm run dev:all -- --agent openai --openmrs-field-confidence-threshold 0.9
 ```
 
 The bundled watcher runs with interactive OpenMRS field confirmation enabled and
-a `0.9` mapping-confidence threshold. For unattended local demos, run
+a `0.9` mapping-confidence threshold. Edited prompt input is interpreted before
+the EMR field is filled. For unattended local demos, run
 `npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-confidence-threshold 0.9`.
 When prompts are disabled, below-threshold OpenMRS mappings use the AI-mapped
 value and are flagged in `summary.md` and highlighted in the viewer.
@@ -182,9 +183,11 @@ Interactive field confirmation is optional. When
 `--openmrs-interactive-field-confirmation` is set, each OpenMRS browser session
 can pause before writing fields whose mapping confidence is below the configured
 threshold. Confirm, edit, skip optional fields, or stop the record from the
-in-browser prompt. This mode forces OpenMRS concurrency to `1` so prompts remain
-tied to one active record. In `npm run dev:all`, pass
-`--no-openmrs-interactive-field-confirmation` to run without these prompts.
+in-browser prompt. Use `npm run dev:all -- --agent openai` when edited prompt
+input should be interpreted before filling the EMR field. This mode forces
+OpenMRS concurrency to `1` so prompts remain tied to one active record. In
+`npm run dev:all`, pass `--no-openmrs-interactive-field-confirmation` to run
+without these prompts.
 
 For `data/demo/intake-records.json`, the expected clean OpenMRS target result is:
 

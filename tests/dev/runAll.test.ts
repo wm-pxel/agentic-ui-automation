@@ -67,6 +67,60 @@ describe("runDevAll", () => {
     await expect(running).resolves.toBe(0);
   });
 
+  it("forwards a custom agent driver to the watcher", async () => {
+    const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
+    const running = runDevAll({
+      args: ["--agent", "openai", "--openmrs-field-confidence-threshold", "0.97"],
+      cwd: "/repo",
+      spawnProcess: (command, args) => {
+        const child = new FakeChildProcess();
+        spawned.push({ command, args, child });
+        return child;
+      },
+      stdout: writable(),
+      stderr: writable(),
+    });
+
+    expect(spawned.map(({ command, args }) => [command, ...args])).toEqual([
+      [
+        "npm",
+        "run",
+        "watch:intake",
+        "--",
+        "--openmrs-interactive-field-confirmation",
+        "--openmrs-field-confidence-threshold",
+        "0.97",
+        "--agent",
+        "openai",
+      ],
+      ["npm", "run", "desktop:dev"],
+      ["npm", "run", "viewer"],
+    ]);
+
+    spawned[0]?.child.exit(0);
+    await expect(running).resolves.toBe(0);
+  });
+
+  it("rejects unsupported agent drivers before starting services", async () => {
+    const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
+
+    await expect(
+      runDevAll({
+        args: ["--agent", "deterministic"],
+        cwd: "/repo",
+        spawnProcess: (command, args) => {
+          const child = new FakeChildProcess();
+          spawned.push({ command, args, child });
+          return child;
+        },
+        stdout: writable(),
+        stderr: writable(),
+      }),
+    ).rejects.toThrow("--agent must be either scripted or openai.");
+
+    expect(spawned).toEqual([]);
+  });
+
   it("can start the watcher without interactive OpenMRS field confirmation", async () => {
     const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
     const running = runDevAll({

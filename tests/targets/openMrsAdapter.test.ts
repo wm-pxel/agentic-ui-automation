@@ -309,6 +309,7 @@ describe("OpenMrsAdapter", () => {
     );
     const agent = new QueuedAgent([
       { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      { actionId: "use-openmrs-operator-value:0", confidence: 0.93, rationale: "The operator input Unknown maps to the OpenMRS gender label Unknown." },
       { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
     ]);
 
@@ -347,6 +348,7 @@ describe("OpenMrsAdapter", () => {
     );
     const agent = new QueuedAgent([
       { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      { actionId: "use-openmrs-operator-value:0", confidence: 0.93, rationale: "The operator input male maps to the OpenMRS gender label Male." },
       { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
     ]);
 
@@ -354,6 +356,51 @@ describe("OpenMrsAdapter", () => {
     const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
 
     expect(result).toEqual({ status: "succeeded", targetRecordId: "openmrs-demo-001" });
+    expect(page.selected).toContainEqual({ selector: 'select[name="gender"]', option: { label: "Male" } });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "sexOrGender",
+        targetField: "Gender",
+        status: "succeeded",
+        approvalSource: "operator_edited",
+        originalProposedValue: "Female",
+        finalValue: "Male",
+      }),
+    );
+  });
+
+  it("normalizes an abbreviated operator-edited OpenMRS gender value before selecting it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-edited-gender-abbreviation-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [{ action: "edit", value: "m" }, ...confirmLowMappingPromptResults().slice(1)],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.99,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      { actionId: "use-openmrs-operator-value:0", confidence: 0.93, rationale: "The operator input m maps to the OpenMRS gender label Male." },
+      { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "openmrs-demo-001" });
+    const interpretationInput = agent.inputs.find((input) => input.step === "interpret-openmrs-field-value:Gender");
+    expect(interpretationInput?.metadata).toMatchObject({
+      targetField: "Gender",
+      operatorInput: "m",
+    });
+    expect(interpretationInput?.metadata?.candidateValues).toEqual(["Male", "Female", "Unknown"]);
     expect(page.selected).toContainEqual({ selector: 'select[name="gender"]', option: { label: "Male" } });
     expect(audit.getReportDetails().fieldMappings).toContainEqual(
       expect.objectContaining({
@@ -385,6 +432,7 @@ describe("OpenMrsAdapter", () => {
     );
     const agent = new QueuedAgent([
       { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      { actionId: "use-openmrs-operator-value:0", confidence: 0.93, rationale: "The changed prompt value Male maps to the OpenMRS gender label Male." },
       { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
     ]);
 
@@ -401,6 +449,99 @@ describe("OpenMrsAdapter", () => {
         approvalSource: "operator_edited",
         originalProposedValue: "Female",
         finalValue: "Male",
+      }),
+    );
+  });
+
+  it("normalizes an operator-edited OpenMRS state value before filling it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-edited-state-normalized-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [
+        ...confirmLowMappingPromptResults().slice(0, 6),
+        { action: "edit", value: "florida" },
+        ...confirmLowMappingPromptResults().slice(7),
+      ],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.99,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      { actionId: "use-openmrs-operator-value:0", confidence: 0.93, rationale: "The operator input florida maps to the OpenMRS state label Florida." },
+      { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "openmrs-demo-001" });
+    expect(page.filled).toContainEqual({ selector: 'input[name="stateProvince"]', value: "Florida" });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "state",
+        targetField: "State/Province",
+        status: "succeeded",
+        approvalSource: "operator_edited",
+        originalProposedValue: "Illinois",
+        finalValue: "Florida",
+      }),
+    );
+  });
+
+  it("uses the agent to interpret free-form OpenMRS state edits", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-edited-state-agent-interpreted-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [
+        ...confirmLowMappingPromptResults().slice(0, 6),
+        { action: "edit", value: "sunshine state" },
+        ...confirmLowMappingPromptResults().slice(7),
+      ],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.99,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      { actionId: "use-openmrs-operator-value:9", confidence: 0.87, rationale: "Sunshine state refers to Florida." },
+      { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "openmrs-demo-001" });
+    expect(agent.inputs.find((input) => input.step === "interpret-openmrs-field-value:State/Province")).toMatchObject({
+      metadata: {
+        targetField: "State/Province",
+        operatorInput: "sunshine state",
+        candidateValues: expect.arrayContaining(["sunshine state", "Florida"]),
+      },
+    });
+    expect(page.filled).toContainEqual({ selector: 'input[name="stateProvince"]', value: "Florida" });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "state",
+        targetField: "State/Province",
+        status: "succeeded",
+        approvalSource: "operator_edited",
+        originalProposedValue: "Illinois",
+        finalValue: "Florida",
       }),
     );
   });
