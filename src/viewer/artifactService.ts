@@ -173,7 +173,8 @@ async function summarizeRun(runsRoot: string, runId: string): Promise<ViewerRunS
     listKnownArtifacts(runDir, runId),
   ]);
 
-  const counts = objectProperty(report, "counts");
+  const reportCounts = objectProperty(report, "counts");
+  const runCounts = objectProperty(runMetadata, "counts");
 
   return {
     runId,
@@ -184,11 +185,17 @@ async function summarizeRun(runsRoot: string, runId: string): Promise<ViewerRunS
       timestampFromRunId(runId),
     ),
     status: firstString(stringProperty(report, "status"), stringProperty(runMetadata, "status")),
-    totalRecords: numberProperty(report, "totalRecords"),
-    preflightExceptions: numberProperty(counts, "preflightExceptions"),
-    environmentExceptions: numberProperty(counts, "environmentExceptions"),
-    closeExceptions: numberProperty(counts, "closeExceptions"),
-    targetCounts: parseTargetCounts(objectProperty(counts, "targetCounts")),
+    totalRecords: firstNumber(numberProperty(report, "totalRecords"), numberProperty(runMetadata, "totalRecords")),
+    preflightExceptions: firstNumber(
+      numberProperty(reportCounts, "preflightExceptions"),
+      numberProperty(runCounts, "preflightExceptions"),
+    ),
+    environmentExceptions: firstNumber(
+      numberProperty(reportCounts, "environmentExceptions"),
+      numberProperty(runCounts, "environmentExceptions"),
+    ),
+    closeExceptions: firstNumber(numberProperty(reportCounts, "closeExceptions"), numberProperty(runCounts, "closeExceptions")),
+    targetCounts: parseTargetCounts(objectProperty(reportCounts, "targetCounts") ?? objectProperty(runCounts, "targetCounts")),
     hasExecutiveSummary,
     hasSummary,
     artifacts,
@@ -343,6 +350,10 @@ function numberProperty(value: Record<string, unknown> | undefined, key: string)
 }
 
 function firstString(...values: Array<string | undefined>): string | undefined {
+  return values.find((value) => value !== undefined);
+}
+
+function firstNumber(...values: Array<number | undefined>): number | undefined {
   return values.find((value) => value !== undefined);
 }
 

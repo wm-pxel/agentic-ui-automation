@@ -85,6 +85,131 @@ describe("createArtifactService", () => {
     expect(runs[0].status).toBeUndefined();
   });
 
+  it("falls back to run JSON for counts when report JSON is absent", async () => {
+    const runsDir = await makeRunsDir();
+    await writeRun(runsDir, "run-2026-05-04T08-00-00-000Z-runjson", {
+      run: {
+        status: "completed_with_exceptions",
+        startedAt: "2026-05-04T08:00:00.000Z",
+        totalRecords: 9,
+        counts: {
+          preflightExceptions: 2,
+          environmentExceptions: 1,
+          closeExceptions: 4,
+          targetCounts: { openmrs: { succeeded: 5, exception: 2, skipped: 1 } },
+        },
+      },
+    });
+
+    const service = createArtifactService({ runsDir });
+    const runs = await service.listRuns();
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject<Partial<ViewerRunSummary>>({
+      runId: "run-2026-05-04T08-00-00-000Z-runjson",
+      status: "completed_with_exceptions",
+      timestamp: "2026-05-04T08:00:00.000Z",
+      totalRecords: 9,
+      preflightExceptions: 2,
+      environmentExceptions: 1,
+      closeExceptions: 4,
+    });
+    expect(runs[0].targetCounts.openmrs).toEqual({ succeeded: 5, exception: 2, skipped: 1 });
+  });
+
+  it("falls back to run JSON for counts when report JSON is malformed", async () => {
+    const runsDir = await makeRunsDir();
+    const runDir = join(runsDir, "run-2026-05-04T09-00-00-000Z-badreport");
+    await mkdir(runDir, { recursive: true });
+    await writeFile(
+      join(runDir, "run.json"),
+      `${JSON.stringify(
+        {
+          totalRecords: 3,
+          counts: {
+            preflightExceptions: 0,
+            environmentExceptions: 1,
+            closeExceptions: 0,
+            targetCounts: { fake: { succeeded: 2, exception: 1, skipped: 0 } },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(join(runDir, "report.json"), "{not-json");
+
+    const service = createArtifactService({ runsDir });
+    const runs = await service.listRuns();
+
+    expect(runs[0]).toMatchObject<Partial<ViewerRunSummary>>({
+      totalRecords: 3,
+      preflightExceptions: 0,
+      environmentExceptions: 1,
+      closeExceptions: 0,
+    });
+    expect(runs[0].targetCounts.fake).toEqual({ succeeded: 2, exception: 1, skipped: 0 });
+  });
+
+  it("includes raw artifact links for known files and directories when present", async () => {
+    const runsDir = await makeRunsDir();
+    const runId = "run-2026-05-04T10-00-00-000Z-links";
+    const runDir = join(runsDir, runId);
+    await writeRun(runsDir, runId, {
+      report: {
+        status: "completed",
+        totalRecords: 1,
+        counts: {
+          preflightExceptions: 0,
+          environmentExceptions: 0,
+          closeExceptions: 0,
+          targetCounts: {},
+        },
+      },
+    });
+    await writeFile(join(runDir, "events.jsonl"), "{}\n");
+    await mkdir(join(runDir, "input"), { recursive: true });
+    await writeFile(join(runDir, "input", "normalized-records.json"), "[]\n");
+    await mkdir(join(runDir, "exceptions"), { recursive: true });
+    await mkdir(join(runDir, "screenshots"), { recursive: true });
+
+    const service = createArtifactService({ runsDir });
+    const runs = await service.listRuns();
+
+    expect(runs[0].artifacts).toEqual([
+      {
+        name: "Structured report",
+        path: "report.json",
+        type: "file",
+        url: `/api/runs/${runId}/artifact/report.json`,
+      },
+      {
+        name: "Event log",
+        path: "events.jsonl",
+        type: "file",
+        url: `/api/runs/${runId}/artifact/events.jsonl`,
+      },
+      {
+        name: "Normalized records",
+        path: "input/normalized-records.json",
+        type: "file",
+        url: `/api/runs/${runId}/artifact/input/normalized-records.json`,
+      },
+      {
+        name: "Exceptions",
+        path: "exceptions",
+        type: "directory",
+        url: `/api/runs/${runId}/artifact/exceptions`,
+      },
+      {
+        name: "Screenshots",
+        path: "screenshots",
+        type: "directory",
+        url: `/api/runs/${runId}/artifact/screenshots`,
+      },
+    ]);
+  });
+
   it("reads known Markdown files and reports missing Markdown as null", async () => {
     const runsDir = await makeRunsDir();
     await writeRun(runsDir, "run-2026-05-01T12-00-00-000Z-markdown", {
@@ -103,6 +228,16 @@ describe("createArtifactService", () => {
       markdown: "# Executive Summary\n",
     });
     await expect(service.readMarkdown("run-2026-05-01T12-00-00-000Z-markdown", "unknown")).resolves.toBeNull();
+  });
+
+  it("reports missing known Markdown files as null", async () => {
+    const runsDir = await makeRunsDir();
+    const runDir = join(runsDir, "run-2026-05-01T12-00-00-000Z-missing-markdown");
+    await mkdir(runDir, { recursive: true });
+
+    const service = createArtifactService({ runsDir });
+
+    await expect(service.readMarkdown("run-2026-05-01T12-00-00-000Z-missing-markdown", "summary")).resolves.toBeNull();
   });
 
   it("resolves artifact files only inside the configured runs directory", async () => {
@@ -135,6 +270,11 @@ describe("createArtifactService", () => {
     await expect(service.resolveArtifact("run-2026-05-01T12-00-00-000Z-artifacts", "../run.json")).resolves.toBeNull();
     await expect(service.resolveArtifact("../outside", "run.json")).resolves.toBeNull();
     await expect(service.resolveArtifact("run-2026-05-01T12-00-00-000Z-artifacts", "/etc/passwd")).resolves.toBeNull();
+    await expect(service.resolveArtifact("run-2026-05-01T12-00-00-000Z-artifacts", "screenshots/\0proof.png")).resolves.toBeNull();
+    await expect(service.listArtifactDirectory("run-2026-05-01T12-00-00-000Z-artifacts", "../screenshots")).resolves.toBeNull();
+    await expect(service.listArtifactDirectory("../outside", "screenshots")).resolves.toBeNull();
+    await expect(service.listArtifactDirectory("run-2026-05-01T12-00-00-000Z-artifacts", "/tmp")).resolves.toBeNull();
+    await expect(service.listArtifactDirectory("run-2026-05-01T12-00-00-000Z-artifacts", "screenshots/\0")).resolves.toBeNull();
   });
 });
 
