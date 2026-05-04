@@ -63,7 +63,7 @@ export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
       concurrency: interactiveFieldConfirmation ? 1 : requestedOpenMrsConcurrency,
       interactiveFieldConfirmation,
       fieldConfidenceThreshold:
-        options.openMrsFieldConfidenceThreshold ?? numberFromEnv(process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD),
+        options.openMrsFieldConfidenceThreshold ?? thresholdFromEnv(process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD),
     },
   });
 }
@@ -72,6 +72,11 @@ function numberFromEnv(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function thresholdFromEnv(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  return Number(value);
 }
 
 function booleanFromEnv(value: string | undefined): boolean | undefined {

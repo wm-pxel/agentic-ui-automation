@@ -190,4 +190,15 @@ describe("buildRunConfig", () => {
       }),
     ).toThrow();
   });
+
+  it("rejects non-numeric OpenMRS field confidence threshold environment defaults", () => {
+    process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD = "not-a-number";
+
+    expect(() =>
+      buildRunConfig({
+        input: "data/demo/intake-records.json",
+        targets: "openmrs",
+      }),
+    ).toThrow();
+  });
 });
