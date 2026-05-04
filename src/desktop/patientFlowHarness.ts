@@ -143,7 +143,7 @@ function isMissingDirectoryError(error: unknown): boolean {
 }
 
 async function handoffCsvFiles(inbox: string): Promise<Array<{ relativePath: string; absolutePath: string }>> {
-  const directories = ["", "processing", "processed", "failed"];
+  const directories = ["", "processing", "processed"];
   const groups = await Promise.all(
     directories.map(async (directory) => {
       const directoryPath = directory ? join(inbox, directory) : inbox;

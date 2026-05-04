@@ -145,6 +145,43 @@ describe("Computer Use patient flow harness", () => {
     );
   });
 
+  it("does not treat watcher failed files as successful exports", async () => {
+    const inbox = await mkdtemp(join(tmpdir(), "computer-use-failed-patient-"));
+    tempDirs.push(inbox);
+    await mkdir(join(inbox, "failed"), { recursive: true });
+    const patient = syntheticComputerUsePatient(new Date("2026-05-04T14:03:27.000Z"));
+    const before = await handoffCsvSnapshot(inbox);
+
+    await writeFile(
+      join(inbox, "failed", "failed-run.csv"),
+      [
+        "sourceRecordId,firstName,lastName,dateOfBirth,sexOrGender,phone,email,streetAddress,city,state,zip,insurancePayer,insuranceMemberId,insuranceGroupId,reasonForVisit,preferredContactMethod,notes",
+        [
+          "desktop-created",
+          patient.firstName,
+          patient.lastName,
+          patient.dateOfBirth,
+          patient.sexOrGender,
+          patient.phone,
+          patient.email,
+          patient.streetAddress,
+          patient.city,
+          patient.state,
+          patient.zip,
+          patient.insurancePayer,
+          patient.insuranceMemberId,
+          patient.insuranceGroupId,
+          patient.reasonForVisit,
+          patient.preferredContactMethod,
+          patient.notes,
+        ].join(","),
+      ].join("\n"),
+      "utf8",
+    );
+
+    await expect(detectNewReadyFileForPatient(inbox, before, patient)).resolves.toBeNull();
+  });
+
   it("returns an empty snapshot for a missing inbox", async () => {
     const inbox = join(tmpdir(), "missing-computer-use-ready-files");
 
