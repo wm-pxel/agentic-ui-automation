@@ -59,8 +59,15 @@ npm run desktop:patient-flow
 This command clicks and types through the visible Intake Queue UI like a
 third-party desktop app. It creates one synthetic patient, exports only that
 record, prints the generated patient data and handoff path, and leaves the app
-running. It does not launch a private Electron instance and does not use
-Playwright, IPC, preload APIs, `window.intakeApp`, or app internals.
+running. It resolves the installed Codex Computer Use MCP helper from the local
+Codex plugin cache and passes that helper to `codex exec` explicitly, so the
+script can run from a terminal without the Codex Desktop app. It does not launch
+a private Electron instance and does not use Playwright, IPC, preload APIs,
+`window.intakeApp`, or app internals. Set `COMPUTER_USE_MCP_COMMAND` if the
+helper is installed somewhere other than the default Codex plugin cache. The
+helper must be able to approve/control the visible Electron app; if the MCP host
+denies app access, the command fails with the nested Computer Use transcript
+instead of waiting for a handoff file.
 
 The desktop app only exports. Start the watcher separately when ready files
 should run through the EMR workflow:

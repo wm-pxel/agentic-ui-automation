@@ -22,19 +22,26 @@ Start the Electron app for visual/manual use:
 npm run desktop:dev
 ```
 
-With the Electron app already visible, run the Computer Use patient
-creation/export flow:
+With the Electron app already visible, drive the patient creation/export flow
+from this interactive Codex chat:
 
-```sh
-npm run desktop:patient-flow
+```text
+Use Computer Use against the existing Electron Intake Queue window to create one synthetic patient, clear existing selected seed records, select only the new patient, and export it.
 ```
 
-`desktop:patient-flow` uses Codex Computer Use to click and type through the
-already-running Intake Queue app. It creates one synthetic patient through the
-`New Patient` form, exports only that record, leaves the app running, and does
-not launch a private Electron instance or call IPC, preload APIs, or app
-internals. If the watcher is running, it picks up the exported handoff and
-continues into OpenMRS.
+Start the run viewer to inspect generated summaries and audit artifacts in a
+browser:
+
+```sh
+npm run viewer
+```
+
+The Computer Use step should run in the interactive Codex session, not through a
+nested noninteractive `codex exec` command. The interactive session can approve
+and hold app access for the visible Electron window, click through `New Patient`,
+clear the default selected seed records, select only the created patient, and
+export one `.ready.csv` handoff file. If the watcher is running, it picks up the
+exported handoff and continues into OpenMRS.
 
 ## Contents
 
@@ -229,22 +236,22 @@ In a second terminal, start the Electron intake app for visual/manual use:
 npm run desktop:dev
 ```
 
-With the Electron app already running and visible, automate the patient creation
-and export steps through Codex Computer Use:
+With the Electron app already running and visible, ask this interactive Codex
+chat to automate the patient creation and export steps through Computer Use:
 
-```sh
-npm run desktop:patient-flow
+```text
+Use Computer Use against the existing Electron Intake Queue window to create one synthetic patient, clear existing selected seed records, select only the new patient, and export it.
 ```
 
 For manual use, click `New Patient`, review or edit the generated synthetic
 intake fields, add the patient to the queue, keep the created record selected,
-and click `Export Selected`. For scripted use, `desktop:patient-flow` requires
-`npm run desktop:dev` to already be running. It uses Codex Computer Use to drive
-the visible app like a third-party desktop app, creates one synthetic patient
-through the `New Patient` form, exports only that record, prints the generated
-patient data and handoff path, and leaves the app running. It does not launch a
-private Electron instance and does not use Playwright, IPC, preload APIs,
-`window.intakeApp`, or other app internals. In both cases, the watcher processes
+and click `Export Selected`. For Computer Use, keep `npm run desktop:dev`
+running and leave the Intake Queue window visible. The agent should clear the
+default selected seed records, create one synthetic patient through the
+`New Patient` form, select only that created patient, export it, and leave the
+app running. This uses the visible app like a third-party desktop app and does
+not use Playwright, IPC, preload APIs, `window.intakeApp`, or other app
+internals. In both cases, the watcher processes
 `~/Downloads/agentic-ui-intake/*.ready.csv`, moves the file to
 `processed/<runId>.csv` after completion, and writes the OpenMRS audit package
 under `runs/<run-id>/`.

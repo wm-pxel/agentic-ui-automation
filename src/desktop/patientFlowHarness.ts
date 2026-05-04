@@ -1,7 +1,18 @@
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse } from "csv-parse/sync";
 import type { SyntheticPatientInput } from "./intakeQueue.js";
+
+const computerUseMcpExecutableSegments = [
+  "Codex Computer Use.app",
+  "Contents",
+  "SharedSupport",
+  "SkyComputerUseClient.app",
+  "Contents",
+  "MacOS",
+  "SkyComputerUseClient",
+];
 
 export function syntheticComputerUsePatient(now = new Date()): SyntheticPatientInput {
   const stamp = now.toISOString().replace(/\D/g, "").slice(0, 14);
@@ -63,15 +74,19 @@ export async function detectNewReadyFileForPatient(
 }
 
 export function codexOutputShowsComputerUse(output: string): boolean {
-  if (/failed to load plugin=.*computer-use/i.test(output) || /Computer Use unavailable/i.test(output)) {
+  if (/Computer Use unavailable/i.test(output) || codexOutputShowsComputerUseDenied(output)) {
     return false;
   }
   if (codexOutputShowsForbiddenAutomation(output)) {
     return false;
   }
   return codexJsonEvents(output).some((event) =>
-    eventContainsToolName(event, /mcp__computer_use__|computer_use|get_app_state|list_apps/i),
+    eventContainsToolName(event, /mcp__computer_use__(click|type_text|set_value|press_key|scroll|drag)|\b(click|type_text|set_value|press_key|scroll|drag)\b/i),
   );
+}
+
+export function codexOutputShowsComputerUseDenied(output: string): boolean {
+  return /Computer Use approval denied via MCP elicitation|Computer Use is not allowed to use the app/i.test(output);
 }
 
 export function codexOutputShowsForbiddenAutomation(output: string): boolean {
@@ -91,18 +106,84 @@ Hard boundaries:
 - Do not use IPC, preload APIs, window.intakeApp, devtools console access, filesystem shortcuts, or application internals.
 - Do not edit source code or generated build files.
 - Use synthetic/demo data only.
+- If Computer Use approval is denied via MCP elicitation, stop immediately and report that denial. Do not try unrelated apps.
 
 Task:
-1. In the visible Intake Queue app, create a new patient with exactly this JSON data:
+1. First clear any already-selected seed records. If the "Select ready" checkbox is checked, click it so no existing ready records are selected.
+2. In the visible Intake Queue app, create a new patient with exactly this JSON data:
 ${JSON.stringify(patient, null, 2)}
-2. Save/add the patient through the app UI.
-3. Select only the newly-created patient if selection is required.
-4. Export the selected patient through the app UI.
-5. The export must create a new .ready.csv handoff file in this inbox:
+3. Save/add the patient through the app UI.
+4. Confirm the queue shows the newly-created patient named "${patient.firstName} ${patient.lastName}".
+5. Select only the newly-created patient. Do not leave any seeded patient selected.
+6. Export the selected patient through the app UI.
+7. The export must create a new .ready.csv handoff file in this inbox:
 ${inbox}
-6. Leave the Intake Queue app running when finished.
+8. Leave the Intake Queue app running when finished.
 
-Report the UI status text and the exported file path if the app displays one.`;
+Do not finish after merely inspecting apps or reading the UI. Finish only after clicking the app controls to add and export the patient.
+
+Report the UI status text, the selected record count before export, and the exported file path if the app displays one.`;
+}
+
+export async function resolveComputerUseMcpCommand(pluginRoot?: string): Promise<string> {
+  const envCommand = pluginRoot === undefined ? process.env.COMPUTER_USE_MCP_COMMAND?.trim() : undefined;
+  if (envCommand) return envCommand;
+  const root = pluginRoot ?? defaultComputerUsePluginRoot();
+
+  const entries = await readdir(root, { withFileTypes: true }).catch((error) => {
+    if (isMissingDirectoryError(error)) {
+      throw new Error(`Computer Use plugin cache not found at ${root}`);
+    }
+    throw error;
+  });
+  const versionDirectories = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort(compareVersionLike)
+    .reverse();
+
+  for (const version of versionDirectories) {
+    const command = join(root, version, ...computerUseMcpExecutableSegments);
+    if (await fileExists(command)) return command;
+  }
+
+  throw new Error(`Computer Use MCP helper not found under ${root}`);
+}
+
+export function buildCodexExecArgs({
+  prompt,
+  computerUseMcpCommand,
+  cwd,
+}: {
+  prompt: string;
+  computerUseMcpCommand: string;
+  cwd: string;
+}): string[] {
+  return [
+    "exec",
+    "-m",
+    "gpt-5.4",
+    "--json",
+    "--disable",
+    "shell_tool",
+    "--disable",
+    "plugins",
+    "--sandbox",
+    "read-only",
+    "-c",
+    'approval_policy="never"',
+    "-c",
+    `mcp_servers.computer_use.command=${tomlString(computerUseMcpCommand)}`,
+    "-c",
+    'mcp_servers.computer_use.args=["mcp"]',
+    "-c",
+    "mcp_servers.computer_use.startup_timeout_sec=20.0",
+    "-c",
+    "mcp_servers.computer_use.tool_timeout_sec=120.0",
+    "-C",
+    cwd,
+    prompt,
+  ];
 }
 
 async function readyFileContainsOnlyPatient(filePath: string, patient: SyntheticPatientInput): Promise<boolean> {
@@ -160,6 +241,27 @@ async function handoffCsvFiles(inbox: string): Promise<Array<{ relativePath: str
     }),
   );
   return groups.flat();
+}
+
+function defaultComputerUsePluginRoot(): string {
+  return join(homedir(), ".codex", "plugins", "cache", "openai-bundled", "computer-use");
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  return access(path)
+    .then(() => true)
+    .catch((error) => {
+      if (isMissingDirectoryError(error)) return false;
+      throw error;
+    });
+}
+
+function compareVersionLike(left: string, right: string): number {
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function tomlString(value: string): string {
+  return JSON.stringify(value);
 }
 
 function codexJsonEvents(output: string): unknown[] {

@@ -4,12 +4,15 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildComputerUsePrompt,
+  buildCodexExecArgs,
+  codexOutputShowsComputerUseDenied,
   codexOutputShowsForbiddenAutomation,
   codexOutputShowsComputerUse,
   detectNewReadyFile,
   detectNewReadyFileForPatient,
   handoffCsvSnapshot,
   readyFileSnapshot,
+  resolveComputerUseMcpCommand,
   syntheticComputerUsePatient,
 } from "../../src/desktop/patientFlowHarness.js";
 
@@ -195,6 +198,9 @@ describe("Computer Use patient flow harness", () => {
 
     expect(prompt).toContain("already-running visible Intake Queue desktop app");
     expect(prompt).toContain("Use Codex Computer Use");
+    expect(prompt).toContain("First clear any already-selected seed records");
+    expect(prompt).toContain("Select ready");
+    expect(prompt).toContain("If Computer Use approval is denied via MCP elicitation, stop immediately");
     expect(prompt).toContain("Do not use Playwright");
     expect(prompt).toMatch(/do not launch Electron/i);
     expect(prompt).toMatch(/do not use IPC/i);
@@ -225,25 +231,45 @@ describe("Computer Use patient flow harness", () => {
 
     expect(script).not.toContain('stdio: "inherit"');
     expect(script).toContain('stdio: ["ignore", "pipe", "pipe"]');
-    expect(script).toContain("process.stderr.write(codexResult.output)");
+    expect(script).toContain("codex exec transcript:");
+    expect(script).toContain("Computer Use app access was denied");
     expect(script).toContain('JSON.stringify({ status: "exported", patient, readyPath }');
   });
 
   it("bounds the nested codex execution with the configured timeout", async () => {
     const script = await readFile("scripts/run-electron-patient-flow.mjs", "utf8");
 
-    expect(script).toContain("runCodex(prompt, pollTimeoutMs)");
+    expect(script).toContain("runCodex(prompt, computerUseMcpCommand, pollTimeoutMs)");
     expect(script).toContain("child.kill(\"SIGTERM\")");
     expect(script).toContain("process.exit(124)");
   });
 
   it("detects whether codex output shows Computer Use activity", () => {
-    expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}')).toBe(true);
+    expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__click"}')).toBe(true);
     expect(codexOutputShowsComputerUse('failed to load plugin="computer-use@openai-bundled"')).toBe(false);
-    expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}\n{"type":"tool_call","name":"exec_command"}')).toBe(false);
-    expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}\n{"type":"item.completed","item":{"type":"command_execution","command":"touch fake.ready.csv"}}')).toBe(false);
-    expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}\n{"type":"item.completed","item":{"type":"agent_message","text":"I did not use Playwright."}}')).toBe(true);
+    expect(codexOutputShowsComputerUse("Computer Use approval denied via MCP elicitation for app 'com.github.Electron'.")).toBe(false);
+    expect(
+      codexOutputShowsComputerUse(
+        'failed to load plugin="computer-use@openai-bundled"\n{"type":"mcp_tool_call","server":"computer_use","tool":"click"}',
+      ),
+    ).toBe(true);
+    expect(
+      codexOutputShowsComputerUse(
+        '{"type":"mcp_tool_call","server":"computer_use","tool":"click"}\nComputer Use approval denied via MCP elicitation for app',
+      ),
+    ).toBe(false);
+    expect(codexOutputShowsComputerUse('{"type":"mcp_tool_call","server":"computer_use","tool":"list_apps"}')).toBe(false);
+    expect(codexOutputShowsComputerUse('{"type":"mcp_tool_call","server":"computer_use","tool":"get_app_state"}')).toBe(false);
+    expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__click"}\n{"type":"tool_call","name":"exec_command"}')).toBe(false);
+    expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__click"}\n{"type":"item.completed","item":{"type":"command_execution","command":"touch fake.ready.csv"}}')).toBe(false);
+    expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__click"}\n{"type":"item.completed","item":{"type":"agent_message","text":"I did not use Playwright."}}')).toBe(true);
     expect(codexOutputShowsComputerUse("completed without tools")).toBe(false);
+  });
+
+  it("detects Computer Use app access denial", () => {
+    expect(codexOutputShowsComputerUseDenied("Computer Use approval denied via MCP elicitation for app 'com.github.Electron'.")).toBe(true);
+    expect(codexOutputShowsComputerUseDenied("Computer Use is not allowed to use the app 'com.openai.codex' for safety reasons.")).toBe(true);
+    expect(codexOutputShowsComputerUseDenied('{"type":"mcp_tool_call","server":"computer_use","tool":"click"}')).toBe(false);
   });
 
   it("detects forbidden non-UI automation in codex output", () => {
@@ -252,5 +278,50 @@ describe("Computer Use patient flow harness", () => {
     expect(codexOutputShowsForbiddenAutomation('{"type":"tool_call","name":"window.intakeApp.exportReady"}')).toBe(true);
     expect(codexOutputShowsForbiddenAutomation('{"type":"item.completed","item":{"type":"agent_message","text":"No shell command or Playwright was used."}}')).toBe(false);
     expect(codexOutputShowsForbiddenAutomation("used only mcp__computer_use__click")).toBe(false);
+  });
+
+  it("resolves the newest installed Computer Use MCP helper from the Codex plugin cache", async () => {
+    const root = await mkdtemp(join(tmpdir(), "computer-use-plugin-cache-"));
+    tempDirs.push(root);
+    const older = join(root, "1.0.9", "Codex Computer Use.app", "Contents", "SharedSupport", "SkyComputerUseClient.app", "Contents", "MacOS");
+    const newer = join(root, "1.0.10", "Codex Computer Use.app", "Contents", "SharedSupport", "SkyComputerUseClient.app", "Contents", "MacOS");
+    await mkdir(older, { recursive: true });
+    await mkdir(newer, { recursive: true });
+    await writeFile(join(older, "SkyComputerUseClient"), "", "utf8");
+    await writeFile(join(newer, "SkyComputerUseClient"), "", "utf8");
+
+    await expect(resolveComputerUseMcpCommand(root)).resolves.toBe(join(newer, "SkyComputerUseClient"));
+  });
+
+  it("allows the Computer Use MCP helper path to be overridden from the environment", async () => {
+    const previous = process.env.COMPUTER_USE_MCP_COMMAND;
+    process.env.COMPUTER_USE_MCP_COMMAND = "/custom/SkyComputerUseClient";
+    try {
+      await expect(resolveComputerUseMcpCommand()).resolves.toBe("/custom/SkyComputerUseClient");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.COMPUTER_USE_MCP_COMMAND;
+      } else {
+        process.env.COMPUTER_USE_MCP_COMMAND = previous;
+      }
+    }
+  });
+
+  it("builds a codex exec command with an explicit Computer Use MCP server and no shell fallback", () => {
+    const args = buildCodexExecArgs({
+      prompt: "drive the visible app",
+      computerUseMcpCommand: "/tmp/Codex Computer Use.app/Contents/MacOS/SkyComputerUseClient",
+      cwd: "/repo",
+    });
+
+    expect(args).toContain("--disable");
+    expect(args).toContain("shell_tool");
+    expect(args).toContain("plugins");
+    expect(args).toContain("mcp_servers.computer_use.command=\"/tmp/Codex Computer Use.app/Contents/MacOS/SkyComputerUseClient\"");
+    expect(args).toContain('mcp_servers.computer_use.args=["mcp"]');
+    expect(args).toContain("-C");
+    expect(args).toContain("/repo");
+    expect(args.at(-1)).toBe("drive the visible app");
+    expect(args.join(" ")).not.toContain('mcp_servers."computer-use"');
   });
 });
