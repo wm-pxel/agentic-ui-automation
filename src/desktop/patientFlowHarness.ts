@@ -65,11 +65,15 @@ export function codexOutputShowsComputerUse(output: string): boolean {
   if (codexOutputShowsForbiddenAutomation(output)) {
     return false;
   }
-  return /mcp__computer_use__|mcp__computer_use__\w+|computer_use|get_app_state|list_apps/i.test(output);
+  return codexJsonEvents(output).some((event) =>
+    eventContainsToolName(event, /mcp__computer_use__|computer_use|get_app_state|list_apps/i),
+  );
 }
 
 export function codexOutputShowsForbiddenAutomation(output: string): boolean {
-  return /exec_command|apply_patch|write_stdin|shell command|Playwright|_electron|window\.intakeApp|intake:export/i.test(output);
+  return codexJsonEvents(output).some((event) =>
+    eventContainsToolName(event, /exec_command|apply_patch|write_stdin|playwright|_electron|window\.intakeApp|intake:export/i),
+  );
 }
 
 export function buildComputerUsePrompt({ patient, inbox }: { patient: SyntheticPatientInput; inbox: string }): string {
@@ -128,4 +132,49 @@ async function readyFileContainsOnlyPatient(filePath: string, patient: Synthetic
 
 function isMissingDirectoryError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+function codexJsonEvents(output: string): unknown[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("{") && line.endsWith("}"))
+    .map((line) => {
+      try {
+        return JSON.parse(line) as unknown;
+      } catch {
+        return undefined;
+      }
+    })
+    .filter((event): event is unknown => event !== undefined);
+}
+
+function eventContainsToolName(value: unknown, pattern: RegExp): boolean {
+  return eventStringValues(value).some((text) => pattern.test(text));
+}
+
+function eventStringValues(value: unknown): string[] {
+  const values: string[] = [];
+  collectEventStringValues(value, values);
+  return values;
+}
+
+function collectEventStringValues(value: unknown, values: string[]): void {
+  if (typeof value === "string") {
+    values.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectEventStringValues(item, values);
+    }
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  for (const [key, child] of Object.entries(value)) {
+    if (["text", "message", "body", "summary", "output"].includes(key)) {
+      continue;
+    }
+    collectEventStringValues(child, values);
+  }
 }
