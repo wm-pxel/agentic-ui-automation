@@ -1,7 +1,6 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createArtifactService } from "./artifactService.js";
 import { renderMarkdown } from "./markdownRenderer.js";
 
@@ -72,8 +71,17 @@ export function createViewerServer(options: ViewerServerOptions): ViewerServer {
   };
 }
 
-export async function startViewerServer(options: ViewerServerOptions & { port?: number; stdout?: Pick<NodeJS.WriteStream, "write"> }): Promise<ViewerServer> {
-  const runsDirStat = await stat(options.runsDir);
+export async function startViewerServer(options: ViewerServerOptions & { port?: number; stdout?: { write(chunk: string): unknown } }): Promise<ViewerServer> {
+  let runsDirStat;
+  try {
+    runsDirStat = await stat(options.runsDir);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      throw new Error(`Runs directory does not exist: ${options.runsDir}`);
+    }
+    throw error;
+  }
+
   if (!runsDirStat.isDirectory()) {
     throw new Error(`Runs directory is not a directory: ${options.runsDir}`);
   }
@@ -89,7 +97,7 @@ type ArtifactService = ReturnType<typeof createArtifactService>;
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse, artifactService: ArtifactService): Promise<void> {
   if (request.method !== "GET") {
-    writeJson(response, 405, { error: "Method not allowed." });
+    writeJson(response, 405, { error: "Method not allowed." }, { Allow: "GET" });
     return;
   }
 
@@ -188,19 +196,48 @@ function matchArtifactRoute(segments: string[]): { runId: string; artifactPath: 
 }
 
 async function streamFile(response: ServerResponse, absolutePath: string, contentType: string): Promise<void> {
-  response.writeHead(200, {
-    "Content-Type": contentType,
-    "Cache-Control": "no-store",
-  });
+  response.writeHead(200, responseHeaders(contentType));
 
   await new Promise<void>((resolve, reject) => {
     const stream = createReadStream(absolutePath);
-    stream.on("error", (error) => {
+    let settled = false;
+
+    const cleanup = () => {
+      stream.off("error", onStreamError);
+      response.off("finish", onFinish);
+      response.off("close", onClose);
+      response.off("error", onResponseError);
+    };
+    const settle = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const onStreamError = (error: Error) => {
       response.destroy(error);
-      reject(error);
-    });
-    response.on("finish", resolve);
-    response.on("error", reject);
+      settle(() => reject(error));
+    };
+    const onResponseError = (error: Error) => {
+      stream.destroy();
+      settle(() => reject(error));
+    };
+    const onClose = () => {
+      if (response.writableEnded) {
+        settle(resolve);
+        return;
+      }
+      stream.destroy();
+      settle(() => reject(new Error("Response closed before artifact stream completed.")));
+    };
+    const onFinish = () => {
+      settle(resolve);
+    };
+
+    stream.on("error", onStreamError);
+    response.on("finish", onFinish);
+    response.on("close", onClose);
+    response.on("error", onResponseError);
     stream.pipe(response);
   });
 }
@@ -235,20 +272,28 @@ function renderDirectoryListing(
 </html>`;
 }
 
-function writeJson(response: ServerResponse, statusCode: number, value: unknown): void {
-  writeText(response, statusCode, "application/json; charset=utf-8", `${JSON.stringify(value)}\n`);
+function writeJson(response: ServerResponse, statusCode: number, value: unknown, headers?: Record<string, string>): void {
+  writeText(response, statusCode, "application/json; charset=utf-8", `${JSON.stringify(value)}\n`, headers);
 }
 
 function writeHtml(response: ServerResponse, statusCode: number, html: string): void {
-  writeText(response, statusCode, "text/html; charset=utf-8", html);
+  writeText(response, statusCode, "text/html; charset=utf-8", html, {
+    "Content-Security-Policy": "default-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'",
+  });
 }
 
-function writeText(response: ServerResponse, statusCode: number, contentType: string, body: string): void {
-  response.writeHead(statusCode, {
+function writeText(response: ServerResponse, statusCode: number, contentType: string, body: string, headers?: Record<string, string>): void {
+  response.writeHead(statusCode, responseHeaders(contentType, headers));
+  response.end(body);
+}
+
+function responseHeaders(contentType: string, headers?: Record<string, string>): Record<string, string> {
+  return {
     "Content-Type": contentType,
     "Cache-Control": "no-store",
-  });
-  response.end(body);
+    "X-Content-Type-Options": "nosniff",
+    ...headers,
+  };
 }
 
 function escapeHtml(value: string): string {
@@ -262,6 +307,10 @@ function escapeHtml(value: string): string {
 
 function escapeAttribute(value: string): string {
   return escapeHtml(value);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
 
 const INDEX_HTML = `<!doctype html>

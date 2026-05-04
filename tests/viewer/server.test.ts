@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createViewerServer } from "../../src/viewer/server.js";
+import { createViewerServer, startViewerServer } from "../../src/viewer/server.js";
 
 const tempDirs: string[] = [];
 
@@ -50,9 +50,13 @@ describe("createViewerServer", () => {
       const artifact = await fetch(`${baseUrl}/api/runs/${runId}/artifact/screenshots/demo-001/openmrs/after-save.png`);
       expect(artifact.status).toBe(200);
       expect(artifact.headers.get("content-type")).toBe("image/png");
+      expect(artifact.headers.get("x-content-type-options")).toBe("nosniff");
       expect(await artifact.text()).toBe("png-bytes");
 
-      const directory = await fetchText(`${baseUrl}/api/runs/${runId}/artifact/screenshots`);
+      const directoryResponse = await fetch(`${baseUrl}/api/runs/${runId}/artifact/screenshots`);
+      expect(directoryResponse.status).toBe(200);
+      expect(directoryResponse.headers.get("content-security-policy")).toBe("default-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'");
+      const directory = await directoryResponse.text();
       expect(directory).toContain("Artifact directory: screenshots");
       expect(directory).toContain("demo-001");
     } finally {
@@ -80,6 +84,81 @@ describe("createViewerServer", () => {
     } finally {
       await viewer.close();
     }
+  });
+
+  it("returns JSON errors for unsupported methods and unknown routes", async () => {
+    const runsDir = await makeRunsDir();
+    const viewer = createViewerServer({ runsDir });
+    await viewer.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      const baseUrl = viewer.url();
+
+      const method = await fetch(`${baseUrl}/api/runs`, { method: "POST" });
+      expect(method.status).toBe(405);
+      expect(method.headers.get("allow")).toBe("GET");
+      expect(await method.json()).toEqual({ error: "Method not allowed." });
+
+      const unknown = await fetch(`${baseUrl}/missing`);
+      expect(unknown.status).toBe(404);
+      expect(await unknown.json()).toEqual({ error: "Not found." });
+    } finally {
+      await viewer.close();
+    }
+  });
+
+  it("escapes directory listing values from run IDs, paths, and entry names", async () => {
+    const runsDir = await makeRunsDir();
+    const runId = "run-2026-05-04T12-00-00-000Z-<script>";
+    const directoryPath = "<b>";
+    await mkdir(join(runsDir, runId, directoryPath), { recursive: true });
+    await writeFile(join(runsDir, runId, directoryPath, "<script>.png"), "png-bytes");
+
+    const viewer = createViewerServer({ runsDir });
+    await viewer.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      const html = await fetchText(`${viewer.url()}/api/runs/${encodeURIComponent(runId)}/artifact/${encodeURIComponent(directoryPath)}`);
+
+      expect(html).toContain("run-2026-05-04T12-00-00-000Z-&lt;script&gt;");
+      expect(html).toContain("Artifact directory: &lt;b&gt;");
+      expect(html).toContain("&lt;script&gt;.png");
+      expect(html).not.toContain("<script>.png");
+      expect(html).not.toContain("run-2026-05-04T12-00-00-000Z-<script>");
+      expect(html).not.toContain("Artifact directory: <b>");
+    } finally {
+      await viewer.close();
+    }
+  });
+});
+
+describe("startViewerServer", () => {
+  it("validates runsDir, listens on the default port, writes the URL, and returns a closeable server", async () => {
+    const runsDir = await makeRunsDir();
+    const writes: string[] = [];
+    const stdout = { write: (chunk: string) => writes.push(chunk) };
+
+    const viewer = await startViewerServer({ runsDir, stdout });
+    try {
+      expect(viewer.url()).toBe("http://127.0.0.1:4173");
+      expect(writes).toEqual(["Viewer available at http://127.0.0.1:4173\n"]);
+      const response = await fetch(`${viewer.url()}/api/runs`);
+      expect(response.status).toBe(200);
+    } finally {
+      await viewer.close();
+    }
+  });
+
+  it("rejects missing and non-directory runsDir values with clear errors", async () => {
+    const runsDir = await makeRunsDir();
+    const missing = join(runsDir, "missing");
+    const filePath = join(runsDir, "runs-file");
+    await writeFile(filePath, "not a directory");
+
+    await expect(startViewerServer({ runsDir: missing, port: 0, stdout: { write: () => true } })).rejects.toThrow(
+      `Runs directory does not exist: ${missing}`,
+    );
+    await expect(startViewerServer({ runsDir: filePath, port: 0, stdout: { write: () => true } })).rejects.toThrow(
+      `Runs directory is not a directory: ${filePath}`,
+    );
   });
 });
 
