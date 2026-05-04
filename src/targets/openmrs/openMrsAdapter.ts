@@ -25,6 +25,8 @@ export interface OpenMrsConfig {
   password?: string;
   location?: string;
   concurrency?: number;
+  interactiveFieldConfirmation?: boolean;
+  fieldConfidenceThreshold?: number;
 }
 
 export interface OpenMrsAdapterDependencies {
@@ -70,6 +72,16 @@ interface FillResult {
   action: "fill" | "select";
 }
 
+interface ApprovedFieldMapping {
+  value: string;
+  approvalSource: "agent" | "operator_confirmed" | "operator_edited" | "operator_skipped" | "operator_stopped";
+  agentConfidence: number;
+  confidenceThreshold: number;
+  agentRationale: string;
+  originalProposedValue?: string;
+  skipReason?: string;
+}
+
 export class OpenMrsAdapter implements TargetAdapter {
   readonly name = "openmrs" as const;
   readonly maxConcurrency: number;
@@ -82,7 +94,7 @@ export class OpenMrsAdapter implements TargetAdapter {
     dependencies: OpenMrsAdapterDependencies = {},
   ) {
     this.launchBrowser = dependencies.launchBrowser ?? ((options) => chromium.launch(options));
-    this.maxConcurrency = normalizeConcurrency(config.concurrency);
+    this.maxConcurrency = effectiveOpenMrsConcurrency(config);
   }
 
   async prepare(): Promise<void> {
@@ -166,7 +178,7 @@ export class OpenMrsAdapter implements TargetAdapter {
 
       await expandOptionalSection(page, OPENMRS_CONTACT_SECTION_CANDIDATES);
       for (const mapping of openMrsFieldMappings(context.record)) {
-        await fillMappedField(context, page, mapping);
+        await fillMappedField(context, page, mapping, this.config);
       }
 
       const filled = await page.screenshot({ fullPage: true });
@@ -362,10 +374,12 @@ export class OpenMrsAdapter implements TargetAdapter {
   }
 }
 
-async function fillMappedField(context: TargetRunContext, page: OpenMrsPage, mapping: FieldMapping): Promise<void> {
+async function fillMappedField(context: TargetRunContext, page: OpenMrsPage, mapping: FieldMapping, config: OpenMrsConfig): Promise<void> {
+  let approval: ApprovedFieldMapping | undefined;
   try {
     await revealField(page, mapping.selectors, mapping.targetField);
-    const result = await fillFirst(page, mapping.selectors, mapping.value, mapping.targetField);
+    approval = await approveMappedField(context, page, mapping, config);
+    const result = await fillFirst(page, mapping.selectors, approval.value, mapping.targetField);
     await context.audit.writeFieldMapping({
       recordId: context.record.sourceRecordId,
       target: "openmrs",
@@ -377,6 +391,12 @@ async function fillMappedField(context: TargetRunContext, page: OpenMrsPage, map
       selectedSelector: result.selectedSelector,
       action: result.action,
       status: "succeeded",
+      agentConfidence: approval.agentConfidence,
+      confidenceThreshold: approval.confidenceThreshold,
+      agentRationale: approval.agentRationale,
+      approvalSource: approval.approvalSource,
+      originalProposedValue: approval.originalProposedValue,
+      finalValue: approval.value,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -390,12 +410,98 @@ async function fillMappedField(context: TargetRunContext, page: OpenMrsPage, map
       selectorCandidates: mapping.selectors,
       status: "failed",
       errorMessage,
+      agentConfidence: approval?.agentConfidence,
+      confidenceThreshold: approval?.confidenceThreshold,
+      agentRationale: approval?.agentRationale,
+      approvalSource: approval?.approvalSource,
+      originalProposedValue: approval?.originalProposedValue,
+      finalValue: approval?.value,
     });
     if (!mapping.required) {
       return;
     }
     throw error;
   }
+}
+
+async function approveMappedField(
+  context: TargetRunContext,
+  page: OpenMrsPage,
+  mapping: FieldMapping,
+  config: OpenMrsConfig,
+): Promise<ApprovedFieldMapping> {
+  const threshold = fieldConfidenceThreshold(config);
+  if (!config.interactiveFieldConfirmation) {
+    return {
+      value: mapping.value,
+      approvalSource: "agent",
+      agentConfidence: 1,
+      confidenceThreshold: threshold,
+      agentRationale: "Interactive OpenMRS field confirmation is disabled.",
+    };
+  }
+
+  const reviewScreenshot = await page.screenshot({ fullPage: true });
+  const reviewScreenshotPath = await context.audit.writeScreenshot(
+    context.record.sourceRecordId,
+    "openmrs",
+    `field-review-${safeStepName(mapping.targetField)}`,
+    reviewScreenshot,
+  );
+  const decision = await context.agent.decide({
+    target: "openmrs",
+    recordId: context.record.sourceRecordId,
+    step: `fill-openmrs-field:${mapping.targetField}`,
+    screenshotPath: reviewScreenshotPath,
+    visibleText: await visibleText(page),
+    allowedActions: [
+      {
+        id: `fill-openmrs-field:${mapping.targetField}`,
+        description: `Fill OpenMRS ${mapping.targetField} with ${mapping.value}.`,
+      },
+    ],
+    metadata: {
+      sourceField: mapping.sourceField,
+      targetField: mapping.targetField,
+      proposedValue: mapping.value,
+      selectorCandidates: mapping.selectors,
+      required: mapping.required === true,
+      mappingConfidence: mapping.mappingConfidence,
+    },
+  });
+
+  if (decision.actionId === `fill-openmrs-field:${mapping.targetField}` && decision.confidence >= threshold) {
+    return {
+      value: mapping.value,
+      approvalSource: "agent",
+      agentConfidence: decision.confidence,
+      confidenceThreshold: threshold,
+      agentRationale: decision.rationale,
+    };
+  }
+
+  return promptForMappedField(context, page, mapping, decision, threshold, reviewScreenshotPath);
+}
+
+async function promptForMappedField(
+  _context: TargetRunContext,
+  _page: OpenMrsPage,
+  mapping: FieldMapping,
+  decision: { confidence: number; rationale: string },
+  threshold: number,
+  screenshotPath: string,
+): Promise<ApprovedFieldMapping> {
+  throw {
+    code: "ui_state_unexpected",
+    severity: "error",
+    field: String(mapping.sourceField),
+    message: `OpenMRS field ${mapping.targetField} requires operator confirmation.`,
+    suggestedRemediation: decision.rationale,
+    screenshotPath,
+    proposedValue: mapping.value,
+    agentConfidence: decision.confidence,
+    confidenceThreshold: threshold,
+  };
 }
 
 async function fillFirst(page: OpenMrsPage, selectors: string[], value: string, label: string): Promise<FillResult> {
@@ -601,12 +707,28 @@ function resolveOpenMrsConfig(config: OpenMrsConfig): Required<OpenMrsConfig> {
     username: config.username ?? DEFAULT_OPENMRS_USERNAME,
     password: config.password ?? DEFAULT_OPENMRS_PASSWORD,
     location: config.location ?? "Registration Desk",
-    concurrency: normalizeConcurrency(config.concurrency),
+    concurrency: effectiveOpenMrsConcurrency(config),
+    interactiveFieldConfirmation: config.interactiveFieldConfirmation ?? false,
+    fieldConfidenceThreshold: fieldConfidenceThreshold(config),
   };
+}
+
+function effectiveOpenMrsConcurrency(config: OpenMrsConfig): number {
+  if (config.interactiveFieldConfirmation) return 1;
+  return normalizeConcurrency(config.concurrency);
+}
+
+function fieldConfidenceThreshold(config: OpenMrsConfig): number {
+  const value = config.fieldConfidenceThreshold;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : 0.8;
 }
 
 function normalizeConcurrency(value: number | undefined): number {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 2;
+}
+
+function safeStepName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "field";
 }
 
 function resolveOpenMrsBaseUrl(baseUrl: string | undefined): string {

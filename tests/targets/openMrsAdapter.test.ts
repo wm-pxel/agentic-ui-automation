@@ -193,6 +193,59 @@ describe("OpenMrsAdapter", () => {
     );
   });
 
+  it("asks the agent to approve each OpenMRS field when interactive confirmation is enabled", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-approval-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage();
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.8,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const fieldDecisions = openMrsFieldMappings(record("demo-001")).map((mapping) => ({
+      actionId: `fill-openmrs-field:${mapping.targetField}`,
+      confidence: 0.91,
+      rationale: `The ${mapping.targetField} field is visible.`,
+    }));
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      ...fieldDecisions,
+      { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "openmrs-demo-001" });
+    expect(agent.inputs.some((input) => input.step === "fill-openmrs-field:Given Name")).toBe(true);
+    expect(agent.inputs.find((input) => input.step === "fill-openmrs-field:Given Name")).toMatchObject({
+      target: "openmrs",
+      recordId: "demo-001",
+      metadata: {
+        sourceField: "firstName",
+        targetField: "Given Name",
+        proposedValue: "Ava",
+        required: true,
+      },
+    });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "firstName",
+        targetField: "Given Name",
+        status: "succeeded",
+        agentConfidence: 0.91,
+        confidenceThreshold: 0.8,
+        approvalSource: "agent",
+        finalValue: "Ava",
+      }),
+    );
+  });
+
   it("caps OpenMRS fill and select actions at five seconds", async () => {
     const root = await mkdtemp(join(tmpdir(), "openmrs-action-timeouts-"));
     const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
