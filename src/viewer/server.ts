@@ -196,7 +196,7 @@ function matchArtifactRoute(segments: string[]): { runId: string; artifactPath: 
 }
 
 async function streamFile(response: ServerResponse, absolutePath: string, contentType: string): Promise<void> {
-  response.writeHead(200, responseHeaders(contentType));
+  response.writeHead(200, artifactResponseHeaders(absolutePath, contentType));
 
   await new Promise<void>((resolve, reject) => {
     const stream = createReadStream(absolutePath);
@@ -240,6 +240,26 @@ async function streamFile(response: ServerResponse, absolutePath: string, conten
     response.on("error", onResponseError);
     stream.pipe(response);
   });
+}
+
+function artifactResponseHeaders(absolutePath: string, contentType: string): Record<string, string> {
+  if (!isActiveArtifactContentType(contentType)) {
+    return responseHeaders(contentType);
+  }
+
+  return responseHeaders("application/octet-stream", {
+    "Content-Disposition": `attachment; filename="${attachmentFileName(absolutePath)}"`,
+  });
+}
+
+function isActiveArtifactContentType(contentType: string): boolean {
+  const normalizedType = contentType.toLowerCase().split(";")[0]?.trim();
+  return normalizedType === "text/html" || normalizedType === "image/svg+xml" || normalizedType === "text/javascript";
+}
+
+function attachmentFileName(path: string): string {
+  const fileName = path.split(/[\\/]/).pop() ?? "artifact";
+  return fileName.replace(/[\u0000-\u001f"\\]/g, "_") || "artifact";
 }
 
 function renderDirectoryListing(

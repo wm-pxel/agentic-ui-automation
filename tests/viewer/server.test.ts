@@ -128,6 +128,27 @@ describe("createViewerServer", () => {
       await viewer.close();
     }
   });
+
+  it("forces active artifact types to download instead of executing in the browser", async () => {
+    const runsDir = await makeRunsDir();
+    const runId = "run-2026-05-04T12-00-00-000Z-active-artifact";
+    await mkdir(join(runsDir, runId), { recursive: true });
+    await writeFile(join(runsDir, runId, "proof.html"), "<script>window.evidence = true;</script>");
+
+    const viewer = createViewerServer({ runsDir });
+    await viewer.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      const response = await fetch(`${viewer.url()}/api/runs/${runId}/artifact/proof.html`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("application/octet-stream");
+      expect(response.headers.get("content-disposition")).toBe('attachment; filename="proof.html"');
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(await response.text()).toBe("<script>window.evidence = true;</script>");
+    } finally {
+      await viewer.close();
+    }
+  });
 });
 
 describe("startViewerServer", () => {
