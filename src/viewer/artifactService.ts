@@ -174,7 +174,6 @@ async function summarizeRun(runsRoot: string, runId: string): Promise<ViewerRunS
   ]);
 
   const reportCounts = objectProperty(report, "counts");
-  const runCounts = objectProperty(runMetadata, "counts");
 
   return {
     runId,
@@ -188,14 +187,14 @@ async function summarizeRun(runsRoot: string, runId: string): Promise<ViewerRunS
     totalRecords: firstNumber(numberProperty(report, "totalRecords"), numberProperty(runMetadata, "totalRecords")),
     preflightExceptions: firstNumber(
       numberProperty(reportCounts, "preflightExceptions"),
-      numberProperty(runCounts, "preflightExceptions"),
+      numberProperty(runMetadata, "preflightExceptions"),
     ),
     environmentExceptions: firstNumber(
       numberProperty(reportCounts, "environmentExceptions"),
-      numberProperty(runCounts, "environmentExceptions"),
+      numberProperty(runMetadata, "environmentExceptions"),
     ),
-    closeExceptions: firstNumber(numberProperty(reportCounts, "closeExceptions"), numberProperty(runCounts, "closeExceptions")),
-    targetCounts: parseTargetCounts(objectProperty(reportCounts, "targetCounts") ?? objectProperty(runCounts, "targetCounts")),
+    closeExceptions: firstNumber(numberProperty(reportCounts, "closeExceptions"), numberProperty(runMetadata, "closeExceptions")),
+    targetCounts: parseTargetCounts(objectProperty(reportCounts, "targetCounts") ?? objectProperty(runMetadata, "targetCounts")),
     hasExecutiveSummary,
     hasSummary,
     artifacts,

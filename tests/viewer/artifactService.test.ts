@@ -92,12 +92,10 @@ describe("createArtifactService", () => {
         status: "completed_with_exceptions",
         startedAt: "2026-05-04T08:00:00.000Z",
         totalRecords: 9,
-        counts: {
-          preflightExceptions: 2,
-          environmentExceptions: 1,
-          closeExceptions: 4,
-          targetCounts: { openmrs: { succeeded: 5, exception: 2, skipped: 1 } },
-        },
+        preflightExceptions: 2,
+        environmentExceptions: 1,
+        closeExceptions: 4,
+        targetCounts: { openmrs: { succeeded: 5, exception: 2, skipped: 1 } },
       },
     });
 
@@ -126,12 +124,10 @@ describe("createArtifactService", () => {
       `${JSON.stringify(
         {
           totalRecords: 3,
-          counts: {
-            preflightExceptions: 0,
-            environmentExceptions: 1,
-            closeExceptions: 0,
-            targetCounts: { fake: { succeeded: 2, exception: 1, skipped: 0 } },
-          },
+          preflightExceptions: 0,
+          environmentExceptions: 1,
+          closeExceptions: 0,
+          targetCounts: { fake: { succeeded: 2, exception: 1, skipped: 0 } },
         },
         null,
         2,
