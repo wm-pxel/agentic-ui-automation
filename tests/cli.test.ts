@@ -136,6 +136,31 @@ describe("runCli", () => {
     expect(io.stderrText()).toBe("error: required option '--input <path>' not specified\n");
   });
 
+  it("rejects invalid OpenMRS field confidence thresholds", async () => {
+    const io = captureIo();
+
+    const exitCode = await runCli(
+      [
+        "node",
+        "agentic-ui",
+        "run",
+        "--input",
+        "data/demo/intake-records-normalized.json",
+        "--targets",
+        "fake",
+        "--parser",
+        "deterministic",
+        "--openmrs-field-confidence-threshold",
+        "1.5",
+      ],
+      io,
+    );
+
+    expect(exitCode).toBe(1);
+    expect(io.stdoutText()).toBe("");
+    expect(io.stderrText()).toContain("--openmrs-field-confidence-threshold must be a number from 0 through 1.");
+  });
+
   it("processes ready intake exports with the watch command in once mode", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentic-ui-cli-watch-"));
     tempDirs.push(root);

@@ -37,6 +37,8 @@ interface RunCommandOptions {
   parserModel?: string;
   syntheticSuffix?: string;
   openmrsConcurrency?: number;
+  openmrsInteractiveFieldConfirmation?: boolean;
+  openmrsFieldConfidenceThreshold?: number;
 }
 
 interface WatchCommandOptions {
@@ -46,6 +48,8 @@ interface WatchCommandOptions {
   agent?: CliRunConfig["agent"];
   syntheticSuffix?: string;
   openmrsConcurrency?: number;
+  openmrsInteractiveFieldConfirmation?: boolean;
+  openmrsFieldConfidenceThreshold?: number;
   once?: boolean;
 }
 
@@ -102,6 +106,12 @@ function createProgram(io: Required<CliIo>): Command {
     .option("--parser-model <model>", "OpenAI model to use for AI source parsing.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parsePositiveInteger)
+    .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
+    .option(
+      "--openmrs-field-confidence-threshold <threshold>",
+      "Minimum AI confidence for OpenMRS field entry before prompting.",
+      parseConfidenceThreshold,
+    )
     .action(async (options: RunCommandOptions) => {
       await runCommand(options, io.stdout);
     });
@@ -115,6 +125,12 @@ function createProgram(io: Required<CliIo>): Command {
     .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parsePositiveInteger)
+    .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
+    .option(
+      "--openmrs-field-confidence-threshold <threshold>",
+      "Minimum AI confidence for OpenMRS field entry before prompting.",
+      parseConfidenceThreshold,
+    )
     .option("--once", "Process currently ready files once and exit.")
     .action(async (options: WatchCommandOptions) => {
       await watchCommand(options, io.stdout);
@@ -127,6 +143,8 @@ async function runCommand(options: RunCommandOptions, stdout: CliWritable): Prom
   const config = buildRunConfig({
     ...options,
     openMrsConcurrency: options.openmrsConcurrency,
+    openMrsInteractiveFieldConfirmation: options.openmrsInteractiveFieldConfirmation,
+    openMrsFieldConfidenceThreshold: options.openmrsFieldConfidenceThreshold,
   });
   const records = applySyntheticSuffix(await loadRecords(config), resolveSyntheticSuffix(config.syntheticSuffix));
   const result = await runWorkflow({
@@ -149,6 +167,8 @@ async function watchCommand(options: WatchCommandOptions, stdout: CliWritable): 
     parser: "deterministic",
     syntheticSuffix: options.syntheticSuffix,
     openMrsConcurrency: options.openmrsConcurrency,
+    openMrsInteractiveFieldConfirmation: options.openmrsInteractiveFieldConfirmation,
+    openMrsFieldConfidenceThreshold: options.openmrsFieldConfidenceThreshold,
   });
   const inbox = options.inbox ?? defaultIntakeInbox();
   const watcherInput = {
@@ -220,6 +240,14 @@ function parsePositiveInteger(value: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) {
     throw new Error("--openmrs-concurrency must be a positive integer.");
+  }
+  return parsed;
+}
+
+function parseConfidenceThreshold(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error("--openmrs-field-confidence-threshold must be a number from 0 through 1.");
   }
   return parsed;
 }

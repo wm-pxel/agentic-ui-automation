@@ -7,6 +7,8 @@ const ENV_KEYS = [
   "OPENMRS_USERNAME",
   "OPENMRS_PASSWORD",
   "OPENMRS_CONCURRENCY",
+  "OPENMRS_INTERACTIVE_FIELD_CONFIRMATION",
+  "OPENMRS_FIELD_CONFIDENCE_THRESHOLD",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -109,6 +111,8 @@ describe("buildRunConfig", () => {
       username: "admin",
       password: "secret",
       concurrency: 3,
+      interactiveFieldConfirmation: false,
+      fieldConfidenceThreshold: 0.8,
     });
   });
 
@@ -122,5 +126,68 @@ describe("buildRunConfig", () => {
     });
 
     expect(config.openMrs.concurrency).toBe(4);
+  });
+
+  it("defaults OpenMRS interactive field confirmation off with a 0.8 threshold", () => {
+    const config = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openmrs",
+    });
+
+    expect(config.openMrs.interactiveFieldConfirmation).toBe(false);
+    expect(config.openMrs.fieldConfidenceThreshold).toBe(0.8);
+    expect(config.openMrs.concurrency).toBe(2);
+  });
+
+  it("uses OpenMRS interactive field confirmation environment defaults", () => {
+    process.env.OPENMRS_INTERACTIVE_FIELD_CONFIRMATION = "yes";
+    process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD = "0.72";
+    process.env.OPENMRS_CONCURRENCY = "4";
+
+    const config = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openmrs",
+    });
+
+    expect(config.openMrs).toMatchObject({
+      interactiveFieldConfirmation: true,
+      fieldConfidenceThreshold: 0.72,
+      concurrency: 1,
+    });
+  });
+
+  it("uses explicit OpenMRS interactive options before environment defaults", () => {
+    process.env.OPENMRS_INTERACTIVE_FIELD_CONFIRMATION = "false";
+    process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD = "0.95";
+
+    const config = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openmrs",
+      openMrsInteractiveFieldConfirmation: true,
+      openMrsFieldConfidenceThreshold: 0.6,
+      openMrsConcurrency: 3,
+    });
+
+    expect(config.openMrs.interactiveFieldConfirmation).toBe(true);
+    expect(config.openMrs.fieldConfidenceThreshold).toBe(0.6);
+    expect(config.openMrs.concurrency).toBe(1);
+  });
+
+  it("rejects OpenMRS field confidence thresholds outside 0 through 1", () => {
+    expect(() =>
+      buildRunConfig({
+        input: "data/demo/intake-records.json",
+        targets: "openmrs",
+        openMrsFieldConfidenceThreshold: 1.01,
+      }),
+    ).toThrow();
+
+    expect(() =>
+      buildRunConfig({
+        input: "data/demo/intake-records.json",
+        targets: "openmrs",
+        openMrsFieldConfidenceThreshold: -0.01,
+      }),
+    ).toThrow();
   });
 });
