@@ -82,6 +82,27 @@ interface ApprovedFieldMapping {
   skipReason?: string;
 }
 
+class OpenMrsFieldApprovalRequiredError extends Error {
+  readonly code = "ui_state_unexpected";
+  readonly severity = "error";
+  readonly approvalSource = "operator_stopped" as const;
+  readonly agentRationale: string;
+
+  constructor(
+    readonly field: string,
+    readonly targetField: string,
+    readonly suggestedRemediation: string,
+    readonly screenshotPath: string,
+    readonly proposedValue: string,
+    readonly agentConfidence: number,
+    readonly confidenceThreshold: number,
+  ) {
+    super(`OpenMRS field ${targetField} requires operator confirmation.`);
+    this.name = "OpenMrsFieldApprovalRequiredError";
+    this.agentRationale = suggestedRemediation;
+  }
+}
+
 export class OpenMrsAdapter implements TargetAdapter {
   readonly name = "openmrs" as const;
   readonly maxConcurrency: number;
@@ -400,6 +421,7 @@ async function fillMappedField(context: TargetRunContext, page: OpenMrsPage, map
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const failedApproval = approval ?? approvalFromError(error);
     await context.audit.writeFieldMapping({
       recordId: context.record.sourceRecordId,
       target: "openmrs",
@@ -410,12 +432,12 @@ async function fillMappedField(context: TargetRunContext, page: OpenMrsPage, map
       selectorCandidates: mapping.selectors,
       status: "failed",
       errorMessage,
-      agentConfidence: approval?.agentConfidence,
-      confidenceThreshold: approval?.confidenceThreshold,
-      agentRationale: approval?.agentRationale,
-      approvalSource: approval?.approvalSource,
-      originalProposedValue: approval?.originalProposedValue,
-      finalValue: approval?.value,
+      agentConfidence: failedApproval?.agentConfidence,
+      confidenceThreshold: failedApproval?.confidenceThreshold,
+      agentRationale: failedApproval?.agentRationale,
+      approvalSource: failedApproval?.approvalSource,
+      originalProposedValue: failedApproval?.originalProposedValue,
+      finalValue: failedApproval?.value,
     });
     if (!mapping.required) {
       return;
@@ -491,16 +513,26 @@ async function promptForMappedField(
   threshold: number,
   screenshotPath: string,
 ): Promise<ApprovedFieldMapping> {
-  throw {
-    code: "ui_state_unexpected",
-    severity: "error",
-    field: String(mapping.sourceField),
-    message: `OpenMRS field ${mapping.targetField} requires operator confirmation.`,
-    suggestedRemediation: decision.rationale,
+  throw new OpenMrsFieldApprovalRequiredError(
+    String(mapping.sourceField),
+    mapping.targetField,
+    decision.rationale,
     screenshotPath,
-    proposedValue: mapping.value,
-    agentConfidence: decision.confidence,
-    confidenceThreshold: threshold,
+    mapping.value,
+    decision.confidence,
+    threshold,
+  );
+}
+
+function approvalFromError(error: unknown): ApprovedFieldMapping | undefined {
+  if (!(error instanceof OpenMrsFieldApprovalRequiredError)) return undefined;
+  return {
+    value: error.proposedValue,
+    approvalSource: error.approvalSource,
+    agentConfidence: error.agentConfidence,
+    confidenceThreshold: error.confidenceThreshold,
+    agentRationale: error.agentRationale,
+    originalProposedValue: error.proposedValue,
   };
 }
 

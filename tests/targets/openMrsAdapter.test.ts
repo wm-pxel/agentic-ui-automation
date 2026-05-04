@@ -246,6 +246,66 @@ describe("OpenMrsAdapter", () => {
     );
   });
 
+  it("records low-confidence OpenMRS field approval failures with auditable metadata", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-approval-low-confidence-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage();
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.8,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      {
+        actionId: "fill-openmrs-field:Given Name",
+        confidence: 0.42,
+        rationale: "The Given Name field might be hidden by a validation banner.",
+      },
+    ]);
+
+    await adapter.prepare();
+    let error: unknown;
+    try {
+      await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toMatchObject({
+      code: "ui_state_unexpected",
+      severity: "error",
+      field: "firstName",
+      message: "OpenMRS field Given Name requires operator confirmation.",
+      suggestedRemediation: "The Given Name field might be hidden by a validation banner.",
+      screenshotPath: "screenshots/demo-001/openmrs/field-review-given-name.png",
+      proposedValue: "Ava",
+      agentConfidence: 0.42,
+      confidenceThreshold: 0.8,
+      agentRationale: "The Given Name field might be hidden by a validation banner.",
+    });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "firstName",
+        targetField: "Given Name",
+        status: "failed",
+        errorMessage: "OpenMRS field Given Name requires operator confirmation.",
+        agentConfidence: 0.42,
+        confidenceThreshold: 0.8,
+        agentRationale: "The Given Name field might be hidden by a validation banner.",
+        approvalSource: "operator_stopped",
+        originalProposedValue: "Ava",
+        finalValue: "Ava",
+      }),
+    );
+  });
+
   it("caps OpenMRS fill and select actions at five seconds", async () => {
     const root = await mkdtemp(join(tmpdir(), "openmrs-action-timeouts-"));
     const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
