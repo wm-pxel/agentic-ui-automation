@@ -18,6 +18,7 @@ import { runWorkflow } from "./orchestrator/runWorkflow.js";
 import { defaultIntakeInbox } from "./handoff/intakeHandoff.js";
 import { processReadyIntakeFiles, watchIntakeInbox, type IntakeWatchJobResult } from "./watcher/intakeWatcher.js";
 import { OpenMrsAdapter } from "./targets/openmrs/openMrsAdapter.js";
+import { startViewerServer as defaultStartViewerServer, type ViewerServer } from "./viewer/server.js";
 
 interface CliWritable {
   write(chunk: string): unknown;
@@ -26,6 +27,14 @@ interface CliWritable {
 export interface CliIo {
   stdout?: CliWritable;
   stderr?: CliWritable;
+}
+
+export interface CliDependencies {
+  startViewerServer?: (options: {
+    runsDir: string;
+    port?: number;
+    stdout?: CliWritable;
+  }) => Promise<ViewerServer>;
 }
 
 interface RunCommandOptions {
@@ -53,17 +62,28 @@ interface WatchCommandOptions {
   once?: boolean;
 }
 
+interface ViewerCommandOptions {
+  runsDir: string;
+  port?: number;
+}
+
 const defaultIo = {
   stdout: process.stdout,
   stderr: process.stderr,
 } satisfies Required<CliIo>;
 
-export async function runCli(argv: string[] = process.argv, io: CliIo = {}): Promise<number> {
+export async function runCli(
+  argv: string[] = process.argv,
+  io: CliIo = {},
+  dependencies: CliDependencies = {},
+): Promise<number> {
   const resolvedIo = {
     stdout: io.stdout ?? defaultIo.stdout,
     stderr: io.stderr ?? defaultIo.stderr,
   };
-  const program = createProgram(resolvedIo);
+  const program = createProgram(resolvedIo, {
+    startViewerServer: dependencies.startViewerServer ?? defaultStartViewerServer,
+  });
 
   try {
     await program.parseAsync(argv);
@@ -80,7 +100,7 @@ export async function runCli(argv: string[] = process.argv, io: CliIo = {}): Pro
   }
 }
 
-function createProgram(io: Required<CliIo>): Command {
+function createProgram(io: Required<CliIo>, dependencies: Required<CliDependencies>): Command {
   const program = new Command();
 
   program
@@ -105,7 +125,7 @@ function createProgram(io: Required<CliIo>): Command {
     .addOption(new Option("--parser <parser>", "Input parser to use.").choices(["openai", "deterministic"]))
     .option("--parser-model <model>", "OpenAI model to use for AI source parsing.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
-    .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parsePositiveInteger)
+    .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parseOpenMrsPositiveInteger)
     .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
     .option(
       "--openmrs-field-confidence-threshold <threshold>",
@@ -124,7 +144,7 @@ function createProgram(io: Required<CliIo>): Command {
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
     .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
-    .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parsePositiveInteger)
+    .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parseOpenMrsPositiveInteger)
     .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
     .option(
       "--openmrs-field-confidence-threshold <threshold>",
@@ -134,6 +154,19 @@ function createProgram(io: Required<CliIo>): Command {
     .option("--once", "Process currently ready files once and exit.")
     .action(async (options: WatchCommandOptions) => {
       await watchCommand(options, io.stdout);
+    });
+
+  program
+    .command("viewer")
+    .description("serve local read-only viewer for workflow run Markdown artifacts.")
+    .option("--runs-dir <path>", "Directory containing workflow run artifacts.", "runs")
+    .option("--port <number>", "Port for the local viewer server.", parseViewerPort)
+    .action(async (options: ViewerCommandOptions) => {
+      await dependencies.startViewerServer({
+        runsDir: options.runsDir,
+        port: options.port,
+        stdout: io.stdout,
+      });
     });
 
   return program;
@@ -236,10 +269,18 @@ function buildAdapters(config: CliRunConfig): TargetAdapter[] {
   });
 }
 
-function parsePositiveInteger(value: string): number {
+function parseOpenMrsPositiveInteger(value: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) {
     throw new Error("--openmrs-concurrency must be a positive integer.");
+  }
+  return parsed;
+}
+
+function parseViewerPort(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error("--port must be a positive integer.");
   }
   return parsed;
 }

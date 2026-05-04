@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCli } from "../src/cli.js";
 import { writeIntakeHandoff } from "../src/handoff/intakeHandoff.js";
+import type { ViewerServer } from "../src/viewer/server.js";
 
 const tempDirs: string[] = [];
 
@@ -161,6 +162,54 @@ describe("runCli", () => {
     expect(io.stderrText()).toContain("--openmrs-field-confidence-threshold must be a number from 0 through 1.");
   });
 
+  it("starts the viewer command with default runs directory and port", async () => {
+    const io = captureIo();
+    const calls: Array<{ runsDir: string; port?: number }> = [];
+    const exitCode = await runCli(["node", "agentic-ui", "viewer"], io, {
+      startViewerServer: async (options) => {
+        calls.push({ runsDir: options.runsDir, port: options.port });
+        options.stdout?.write("Viewer available at http://127.0.0.1:4173\n");
+        return fakeViewerServer();
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(calls).toEqual([{ runsDir: "runs", port: undefined }]);
+    expect(io.stdoutText()).toBe("Viewer available at http://127.0.0.1:4173\n");
+    expect(io.stderrText()).toBe("");
+  });
+
+  it("starts the viewer command with a custom runs directory and port", async () => {
+    const io = captureIo();
+    const calls: Array<{ runsDir: string; port?: number }> = [];
+    const exitCode = await runCli(
+      ["node", "agentic-ui", "viewer", "--runs-dir", "custom-runs", "--port", "4555"],
+      io,
+      {
+        startViewerServer: async (options) => {
+          calls.push({ runsDir: options.runsDir, port: options.port });
+          return fakeViewerServer();
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(calls).toEqual([{ runsDir: "custom-runs", port: 4555 }]);
+    expect(io.stderrText()).toBe("");
+  });
+
+  it("rejects invalid viewer ports", async () => {
+    const io = captureIo();
+
+    const exitCode = await runCli(["node", "agentic-ui", "viewer", "--port", "0"], io, {
+      startViewerServer: async () => fakeViewerServer(),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(io.stdoutText()).toBe("");
+    expect(io.stderrText()).toContain("--port must be a positive integer.");
+  });
+
   it("processes ready intake exports with the watch command in once mode", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentic-ui-cli-watch-"));
     tempDirs.push(root);
@@ -286,6 +335,14 @@ function captureIo() {
     },
     stdoutText: () => stdout.join(""),
     stderrText: () => stderr.join(""),
+  };
+}
+
+function fakeViewerServer(): ViewerServer {
+  return {
+    listen: async () => undefined,
+    close: async () => undefined,
+    url: () => "http://127.0.0.1:4173",
   };
 }
 
