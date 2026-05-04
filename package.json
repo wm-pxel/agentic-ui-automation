@@ -13,6 +13,7 @@
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "dev": "tsx src/cli.ts",
+    "dev:all": "tsx src/dev/runAll.ts",
     "viewer": "tsx src/cli.ts viewer",
     "desktop:dev": "npm run desktop:build && electron dist/src/desktop/main.js",
     "desktop:build": "npm run build && node scripts/copy-desktop-assets.mjs",

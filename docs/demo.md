@@ -40,6 +40,13 @@ directly in the queue.
 npm run desktop:dev
 ```
 
+For the full Electron-to-OpenMRS path, start the handoff watcher, Electron
+intake app, and local audit viewer together:
+
+```sh
+npm run dev:all
+```
+
 For the full desktop E2E, click `New Patient`, review or edit the generated
 synthetic intake fields, add the patient to the queue, keep that created record
 selected, and export it. The handoff is a CSV file so it can be opened directly
@@ -49,8 +56,9 @@ in a spreadsheet app:
 ~/Downloads/agentic-ui-intake/*.ready.csv
 ```
 
-With `npm run desktop:dev` already running and the app visible, the patient
-creation and export steps can also be automated through Codex Computer Use:
+With `npm run dev:all` or `npm run desktop:dev` already running and the app
+visible, the patient creation and export steps can also be automated through
+Codex Computer Use:
 
 ```sh
 npm run desktop:patient-flow

@@ -10,16 +10,20 @@ traceable audit package for each run.
 ## Full E2E Commands
 
 Run these from the repository root when you want the full Electron-to-OpenMRS
-flow. Start the watcher first:
+flow. Start the watcher, Electron intake app, and run viewer together:
+
+```sh
+npm run dev:all
+```
+
+This keeps the handoff watcher, desktop app, and local audit viewer running in
+one terminal with prefixed logs. The individual commands remain available when
+you want to debug one service at a time:
 
 ```sh
 npm run watch:intake
-```
-
-Start the Electron app for visual/manual use:
-
-```sh
 npm run desktop:dev
+npm run viewer
 ```
 
 With the Electron app already visible, drive the patient creation/export flow
@@ -27,13 +31,6 @@ from this interactive Codex chat:
 
 ```text
 Use Computer Use against the existing Electron Intake Queue window to create one synthetic patient, clear existing selected seed records, select only the new patient, and export it.
-```
-
-Start the run viewer to inspect generated summaries and audit artifacts in a
-browser:
-
-```sh
-npm run viewer
 ```
 
 The Computer Use step should run in the interactive Codex session, not through a
@@ -223,17 +220,19 @@ Use this flow when you want the full desktop handoff path: Electron exports
 synthetic intake records, then the watcher picks up the handoff file and runs
 the OpenMRS target end to end.
 
-Run these commands from the repository root. In one terminal, start the handoff
-watcher:
+Run this command from the repository root to start the handoff watcher, Electron
+intake app, and local audit viewer together:
+
+```sh
+npm run dev:all
+```
+
+For debugging, each long-running service can still be launched separately:
 
 ```sh
 npm run watch:intake
-```
-
-In a second terminal, start the Electron intake app for visual/manual use:
-
-```sh
 npm run desktop:dev
+npm run viewer
 ```
 
 With the Electron app already running and visible, ask this interactive Codex
@@ -245,8 +244,9 @@ Use Computer Use against the existing Electron Intake Queue window to create one
 
 For manual use, click `New Patient`, review or edit the generated synthetic
 intake fields, add the patient to the queue, keep the created record selected,
-and click `Export Selected`. For Computer Use, keep `npm run desktop:dev`
-running and leave the Intake Queue window visible. The agent should clear the
+and click `Export Selected`. For Computer Use, keep `npm run dev:all` or
+`npm run desktop:dev` running and leave the Intake Queue window visible. The
+agent should clear the
 default selected seed records, create one synthetic patient through the
 `New Patient` form, select only that created patient, export it, and leave the
 app running. This uses the visible app like a third-party desktop app and does
@@ -588,6 +588,12 @@ Run the desktop app:
 
 ```sh
 npm run desktop:dev
+```
+
+Run the full local E2E service stack:
+
+```sh
+npm run dev:all
 ```
 
 Packaging dry run:

@@ -186,15 +186,15 @@ describe("createViewerServer", () => {
 });
 
 describe("startViewerServer", () => {
-  it("validates runsDir, listens on the default port, writes the URL, and returns a closeable server", async () => {
+  it("validates runsDir, writes the URL, and returns a closeable server", async () => {
     const runsDir = await makeRunsDir();
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
 
-    const viewer = await startViewerServer({ runsDir, stdout });
+    const viewer = await startViewerServer({ runsDir, port: 0, stdout });
     try {
-      expect(viewer.url()).toBe("http://127.0.0.1:4173");
-      expect(writes).toEqual(["Viewer available at http://127.0.0.1:4173\n"]);
+      expect(viewer.url()).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+      expect(writes).toEqual([`Viewer available at ${viewer.url()}\n`]);
       const response = await fetch(`${viewer.url()}/api/runs`);
       expect(response.status).toBe(200);
     } finally {
