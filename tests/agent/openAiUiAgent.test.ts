@@ -17,6 +17,12 @@ function createInput(screenshotPath?: string, screenshotRootDir?: string) {
       { id: "click-save", description: "Click Save" },
       { id: "click-cancel", description: "Click Cancel" },
     ],
+    metadata: {
+      sourceField: "firstName",
+      targetField: "Given Name",
+      proposedValue: "Ava",
+      required: true,
+    },
   };
 }
 
@@ -102,6 +108,12 @@ describe("OpenAiUiAgentDriver", () => {
         { id: "click-save", description: "Click Save" },
         { id: "click-cancel", description: "Click Cancel" },
       ],
+      metadata: {
+        sourceField: "firstName",
+        targetField: "Given Name",
+        proposedValue: "Ava",
+        required: true,
+      },
     });
     expect(imagePart).toEqual({
       type: "input_image",

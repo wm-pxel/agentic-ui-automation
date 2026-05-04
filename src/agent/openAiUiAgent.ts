@@ -120,6 +120,7 @@ function buildUserContent(input: AgentDecisionInput): Record<string, unknown> {
     visibleText: input.visibleText ?? null,
     screenshotPath: input.screenshotPath ?? null,
     allowedActions: input.allowedActions,
+    metadata: input.metadata ?? null,
   };
 }
 

@@ -22,6 +22,7 @@ export interface AgentDecisionInput {
   screenshotRootDir?: string;
   visibleText?: string;
   allowedActions: AllowedAgentAction[];
+  metadata?: Record<string, unknown>;
 }
 
 export const AgentDecisionSchema = z.object({
