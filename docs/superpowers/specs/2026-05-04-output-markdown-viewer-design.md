@@ -31,7 +31,7 @@ must already be running from `npm run desktop:dev`.
 The artifact viewer is a separate command:
 
 ```sh
-npm run artifacts:viewer
+npm run viewer
 ```
 
 It starts a local read-only web app for browsing run outputs under `runs/`.
@@ -48,8 +48,7 @@ In scope:
   form, export only that patient, and print JSON containing the patient fields
   and exported `readyPath`.
 - Leave the Electron app running after the Computer Use flow completes.
-- Add a separate local viewer command, exposed through
-  `npm run artifacts:viewer`.
+- Add a separate local viewer command, exposed through `npm run viewer`.
 - Serve a browser UI from a localhost-only Node/TypeScript HTTP server.
 - Default the viewer to reading the existing `runs/` directory, with a
   configurable `--runs-dir`.
@@ -121,14 +120,14 @@ instead of an error.
 
 ## Viewer CLI
 
-`npm run artifacts:viewer` starts the server. The underlying CLI should accept:
+`npm run viewer` starts the server. The underlying CLI should accept:
 
 - `--runs-dir <path>`: directory containing run folders. Defaults to `runs`.
 - `--port <number>`: preferred local port. Defaults to `4173`.
 
-If the requested port is unavailable, the command should choose the next
-available port and print it. The printed URL is the source of truth for users
-and for browser automation.
+If the requested port is unavailable, startup should fail with a clear message
+asking the user to pass `--port`. The printed URL is the source of truth for
+users and for browser automation.
 
 Invalid configuration should fail fast: missing runs directory, non-directory
 runs path, invalid port, or bind failure.
@@ -164,9 +163,9 @@ Raw HTML should be escaped by default. Relative links and image paths should be
 rewritten through viewer routes so run-relative paths such as
 `screenshots/<record-id>/openmrs/after-save.png` render correctly.
 
-Use `markdown-it` with raw HTML disabled so generated summaries render with a
-well-tested parser while local artifact URL rewriting stays under repository
-control.
+Use the repository's dependency-free Markdown renderer scoped to generated
+summary patterns so local artifact URL rewriting stays under repository control
+without adding runtime dependencies.
 
 ## Data Flow
 
@@ -181,7 +180,7 @@ Patient flow:
 
 Viewer flow:
 
-1. User runs `npm run artifacts:viewer`.
+1. User runs `npm run viewer`.
 2. Server validates `runsDir`, binds locally, serves browser assets, and prints
    the URL.
 3. Browser requests the run list.
@@ -248,7 +247,7 @@ Update `README.md` when implementing:
   be running and requires Codex Computer Use.
 - Make clear that `desktop:patient-flow` does not launch Electron or use app
   internals.
-- Document `npm run artifacts:viewer`, default port, `--runs-dir`, local-only
+- Document `npm run viewer`, default port, `--runs-dir`, local-only
   behavior, and read-only artifact access.
 
 Update `docs/demo.md` if the viewer becomes part of the manual demo validation
