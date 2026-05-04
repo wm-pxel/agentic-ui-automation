@@ -20,10 +20,18 @@ await mkdir(inbox, { recursive: true });
 const before = await readyFileSnapshot(inbox);
 const prompt = buildComputerUsePrompt({ patient, inbox });
 
-const codexResult = await runCodex(prompt).catch((error) => {
+const codexResult = await runCodex(prompt, pollTimeoutMs).catch((error) => {
   console.error(`Computer Use patient flow failed: could not start codex exec: ${error.message}`);
   return { status: 1, output: "" };
 });
+if (codexResult.timedOut) {
+  if (codexResult.output.length > 0) {
+    process.stderr.write(codexResult.output);
+    if (!codexResult.output.endsWith("\n")) process.stderr.write("\n");
+  }
+  console.error(`Computer Use patient flow failed: codex exec did not finish within ${pollTimeoutMs}ms.`);
+  process.exit(124);
+}
 if (codexResult.status !== 0) {
   if (codexResult.output.length > 0) {
     process.stderr.write(codexResult.output);
@@ -51,9 +59,10 @@ if (!readyPath) {
 
 console.log(JSON.stringify({ status: "exported", patient, readyPath }, null, 2));
 
-function runCodex(prompt) {
+function runCodex(prompt, timeoutMs) {
   return new Promise((resolve, reject) => {
     const outputChunks = [];
+    let timedOut = false;
     const child = spawn(
       "codex",
       ["exec", "-m", "gpt-5.4", "--json", "--sandbox", "read-only", "-c", 'approval_policy="never"', "-C", process.cwd(), prompt],
@@ -67,8 +76,15 @@ function runCodex(prompt) {
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => outputChunks.push(chunk));
     child.stderr.on("data", (chunk) => outputChunks.push(chunk));
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, timeoutMs);
     child.on("error", reject);
-    child.on("close", (code) => resolve({ status: code, output: outputChunks.join("") }));
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      resolve({ status: timedOut ? 124 : code, output: outputChunks.join(""), timedOut });
+    });
   });
 }
 

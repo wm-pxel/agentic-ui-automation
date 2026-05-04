@@ -152,6 +152,14 @@ describe("Computer Use patient flow harness", () => {
     expect(script).toContain('JSON.stringify({ status: "exported", patient, readyPath }');
   });
 
+  it("bounds the nested codex execution with the configured timeout", async () => {
+    const script = await readFile("scripts/run-electron-patient-flow.mjs", "utf8");
+
+    expect(script).toContain("runCodex(prompt, pollTimeoutMs)");
+    expect(script).toContain("child.kill(\"SIGTERM\")");
+    expect(script).toContain("process.exit(124)");
+  });
+
   it("detects whether codex output shows Computer Use activity", () => {
     expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}')).toBe(true);
     expect(codexOutputShowsComputerUse("called get_app_state for Intake Queue")).toBe(true);
