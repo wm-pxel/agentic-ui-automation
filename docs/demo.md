@@ -157,6 +157,12 @@ For each valid normalized record, the target should:
 8. Expand contact info when available, then take an `after-save` proof
    screenshot from the newly created patient's dashboard.
 
+Interactive field confirmation is optional. When
+`--openmrs-interactive-field-confirmation` is set, each OpenMRS browser session
+can pause before low-confidence field writes. Confirm, edit, skip optional
+fields, or stop the record from the in-browser prompt. This mode forces
+OpenMRS concurrency to `1` so prompts remain tied to one active record.
+
 For `data/demo/intake-records.json`, the expected clean OpenMRS target result is:
 
 - `preflightExceptions` is `3`.

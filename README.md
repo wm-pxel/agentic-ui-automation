@@ -311,6 +311,8 @@ OPENMRS_BASE_URL=https://o2.openmrs.org/openmrs
 OPENMRS_USERNAME=admin
 OPENMRS_PASSWORD=Admin123
 OPENMRS_CONCURRENCY=2
+OPENMRS_INTERACTIVE_FIELD_CONFIRMATION=false
+OPENMRS_FIELD_CONFIDENCE_THRESHOLD=0.8
 OPENAI_API_KEY=<your-api-key>
 ```
 
@@ -351,16 +353,19 @@ patient names and identifiers instead of deleting prior demo patients.
 For each normalized valid source record, the OpenMRS adapter is expected to:
 
 1. Log in to the configured OpenMRS environment.
-2. Capture a `before-navigation` screenshot.
-3. Open the O2 `Register a patient` app.
-4. Fill the registration wizard with demographics and available contact fields.
-5. Capture an `after-fill` screenshot.
-6. Advance to the confirmation step and click `Confirm`.
-7. Treat similar-patient prompts as duplicate exceptions for manual review.
-8. Wait for the newly created patient's dashboard.
-9. Expand `Show Contact Info` when available so address and phone are visible.
-10. Capture an `after-save` proof screenshot from that dashboard.
-11. Treat the record as successful only if the dashboard shows the synthetic
+1. Capture a `before-navigation` screenshot.
+1. Open the O2 `Register a patient` app.
+1. When interactive field confirmation is enabled, ask the UI agent to approve
+   each field write and prompt the operator in the OpenMRS browser before
+   writing low-confidence values.
+1. Fill the registration wizard with demographics and available contact fields.
+1. Capture an `after-fill` screenshot.
+1. Advance to the confirmation step and click `Confirm`.
+1. Treat similar-patient prompts as duplicate exceptions for manual review.
+1. Wait for the newly created patient's dashboard.
+1. Expand `Show Contact Info` when available so address and phone are visible.
+1. Capture an `after-save` proof screenshot from that dashboard.
+1. Treat the record as successful only if the dashboard shows the synthetic
     patient name and patient-detail context.
 
 For the checked-in demo file, four records are valid and three records are
@@ -514,6 +519,12 @@ Options:
   fresh patient names and identifiers.
 - `--openmrs-concurrency`: maximum number of OpenMRS records to enter at the
   same time. Defaults to `OPENMRS_CONCURRENCY`, then `2`.
+- `--openmrs-interactive-field-confirmation`: prompts in the active OpenMRS
+  browser before writing fields whose per-field AI confidence is below the
+  configured threshold. When enabled, OpenMRS concurrency is forced to `1`.
+- `--openmrs-field-confidence-threshold`: minimum per-field AI confidence for
+  OpenMRS field writes before prompting. Defaults to
+  `OPENMRS_FIELD_CONFIDENCE_THRESHOLD`, then `0.8`.
 
 Environment variables:
 
@@ -521,6 +532,8 @@ Environment variables:
 - `OPENMRS_USERNAME`
 - `OPENMRS_PASSWORD`
 - `OPENMRS_CONCURRENCY`
+- `OPENMRS_INTERACTIVE_FIELD_CONFIRMATION`
+- `OPENMRS_FIELD_CONFIDENCE_THRESHOLD`
 - `RUNS_DIR`
 - `OPENAI_API_KEY`
 - `OPENAI_PARSER_MODEL`
