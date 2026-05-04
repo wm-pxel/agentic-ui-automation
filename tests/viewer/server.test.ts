@@ -106,6 +106,23 @@ describe("createViewerServer", () => {
     }
   });
 
+  it("serves client code that formats run titles as dates while preserving raw IDs", async () => {
+    const runsDir = await makeRunsDir();
+    const viewer = createViewerServer({ runsDir });
+    await viewer.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      const script = await fetchText(`${viewer.url()}/assets/app.js`);
+
+      expect(script).toContain('button.innerHTML = \'<strong></strong><span class="run-id"></span><span class="run-meta"></span>\';');
+      expect(script).toContain("button.querySelector(\"strong\").textContent = formatRunTitle(run);");
+      expect(script).toContain("button.querySelector(\".run-id\").textContent = run.runId;");
+      expect(script).toContain('dateStyle: "medium"');
+      expect(script).toContain('timeStyle: "short"');
+    } finally {
+      await viewer.close();
+    }
+  });
+
   it("escapes directory listing values from run IDs, paths, and entry names", async () => {
     const runsDir = await makeRunsDir();
     const runId = "run-2026-05-04T12-00-00-000Z-<script>";

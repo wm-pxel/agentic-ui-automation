@@ -379,9 +379,10 @@ function renderRuns() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = run.runId === selectedRunId ? "run-item selected" : "run-item";
-    button.innerHTML = "<strong></strong><span></span>";
-    button.querySelector("strong").textContent = run.runId;
-    button.querySelector("span").textContent = [run.status, formatCount(run.totalRecords)].filter(Boolean).join(" · ");
+    button.innerHTML = '<strong></strong><span class="run-id"></span><span class="run-meta"></span>';
+    button.querySelector("strong").textContent = formatRunTitle(run);
+    button.querySelector(".run-id").textContent = run.runId;
+    button.querySelector(".run-meta").textContent = [run.status, formatCount(run.totalRecords)].filter(Boolean).join(" · ");
     button.addEventListener("click", async () => {
       selectedRunId = run.runId;
       selectedKind = run.hasExecutiveSummary ? "executive-summary" : "summary";
@@ -408,8 +409,8 @@ async function renderSelectedRun() {
   const header = document.createElement("header");
   header.className = "detail-header";
   header.innerHTML = "<div><p></p><h2></h2></div><dl></dl>";
-  header.querySelector("p").textContent = run.status || "unknown status";
-  header.querySelector("h2").textContent = run.runId;
+  header.querySelector("p").textContent = [run.status || "unknown status", run.runId].join(" · ");
+  header.querySelector("h2").textContent = formatRunTitle(run);
   header.querySelector("dl").append(
     metric("Records", run.totalRecords),
     metric("Preflight", run.preflightExceptions),
@@ -479,6 +480,19 @@ function formatCount(value) {
   return typeof value === "number" ? value + " records" : "";
 }
 
+function formatRunTitle(run) {
+  const date = run.timestamp ? new Date(run.timestamp) : null;
+  if (!date || Number.isNaN(date.getTime())) return formatRunId(run.runId);
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function formatRunId(runId) {
+  return String(runId || "Untitled run").replace(/^run-/, "");
+}
+
 loadRuns().catch((error) => {
   runDetail.className = "empty-state";
   runDetail.textContent = error.message;
@@ -541,12 +555,16 @@ h1 {
   overflow-wrap: anywhere;
 }
 .run-item strong {
-  font-size: 13px;
+  font-size: 14px;
 }
 .run-item span {
   margin-top: 4px;
   color: #66717d;
   font-size: 12px;
+}
+.run-item .run-id {
+  color: #3f4a55;
+  font-family: "SFMono-Regular", Consolas, monospace;
 }
 .detail-pane {
   min-width: 0;
