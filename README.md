@@ -48,6 +48,7 @@ continues into OpenMRS.
 - [Handoff Watcher](#handoff-watcher)
 - [OpenMRS Smoke](#openmrs-smoke)
 - [Audit Artifacts](#audit-artifacts)
+- [Run Viewer](#run-viewer)
 - [CLI](#cli)
 - [Development](#development)
 - [Project Layout](#project-layout)
@@ -453,6 +454,31 @@ find "runs/$RUN_ID/screenshots" -type f | sort
 The screenshot tree is nested by record, target, and step so the audit trail can
 answer what the workflow saw for a specific record in a specific app.
 
+## Run Viewer
+
+Start the local read-only viewer when you want to inspect generated Markdown
+summaries and linked artifacts in a browser:
+
+```sh
+npm run viewer
+```
+
+The viewer serves `runs/` by default at `http://127.0.0.1:4173`. Use a different
+runs directory or port when needed:
+
+```sh
+npm run viewer -- --runs-dir runs --port 4555
+```
+
+The app lists run folders newest-first, renders `executive-summary.md` and
+`summary.md`, and resolves run-relative links so screenshot evidence opens from
+the browser. It also exposes raw links for `report.json`, `events.jsonl`,
+`input/normalized-records.json`, `exceptions/`, and `screenshots/` when those
+artifacts exist.
+
+The viewer is local-only and read-only. It does not run automation, edit
+records, delete patients, or modify audit artifacts.
+
 ## CLI
 
 ```sh
@@ -464,6 +490,12 @@ npm run dev -- run \
   --agent scripted \
   --synthetic-suffix auto \
   --openmrs-concurrency 2
+```
+
+Serve the local artifact viewer:
+
+```sh
+npm run dev -- viewer --runs-dir runs --port 4173
 ```
 
 Options:

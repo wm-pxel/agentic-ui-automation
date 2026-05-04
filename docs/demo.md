@@ -184,7 +184,8 @@ result. Copy the `runId` from the CLI JSON output and inspect that exact run
 directory. A controlled target failure can still exit cleanly with
 `completed_with_exceptions`; do not treat a target smoke as passed unless that
 target has the expected success count and no environment or target exceptions in
-`run.json`.
+`run.json`. For browser-based review, run `npm run viewer` and select the
+generated run from the left pane.
 
 ```sh
 RUN_ID="<run-id-from-cli-output>"
