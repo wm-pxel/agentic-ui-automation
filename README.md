@@ -520,9 +520,9 @@ Options:
 - `--openmrs-concurrency`: maximum number of OpenMRS records to enter at the
   same time. Defaults to `OPENMRS_CONCURRENCY`, then `2`.
 - `--openmrs-interactive-field-confirmation`: prompts in the active OpenMRS
-  browser before writing fields whose per-field AI confidence is below the
+  browser before writing fields whose UI-agent confidence is below the
   configured threshold. When enabled, OpenMRS concurrency is forced to `1`.
-- `--openmrs-field-confidence-threshold`: minimum per-field AI confidence for
+- `--openmrs-field-confidence-threshold`: minimum UI-agent confidence for
   OpenMRS field writes before prompting. Defaults to
   `OPENMRS_FIELD_CONFIDENCE_THRESHOLD`, then `0.8`.
 
@@ -557,8 +557,9 @@ Options:
 - `--inbox`: folder containing exported `*.ready.csv` or `*.ready.json` files.
   Defaults to `~/Downloads/agentic-ui-intake`.
 - `--targets`: comma-separated target adapters. Defaults to `openmrs`.
-- `--runs-dir`, `--agent`, `--synthetic-suffix`, and
-  `--openmrs-concurrency`: same meaning as `run`.
+- `--runs-dir`, `--agent`, `--synthetic-suffix`, `--openmrs-concurrency`,
+  `--openmrs-interactive-field-confirmation`, and
+  `--openmrs-field-confidence-threshold`: same meaning as `run`.
 - `--once`: process currently ready files once and exit.
 
 ## Development
