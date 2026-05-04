@@ -75,7 +75,8 @@ function numberFromEnv(value: string | undefined): number | undefined {
 }
 
 function thresholdFromEnv(value: string | undefined): number | undefined {
-  if (!value) return undefined;
+  if (value === undefined) return undefined;
+  if (value.trim() === "") return Number.NaN;
   return Number(value);
 }
 

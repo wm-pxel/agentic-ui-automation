@@ -201,4 +201,26 @@ describe("buildRunConfig", () => {
       }),
     ).toThrow();
   });
+
+  it("rejects empty OpenMRS field confidence threshold environment defaults", () => {
+    process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD = "";
+
+    expect(() =>
+      buildRunConfig({
+        input: "data/demo/intake-records.json",
+        targets: "openmrs",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects whitespace-only OpenMRS field confidence threshold environment defaults", () => {
+    process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD = "   ";
+
+    expect(() =>
+      buildRunConfig({
+        input: "data/demo/intake-records.json",
+        targets: "openmrs",
+      }),
+    ).toThrow();
+  });
 });
