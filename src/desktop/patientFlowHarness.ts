@@ -72,7 +72,7 @@ export function codexOutputShowsComputerUse(output: string): boolean {
 
 export function codexOutputShowsForbiddenAutomation(output: string): boolean {
   return codexJsonEvents(output).some((event) =>
-    eventContainsToolName(event, /exec_command|apply_patch|write_stdin|playwright|_electron|window\.intakeApp|intake:export/i),
+    eventContainsToolName(event, /command_execution|exec_command|apply_patch|write_stdin|playwright|_electron|window\.intakeApp|intake:export/i),
   );
 }
 

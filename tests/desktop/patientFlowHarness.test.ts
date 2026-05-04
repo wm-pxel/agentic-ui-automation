@@ -164,12 +164,14 @@ describe("Computer Use patient flow harness", () => {
     expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}')).toBe(true);
     expect(codexOutputShowsComputerUse('failed to load plugin="computer-use@openai-bundled"')).toBe(false);
     expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}\n{"type":"tool_call","name":"exec_command"}')).toBe(false);
+    expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}\n{"type":"item.completed","item":{"type":"command_execution","command":"touch fake.ready.csv"}}')).toBe(false);
     expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}\n{"type":"item.completed","item":{"type":"agent_message","text":"I did not use Playwright."}}')).toBe(true);
     expect(codexOutputShowsComputerUse("completed without tools")).toBe(false);
   });
 
   it("detects forbidden non-UI automation in codex output", () => {
     expect(codexOutputShowsForbiddenAutomation('{"type":"tool_call","name":"exec_command"}')).toBe(true);
+    expect(codexOutputShowsForbiddenAutomation('{"type":"item.completed","item":{"type":"command_execution","command":"touch fake.ready.csv"}}')).toBe(true);
     expect(codexOutputShowsForbiddenAutomation('{"type":"tool_call","name":"window.intakeApp.exportReady"}')).toBe(true);
     expect(codexOutputShowsForbiddenAutomation('{"type":"item.completed","item":{"type":"agent_message","text":"No shell command or Playwright was used."}}')).toBe(false);
     expect(codexOutputShowsForbiddenAutomation("used only mcp__computer_use__click")).toBe(false);
