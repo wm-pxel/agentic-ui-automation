@@ -365,15 +365,16 @@ describe("OpenMrsAdapter", () => {
 
     expect(result).toEqual({ status: "succeeded", targetRecordId: "openmrs-demo-001" });
     expect(page.filled).not.toContainEqual({ selector: 'input[name="address1"]', value: "1200 West Lake Street" });
-    expect(audit.getReportDetails().fieldMappings).toContainEqual(
-      expect.objectContaining({
-        sourceField: "streetAddress",
-        targetField: "Address Line 1",
-        status: "skipped",
-        approvalSource: "operator_skipped",
-        skipReason: "Operator skipped optional OpenMRS field.",
-      }),
-    );
+    const skippedMapping = audit.getReportDetails().fieldMappings.find((mapping) => mapping.sourceField === "streetAddress");
+    expect(skippedMapping).toMatchObject({
+      sourceField: "streetAddress",
+      targetField: "Address Line 1",
+      status: "skipped",
+      approvalSource: "operator_skipped",
+      originalProposedValue: "1200 West Lake Street",
+      skipReason: "Operator skipped optional OpenMRS field.",
+    });
+    expect(skippedMapping).not.toHaveProperty("finalValue");
   });
 
   it("returns an exception when the operator stops optional low-confidence OpenMRS field confirmation", async () => {

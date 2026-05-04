@@ -468,7 +468,7 @@ async function fillMappedField(context: TargetRunContext, page: OpenMrsPage, map
         confidenceThreshold: error.approval.confidenceThreshold,
         agentRationale: error.approval.agentRationale,
         approvalSource: error.approval.approvalSource,
-        finalValue: mapping.value,
+        originalProposedValue: mapping.value,
         skipReason: error.approval.skipReason,
       });
       return;
@@ -743,7 +743,7 @@ function showOpenMrsFieldConfirmationPrompt(input: OperatorPromptInput): Promise
 
     form.addEventListener("submit", (event) => {
       event.preventDefault();
-      finish("confirm");
+      finish(valueInput.value === input.proposedValue ? "confirm" : "edit");
     });
     form.append(title, details, valueInput, error, buttons);
     overlay.append(form);
