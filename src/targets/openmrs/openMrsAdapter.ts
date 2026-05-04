@@ -19,6 +19,7 @@ const DEFAULT_OPENMRS_USERNAME = "admin";
 const DEFAULT_OPENMRS_PASSWORD = "Admin123";
 const OPENMRS_ACTION_TIMEOUT_MS = 5000;
 const OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MS = 5 * 60 * 1000;
+const OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MESSAGE = "OpenMRS field confirmation prompt timed out.";
 
 export interface OpenMrsConfig {
   baseUrl?: string;
@@ -492,6 +493,9 @@ async function fillMappedField(context: TargetRunContext, page: OpenMrsPage, map
       originalProposedValue: failedApproval?.originalProposedValue,
       finalValue: failedApproval?.value,
     });
+    if (isOpenMrsFieldApprovalRequiredError(error)) {
+      throw error;
+    }
     if (!mapping.required) {
       return;
     }
@@ -579,7 +583,11 @@ async function promptForMappedField(
   let result: unknown;
   try {
     result = await withFieldPromptTimeout(page.evaluate(showOpenMrsFieldConfirmationPrompt, input));
-  } catch {
+  } catch (error) {
+    if (isPromptTimeoutError(error)) {
+      await page.evaluate(cleanupOpenMrsFieldConfirmationPrompt, undefined).catch(() => undefined);
+      return stopFieldMapping(mapping, decision, threshold, screenshotPath, OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MESSAGE);
+    }
     return stopFieldMapping(mapping, decision, threshold, screenshotPath, "OpenMRS field confirmation prompt failed.");
   }
 
@@ -651,11 +659,15 @@ function stopFieldMapping(
 function withFieldPromptTimeout<T>(prompt: Promise<T>): Promise<T> {
   let timeout: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<T>((_resolve, reject) => {
-    timeout = setTimeout(() => reject(new Error("OpenMRS field confirmation prompt timed out.")), OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MS);
+    timeout = setTimeout(() => reject(new Error(OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MESSAGE)), OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MS);
   });
   return Promise.race([prompt, timeoutPromise]).finally(() => {
     if (timeout) clearTimeout(timeout);
   });
+}
+
+function cleanupOpenMrsFieldConfirmationPrompt(): void {
+  document.querySelector("#agentic-openmrs-field-confirmation")?.remove();
 }
 
 function showOpenMrsFieldConfirmationPrompt(input: OperatorPromptInput): Promise<OperatorPromptResult> {
@@ -749,6 +761,14 @@ function isOperatorPromptResult(value: unknown): value is OperatorPromptResult {
 
 function isFieldSkippedError(value: unknown): value is FieldSkippedError {
   return typeof value === "object" && value !== null && (value as { kind?: unknown }).kind === "field-skipped";
+}
+
+function isOpenMrsFieldApprovalRequiredError(value: unknown): value is OpenMrsFieldApprovalRequiredError {
+  return value instanceof OpenMrsFieldApprovalRequiredError;
+}
+
+function isPromptTimeoutError(value: unknown): value is Error {
+  return value instanceof Error && value.message === OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MESSAGE;
 }
 
 function isValidationExceptionLike(value: unknown): value is ValidationException & Record<string, unknown> {

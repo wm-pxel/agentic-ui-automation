@@ -1,7 +1,7 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FileAuditStore } from "../../src/audit/auditStore.js";
 import type { AgentDecision, AgentDecisionInput, AgentDriver } from "../../src/agent/types.js";
 import type { NormalizedIntakeRecord } from "../../src/domain/schema.js";
@@ -376,6 +376,137 @@ describe("OpenMrsAdapter", () => {
     );
   });
 
+  it("returns an exception when the operator stops optional low-confidence OpenMRS field confirmation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-optional-field-stopped-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [{ action: "stop", value: "" }],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.8,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      ...fieldDecisionsWithLowConfidenceAtIndex(6),
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toMatchObject({
+      status: "exception",
+      exception: {
+        code: "ui_state_unexpected",
+        field: "streetAddress",
+        targetField: "Address Line 1",
+        message: "Operator stopped OpenMRS field confirmation.",
+        proposedValue: "1200 West Lake Street",
+        agentConfidence: 0.61,
+        confidenceThreshold: 0.8,
+      },
+    });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "streetAddress",
+        targetField: "Address Line 1",
+        status: "failed",
+        approvalSource: "operator_stopped",
+      }),
+    );
+  });
+
+  it("returns an exception when optional low-confidence OpenMRS field confirmation fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-optional-field-prompt-failed-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [new Error("Prompt script failed")],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.8,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      ...fieldDecisionsWithLowConfidenceAtIndex(6),
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toMatchObject({
+      status: "exception",
+      exception: {
+        code: "ui_state_unexpected",
+        field: "streetAddress",
+        targetField: "Address Line 1",
+        message: "OpenMRS field confirmation prompt failed.",
+        proposedValue: "1200 West Lake Street",
+        agentConfidence: 0.61,
+        confidenceThreshold: 0.8,
+      },
+    });
+  });
+
+  it("returns a timeout exception and cleans up the browser prompt overlay when field confirmation times out", async () => {
+    vi.useFakeTimers();
+    try {
+      const root = await mkdtemp(join(tmpdir(), "openmrs-field-prompt-timeout-"));
+      const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+      const page = successfulCreatePage({
+        promptResults: [new Promise(() => undefined)],
+      });
+      const adapter = new OpenMrsAdapter(
+        {
+          ...openMrsConfig(),
+          interactiveFieldConfirmation: true,
+          fieldConfidenceThreshold: 0.8,
+        },
+        {
+          launchBrowser: async () => new FakeOpenMrsBrowser(page),
+        },
+      );
+      const agent = new QueuedAgent([
+        { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+        ...fieldDecisionsWithFirstLowConfidence(),
+      ]);
+
+      await adapter.prepare();
+      const run = adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+      await vi.waitFor(() => expect(page.evaluations).toHaveLength(1));
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      const result = await run;
+
+      expect(result).toMatchObject({
+        status: "exception",
+        exception: {
+          code: "ui_state_unexpected",
+          field: "firstName",
+          message: "OpenMRS field confirmation prompt timed out.",
+          proposedValue: "Ava",
+          agentConfidence: 0.61,
+          confidenceThreshold: 0.8,
+        },
+      });
+      expect(page.evaluations).toHaveLength(2);
+      expect(page.evaluations[1]).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("returns an exception when the operator stops low-confidence OpenMRS field confirmation", async () => {
     const root = await mkdtemp(join(tmpdir(), "openmrs-field-stopped-"));
     const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
@@ -620,10 +751,15 @@ function loginSelectors(): string[] {
 }
 
 function fieldDecisionsWithFirstLowConfidence() {
+  return fieldDecisionsWithLowConfidenceAtIndex(0);
+}
+
+function fieldDecisionsWithLowConfidenceAtIndex(lowConfidenceIndex: number) {
   return openMrsFieldMappings(record("demo-001")).map((mapping, index) => ({
     actionId: `fill-openmrs-field:${mapping.targetField}`,
-    confidence: index === 0 ? 0.61 : 0.91,
-    rationale: index === 0 ? "The first field needs confirmation." : `The ${mapping.targetField} field is visible.`,
+    confidence: index === lowConfidenceIndex ? 0.61 : 0.91,
+    rationale:
+      index === lowConfidenceIndex ? `The ${mapping.targetField} field needs confirmation.` : `The ${mapping.targetField} field is visible.`,
   }));
 }
 
