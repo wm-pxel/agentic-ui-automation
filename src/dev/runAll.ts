@@ -18,9 +18,11 @@ export type DevAllSpawnProcess = (
 type DevAllCommand = {
   name: string;
   script: string;
+  args?: (config: DevAllConfig) => string[];
 };
 
 type DevAllOptions = {
+  args?: string[];
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   stdout?: NodeJS.WritableStream;
@@ -29,8 +31,20 @@ type DevAllOptions = {
   registerSignalHandler?: (signal: NodeJS.Signals, handler: () => void) => () => void;
 };
 
+type DevAllConfig = {
+  openMrsFieldConfidenceThreshold: string;
+};
+
 const devAllCommands: DevAllCommand[] = [
-  { name: "watch", script: "watch:intake" },
+  {
+    name: "watch",
+    script: "watch:intake",
+    args: (config) => [
+      "--openmrs-interactive-field-confirmation",
+      "--openmrs-field-confidence-threshold",
+      config.openMrsFieldConfidenceThreshold,
+    ],
+  },
   { name: "desktop", script: "desktop:dev" },
   { name: "viewer", script: "viewer" },
 ];
@@ -41,6 +55,7 @@ export async function runDevAll(options: DevAllOptions = {}): Promise<number> {
   const stdout = options.stdout ?? process.stdout;
   const stderr = options.stderr ?? process.stderr;
   const spawnProcess = options.spawnProcess ?? spawnDevCommand;
+  const config = parseDevAllArgs(options.args ?? []);
   const children: Array<{ command: DevAllCommand; child: DevAllChildProcess; exited: boolean }> = [];
   const removeSignalHandlers: Array<() => void> = [];
 
@@ -78,7 +93,7 @@ export async function runDevAll(options: DevAllOptions = {}): Promise<number> {
     );
 
     for (const command of devAllCommands) {
-      const child = spawnProcess("npm", ["run", command.script], { cwd, env });
+      const child = spawnProcess("npm", npmRunArgs(command, config), { cwd, env });
       const tracked = { command, child, exited: false };
       children.push(tracked);
 
@@ -94,6 +109,44 @@ export async function runDevAll(options: DevAllOptions = {}): Promise<number> {
       });
     }
   });
+}
+
+function parseDevAllArgs(args: string[]): DevAllConfig {
+  let openMrsFieldConfidenceThreshold = "0.9";
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--openmrs-field-confidence-threshold") {
+      const value = args[index + 1];
+      validateOpenMrsFieldConfidenceThreshold(value);
+      openMrsFieldConfidenceThreshold = value;
+      index += 1;
+      continue;
+    }
+
+    const prefix = "--openmrs-field-confidence-threshold=";
+    if (arg.startsWith(prefix)) {
+      const value = arg.slice(prefix.length);
+      validateOpenMrsFieldConfidenceThreshold(value);
+      openMrsFieldConfidenceThreshold = value;
+      continue;
+    }
+
+    throw new Error(`Unknown dev:all option: ${arg}`);
+  }
+
+  return { openMrsFieldConfidenceThreshold };
+}
+
+function validateOpenMrsFieldConfidenceThreshold(value: string | undefined): asserts value is string {
+  const parsed = value === undefined || value.trim() === "" ? Number.NaN : Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error("--openmrs-field-confidence-threshold must be a number from 0 through 1.");
+  }
+}
+
+function npmRunArgs(command: DevAllCommand, config: DevAllConfig): string[] {
+  const args = command.args?.(config) ?? [];
+  return args.length > 0 ? ["run", command.script, "--", ...args] : ["run", command.script];
 }
 
 function spawnDevCommand(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }): DevAllChildProcess {
@@ -139,7 +192,12 @@ function defaultRegisterSignalHandler(signal: NodeJS.Signals, handler: () => voi
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runDevAll().then((exitCode) => {
-    process.exitCode = exitCode;
-  });
+  runDevAll({ args: process.argv.slice(2) })
+    .then((exitCode) => {
+      process.exitCode = exitCode;
+    })
+    .catch((error) => {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    });
 }

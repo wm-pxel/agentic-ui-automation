@@ -129,7 +129,7 @@ function createProgram(io: Required<CliIo>, dependencies: Required<CliDependenci
     .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
     .option(
       "--openmrs-field-confidence-threshold <threshold>",
-      "Minimum AI confidence for OpenMRS field entry before prompting.",
+      "Minimum OpenMRS field mapping confidence before prompting.",
       parseConfidenceThreshold,
     )
     .action(async (options: RunCommandOptions) => {
@@ -148,7 +148,7 @@ function createProgram(io: Required<CliIo>, dependencies: Required<CliDependenci
     .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
     .option(
       "--openmrs-field-confidence-threshold <threshold>",
-      "Minimum AI confidence for OpenMRS field entry before prompting.",
+      "Minimum OpenMRS field mapping confidence before prompting.",
       parseConfidenceThreshold,
     )
     .option("--once", "Process currently ready files once and exit.")

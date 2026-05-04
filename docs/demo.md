@@ -47,6 +47,9 @@ intake app, and local audit viewer together:
 npm run dev:all
 ```
 
+The bundled watcher runs with interactive OpenMRS field confirmation enabled and
+a `0.9` mapping-confidence threshold.
+
 For the full desktop E2E, click `New Patient`, review or edit the generated
 synthetic intake fields, add the patient to the queue, keep that created record
 selected, and export it. The handoff is a CSV file so it can be opened directly
@@ -174,9 +177,10 @@ For each valid normalized record, the target should:
 
 Interactive field confirmation is optional. When
 `--openmrs-interactive-field-confirmation` is set, each OpenMRS browser session
-can pause before low-confidence field writes. Confirm, edit, skip optional
-fields, or stop the record from the in-browser prompt. This mode forces
-OpenMRS concurrency to `1` so prompts remain tied to one active record.
+can pause before writing fields whose mapping confidence is below the configured
+threshold. Confirm, edit, skip optional fields, or stop the record from the
+in-browser prompt. This mode forces OpenMRS concurrency to `1` so prompts remain
+tied to one active record.
 
 For `data/demo/intake-records.json`, the expected clean OpenMRS target result is:
 

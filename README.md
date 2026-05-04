@@ -13,12 +13,13 @@ Run these from the repository root when you want the full Electron-to-OpenMRS
 flow. Start the watcher, Electron intake app, and run viewer together:
 
 ```sh
-npm run dev:all
+npm run dev:all -- --openmrs-field-confidence-threshold 0.9
 ```
 
 This keeps the handoff watcher, desktop app, and local audit viewer running in
-one terminal with prefixed logs. The individual commands remain available when
-you want to debug one service at a time:
+one terminal with prefixed logs. Its watcher uses interactive OpenMRS field
+confirmation with a `0.9` mapping-confidence threshold. The individual commands
+remain available when you want to debug one service at a time:
 
 ```sh
 npm run watch:intake
@@ -224,7 +225,7 @@ Run this command from the repository root to start the handoff watcher, Electron
 intake app, and local audit viewer together:
 
 ```sh
-npm run dev:all
+npm run dev:all -- --openmrs-field-confidence-threshold 0.9
 ```
 
 For debugging, each long-running service can still be launched separately:
@@ -362,9 +363,9 @@ For each normalized valid source record, the OpenMRS adapter is expected to:
 1. Log in to the configured OpenMRS environment.
 1. Capture a `before-navigation` screenshot.
 1. Open the O2 `Register a patient` app.
-1. When interactive field confirmation is enabled, ask the UI agent to approve
-   each field write and prompt the operator in the OpenMRS browser before
-   writing low-confidence values.
+1. When interactive field confirmation is enabled, prompt the operator in the
+   OpenMRS browser before writing values whose field mapping confidence is below
+   the configured threshold.
 1. Fill the registration wizard with demographics and available contact fields.
 1. Capture an `after-fill` screenshot.
 1. Advance to the confirmation step and click `Confirm`.
@@ -527,10 +528,10 @@ Options:
 - `--openmrs-concurrency`: maximum number of OpenMRS records to enter at the
   same time. Defaults to `OPENMRS_CONCURRENCY`, then `2`.
 - `--openmrs-interactive-field-confirmation`: prompts in the active OpenMRS
-  browser before writing fields whose UI-agent confidence is below the
+  browser before writing fields whose mapping confidence is below the
   configured threshold. When enabled, OpenMRS concurrency is forced to `1`.
-- `--openmrs-field-confidence-threshold`: minimum UI-agent confidence for
-  OpenMRS field writes before prompting. Defaults to
+- `--openmrs-field-confidence-threshold`: minimum OpenMRS field mapping
+  confidence before prompting. Defaults to
   `OPENMRS_FIELD_CONFIDENCE_THRESHOLD`, then `0.8`.
 
 Environment variables:
@@ -593,8 +594,11 @@ npm run desktop:dev
 Run the full local E2E service stack:
 
 ```sh
-npm run dev:all
+npm run dev:all -- --openmrs-field-confidence-threshold 0.9
 ```
+
+This starts `watch:intake` with interactive OpenMRS field confirmation enabled
+and a `0.9` mapping-confidence threshold, plus the Electron app and viewer.
 
 Packaging dry run:
 

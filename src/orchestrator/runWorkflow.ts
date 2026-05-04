@@ -73,7 +73,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
     for (const adapter of input.adapters) {
       let prepareException: ValidationException | undefined;
       try {
-        await adapter.prepare();
+        await adapter.prepare({ plannedRecords: input.records.length });
       } catch (error) {
         prepareException = exceptionFromError("environment_not_ready", error);
       }

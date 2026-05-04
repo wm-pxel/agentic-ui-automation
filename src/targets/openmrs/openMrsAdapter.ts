@@ -1,5 +1,5 @@
 import { chromium, type Browser } from "@playwright/test";
-import type { TargetAdapter, TargetAdapterResult, TargetRunContext } from "../../adapters/contract.js";
+import type { TargetAdapter, TargetAdapterResult, TargetPrepareContext, TargetRunContext } from "../../adapters/contract.js";
 import type { ValidationException } from "../../domain/schema.js";
 import {
   OPENMRS_CONTACT_SECTION_CANDIDATES,
@@ -20,6 +20,8 @@ const DEFAULT_OPENMRS_PASSWORD = "Admin123";
 const OPENMRS_ACTION_TIMEOUT_MS = 5000;
 const OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MS = 5 * 60 * 1000;
 const OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MESSAGE = "OpenMRS field confirmation prompt timed out.";
+const OPENMRS_FIELD_CONFIRMATION_RETRY_DELAY_MS = 250;
+const OPENMRS_FIELD_CONFIRMATION_MAX_ATTEMPTS = 3;
 
 export interface OpenMrsConfig {
   baseUrl?: string;
@@ -42,7 +44,7 @@ interface OpenMrsBrowser {
 
 interface OpenMrsPage {
   goto(url: string, options: { waitUntil: "domcontentloaded" }): Promise<unknown>;
-  evaluate<T, Arg>(pageFunction: (input: Arg) => T | Promise<T>, arg: Arg): Promise<T>;
+  evaluate<T, Arg>(pageFunction: string | ((input: Arg) => T | Promise<T>), arg: Arg): Promise<T>;
   locator(selector: string): OpenMrsLocator;
   screenshot(options: { fullPage: boolean }): Promise<Buffer>;
   waitForLoadState(state: "networkidle"): Promise<unknown>;
@@ -78,7 +80,7 @@ interface FillResult {
 interface ApprovedFieldMapping {
   value: string;
   approvalSource: "agent" | "operator_confirmed" | "operator_edited" | "operator_skipped" | "operator_stopped";
-  agentConfidence: number;
+  agentConfidence?: number;
   confidenceThreshold: number;
   agentRationale: string;
   originalProposedValue?: string;
@@ -120,7 +122,7 @@ class OpenMrsFieldApprovalRequiredError extends Error {
     readonly suggestedRemediation: string,
     readonly screenshotPath: string,
     readonly proposedValue: string,
-    readonly agentConfidence: number,
+    readonly agentConfidence: number | undefined,
     readonly confidenceThreshold: number,
   ) {
     super(message);
@@ -144,9 +146,10 @@ export class OpenMrsAdapter implements TargetAdapter {
     this.maxConcurrency = effectiveOpenMrsConcurrency(config);
   }
 
-  async prepare(): Promise<void> {
+  async prepare(context?: TargetPrepareContext): Promise<void> {
     try {
-      const sessions = await Promise.all(Array.from({ length: this.maxConcurrency }, () => this.openSession()));
+      const sessionCount = eagerSessionCount(this.maxConcurrency, context?.plannedRecords);
+      const sessions = await Promise.all(Array.from({ length: sessionCount }, () => this.openSession()));
       this.readySessions.push(...sessions);
     } catch (error) {
       await this.close().catch(() => undefined);
@@ -514,9 +517,17 @@ async function approveMappedField(
     return {
       value: mapping.value,
       approvalSource: "agent",
-      agentConfidence: 1,
       confidenceThreshold: threshold,
       agentRationale: "Interactive OpenMRS field confirmation is disabled.",
+    };
+  }
+
+  if (mapping.mappingConfidence >= threshold) {
+    return {
+      value: mapping.value,
+      approvalSource: "agent",
+      confidenceThreshold: threshold,
+      agentRationale: `OpenMRS mapping confidence ${mapping.mappingConfidence} meets threshold ${threshold}.`,
     };
   }
 
@@ -527,39 +538,18 @@ async function approveMappedField(
     `field-review-${safeStepName(mapping.targetField)}`,
     reviewScreenshot,
   );
-  const decision = await context.agent.decide({
-    target: "openmrs",
-    recordId: context.record.sourceRecordId,
-    step: `fill-openmrs-field:${mapping.targetField}`,
-    screenshotPath: reviewScreenshotPath,
-    visibleText: await visibleText(page),
-    allowedActions: [
-      {
-        id: `fill-openmrs-field:${mapping.targetField}`,
-        description: `Fill OpenMRS ${mapping.targetField} with ${mapping.value}.`,
-      },
-    ],
-    metadata: {
-      sourceField: mapping.sourceField,
-      targetField: mapping.targetField,
-      proposedValue: mapping.value,
-      selectorCandidates: mapping.selectors,
-      required: mapping.required === true,
-      mappingConfidence: mapping.mappingConfidence,
+
+  return promptForMappedField(
+    context,
+    page,
+    mapping,
+    {
+      confidence: mapping.mappingConfidence,
+      rationale: `OpenMRS mapping confidence ${mapping.mappingConfidence} is below threshold ${threshold}.`,
     },
-  });
-
-  if (decision.actionId === `fill-openmrs-field:${mapping.targetField}` && decision.confidence >= threshold) {
-    return {
-      value: mapping.value,
-      approvalSource: "agent",
-      agentConfidence: decision.confidence,
-      confidenceThreshold: threshold,
-      agentRationale: decision.rationale,
-    };
-  }
-
-  return promptForMappedField(context, page, mapping, decision, threshold, reviewScreenshotPath);
+    threshold,
+    reviewScreenshotPath,
+  );
 }
 
 async function promptForMappedField(
@@ -582,13 +572,19 @@ async function promptForMappedField(
 
   let result: unknown;
   try {
-    result = await withFieldPromptTimeout(page.evaluate(showOpenMrsFieldConfirmationPrompt, input));
+    result = await evaluateFieldPromptWithRetry(page, input);
   } catch (error) {
     if (isPromptTimeoutError(error)) {
       await page.evaluate(cleanupOpenMrsFieldConfirmationPrompt, undefined).catch(() => undefined);
       return stopFieldMapping(mapping, decision, threshold, screenshotPath, OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MESSAGE);
     }
-    return stopFieldMapping(mapping, decision, threshold, screenshotPath, "OpenMRS field confirmation prompt failed.");
+    return stopFieldMapping(
+      mapping,
+      decision,
+      threshold,
+      screenshotPath,
+      `OpenMRS field confirmation prompt failed: ${errorMessage(error)}`,
+    );
   }
 
   if (!isOperatorPromptResult(result)) {
@@ -637,6 +633,23 @@ async function promptForMappedField(
   return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Operator stopped OpenMRS field confirmation.");
 }
 
+async function evaluateFieldPromptWithRetry(page: OpenMrsPage, input: OperatorPromptInput): Promise<unknown> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= OPENMRS_FIELD_CONFIRMATION_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await withFieldPromptTimeout(page.evaluate(fieldPromptEvaluationScript(input), undefined));
+    } catch (error) {
+      if (isPromptTimeoutError(error) || !isTransientPromptEvaluationError(error) || attempt === OPENMRS_FIELD_CONFIRMATION_MAX_ATTEMPTS) {
+        throw error;
+      }
+      lastError = error;
+      await page.waitForLoadState("networkidle").catch(() => undefined);
+      await delay(OPENMRS_FIELD_CONFIRMATION_RETRY_DELAY_MS);
+    }
+  }
+  throw lastError;
+}
+
 function stopFieldMapping(
   mapping: FieldMapping,
   decision: { confidence: number; rationale: string },
@@ -670,52 +683,58 @@ function cleanupOpenMrsFieldConfirmationPrompt(): void {
   document.querySelector("#agentic-openmrs-field-confirmation")?.remove();
 }
 
-function showOpenMrsFieldConfirmationPrompt(input: OperatorPromptInput): Promise<OperatorPromptResult> {
-  return new Promise((resolve) => {
-    document.querySelector("#agentic-openmrs-field-confirmation")?.remove();
+function fieldPromptEvaluationScript(input: OperatorPromptInput): string {
+  const encodedInput = encodeURIComponent(JSON.stringify(input));
+  return `/* agentic-openmrs-field-confirmation-input:${encodedInput} */
+(function () {
+  var input = JSON.parse(decodeURIComponent("${encodedInput}"));
+  return new Promise(function (resolve) {
+    var existing = document.querySelector("#agentic-openmrs-field-confirmation");
+    if (existing) existing.remove();
 
-    const overlay = document.createElement("div");
+    var overlay = document.createElement("div");
     overlay.id = "agentic-openmrs-field-confirmation";
     overlay.style.cssText =
       "position:fixed;inset:0;z-index:2147483647;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;color:#111827;";
 
-    const form = document.createElement("form");
+    var form = document.createElement("form");
     form.style.cssText =
       "width:min(560px,calc(100vw - 32px));background:#fff;border-radius:8px;box-shadow:0 24px 80px rgba(0,0,0,.35);padding:24px;display:grid;gap:16px;";
 
-    const title = document.createElement("h2");
+    var title = document.createElement("h2");
     title.textContent = "Confirm OpenMRS Field";
     title.style.cssText = "margin:0;font-size:22px;line-height:1.2;";
 
-    const details = document.createElement("dl");
+    var details = document.createElement("dl");
     details.style.cssText = "margin:0;display:grid;grid-template-columns:max-content 1fr;gap:8px 12px;font-size:14px;";
-    const addDetail = (label: string, value: string) => {
-      const term = document.createElement("dt");
+    function addDetail(label, value) {
+      var term = document.createElement("dt");
       term.textContent = label;
       term.style.cssText = "font-weight:700;color:#374151;";
-      const description = document.createElement("dd");
+      var description = document.createElement("dd");
       description.textContent = value;
       description.style.cssText = "margin:0;color:#111827;overflow-wrap:anywhere;";
-      details.append(term, description);
-    };
+      details.appendChild(term);
+      details.appendChild(description);
+    }
     addDetail("Target field", input.targetField);
     addDetail("Source field", input.sourceField);
     addDetail("Confidence", String(input.confidence));
     addDetail("Threshold", String(input.threshold));
     addDetail("Rationale", input.rationale);
 
-    const valueInput = document.createElement("input");
+    var valueInput = document.createElement("input");
     valueInput.value = input.proposedValue;
     valueInput.style.cssText = "width:100%;box-sizing:border-box;border:1px solid #9ca3af;border-radius:6px;padding:10px 12px;font-size:16px;";
     valueInput.setAttribute("aria-label", "OpenMRS field value");
 
-    const error = document.createElement("div");
+    var error = document.createElement("div");
     error.style.cssText = "min-height:18px;color:#b91c1c;font-size:13px;";
 
-    const buttons = document.createElement("div");
+    var buttons = document.createElement("div");
     buttons.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;";
-    const finish = (action: OperatorPromptAction) => {
-      const value = valueInput.value;
+    function finish(action) {
+      var value = valueInput.value;
       if ((action === "confirm" || action === "edit") && input.required && value.trim().length === 0) {
         error.textContent = "Required fields cannot be blank.";
         valueInput.focus();
@@ -723,40 +742,51 @@ function showOpenMrsFieldConfirmationPrompt(input: OperatorPromptInput): Promise
       }
       overlay.remove();
       resolve({ action, value });
-    };
-    const addButton = (label: string, action: OperatorPromptAction, kind: "primary" | "secondary" | "danger" = "secondary") => {
-      const button = document.createElement("button");
+    }
+    function addButton(label, action, kind) {
+      if (kind === undefined) kind = "secondary";
+      var button = document.createElement("button");
       button.type = "button";
       button.textContent = label;
       button.style.cssText =
         "border:1px solid #9ca3af;border-radius:6px;padding:9px 12px;font-size:14px;cursor:pointer;background:#fff;color:#111827;";
       if (kind === "primary") button.style.cssText += "background:#2563eb;border-color:#2563eb;color:#fff;";
       if (kind === "danger") button.style.cssText += "background:#b91c1c;border-color:#b91c1c;color:#fff;";
-      button.addEventListener("click", () => finish(action));
-      buttons.append(button);
-    };
+      button.addEventListener("click", function () { finish(action); });
+      buttons.appendChild(button);
+    }
 
     addButton("Confirm", "confirm", "primary");
     addButton("Use Edited Value", "edit");
     if (!input.required) addButton("Skip", "skip");
     addButton("Stop Record", "stop", "danger");
 
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", function (event) {
       event.preventDefault();
       finish(valueInput.value === input.proposedValue ? "confirm" : "edit");
     });
-    form.append(title, details, valueInput, error, buttons);
-    overlay.append(form);
+    form.appendChild(title);
+    form.appendChild(details);
+    form.appendChild(valueInput);
+    form.appendChild(error);
+    form.appendChild(buttons);
+    overlay.appendChild(form);
     document.body.append(overlay);
     valueInput.focus();
     valueInput.select();
   });
+})()`;
 }
 
 function isOperatorPromptResult(value: unknown): value is OperatorPromptResult {
   if (typeof value !== "object" || value === null) return false;
   const input = value as Record<string, unknown>;
   return ["confirm", "edit", "skip", "stop"].includes(String(input.action)) && typeof input.value === "string";
+}
+
+function eagerSessionCount(maxConcurrency: number, plannedRecords: number | undefined): number {
+  if (plannedRecords === undefined) return maxConcurrency;
+  return Math.max(1, Math.min(maxConcurrency, plannedRecords));
 }
 
 function isFieldSkippedError(value: unknown): value is FieldSkippedError {
@@ -769,6 +799,23 @@ function isOpenMrsFieldApprovalRequiredError(value: unknown): value is OpenMrsFi
 
 function isPromptTimeoutError(value: unknown): value is Error {
   return value instanceof Error && value.message === OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MESSAGE;
+}
+
+function isTransientPromptEvaluationError(value: unknown): boolean {
+  const message = errorMessage(value).toLowerCase();
+  return (
+    message.includes("execution context was destroyed") ||
+    message.includes("cannot find context with specified id") ||
+    message.includes("most likely because of a navigation")
+  );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function isValidationExceptionLike(value: unknown): value is ValidationException & Record<string, unknown> {

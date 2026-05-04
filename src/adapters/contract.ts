@@ -11,6 +11,10 @@ export interface TargetRunContext {
   agent: AgentDriver;
 }
 
+export interface TargetPrepareContext {
+  plannedRecords: number;
+}
+
 export type TargetAdapterResult =
   | {
       status: "succeeded";
@@ -43,7 +47,7 @@ export const TargetAdapterResultSchema = z.discriminatedUnion("status", [
 export interface TargetAdapter {
   readonly name: TargetName;
   readonly maxConcurrency?: number;
-  prepare(): Promise<void>;
+  prepare(context?: TargetPrepareContext): Promise<void>;
   runRecord(context: TargetRunContext): Promise<TargetAdapterResult>;
   close(): Promise<void>;
 }

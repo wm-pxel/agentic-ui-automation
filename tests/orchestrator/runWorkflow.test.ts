@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { TargetAdapter, TargetAdapterResult, TargetRunContext } from "../../src/adapters/contract.js";
+import type { TargetAdapter, TargetAdapterResult, TargetPrepareContext, TargetRunContext } from "../../src/adapters/contract.js";
 import type { AgentDecision, AgentDecisionInput, AgentDriver } from "../../src/agent/types.js";
 import { FakeAdapter } from "../../src/adapters/fakeAdapter.js";
 import { ScriptedAgentDriver } from "../../src/agent/scriptedAgent.js";
@@ -225,6 +225,22 @@ describe("runWorkflow", () => {
     expect(adapter.maxActive).toBe(2);
   });
 
+  it("passes the planned record count when preparing adapters", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "workflow-prepare-planned-records-"));
+    const adapter = new PrepareContextAdapter();
+
+    await runWorkflow({
+      runId: "run-prepare-planned-records",
+      runsDir,
+      records: [cleanRecord("demo-001")],
+      adapters: [adapter],
+      agent: new ScriptedAgentDriver(),
+      now: () => "2026-04-28T12:00:00.000Z",
+    });
+
+    expect(adapter.prepareContexts).toEqual([{ plannedRecords: 1 }]);
+  });
+
   it("closes ready adapters after successful runs", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-close-success-"));
     const adapter = new CloseTrackingAdapter();
@@ -414,6 +430,21 @@ class ConcurrentAdapter implements TargetAdapter {
     this.maxActive = Math.max(this.maxActive, this.active);
     await sleep(20);
     this.active -= 1;
+    return { status: "succeeded" };
+  }
+
+  async close(): Promise<void> {}
+}
+
+class PrepareContextAdapter implements TargetAdapter {
+  readonly name = "fake";
+  readonly prepareContexts: Array<TargetPrepareContext | undefined> = [];
+
+  async prepare(context?: TargetPrepareContext): Promise<void> {
+    this.prepareContexts.push(context);
+  }
+
+  async runRecord(_context: TargetRunContext): Promise<TargetAdapterResult> {
     return { status: "succeeded" };
   }
 
