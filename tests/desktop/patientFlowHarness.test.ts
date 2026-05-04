@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildComputerUsePrompt,
+  codexOutputShowsComputerUse,
   detectNewReadyFile,
+  detectNewReadyFileForPatient,
   readyFileSnapshot,
   syntheticComputerUsePatient,
 } from "../../src/desktop/patientFlowHarness.js";
@@ -56,6 +58,34 @@ describe("Computer Use patient flow harness", () => {
     expect(await detectNewReadyFile(inbox, before)).toBe(join(inbox, "new.ready.csv"));
   });
 
+  it("detects only a newly-created ready CSV containing exactly the generated patient", async () => {
+    const inbox = await mkdtemp(join(tmpdir(), "computer-use-ready-patient-"));
+    tempDirs.push(inbox);
+    const patient = syntheticComputerUsePatient(new Date("2026-05-04T14:03:27.000Z"));
+    const before = await readyFileSnapshot(inbox);
+
+    await writeFile(
+      join(inbox, "wrong.ready.csv"),
+      [
+        "sourceRecordId,firstName,lastName,dateOfBirth,sexOrGender,phone,email,insuranceMemberId",
+        "wrong,Ava,Nguyen,1990-01-01,female,3125550000,ava@example.test,WRONG",
+      ].join("\n"),
+      "utf8",
+    );
+    await expect(detectNewReadyFileForPatient(inbox, before, patient)).resolves.toBeNull();
+
+    await writeFile(
+      join(inbox, "match.ready.csv"),
+      [
+        "sourceRecordId,firstName,lastName,dateOfBirth,sexOrGender,phone,email,insuranceMemberId",
+        `desktop-created,${patient.firstName},${patient.lastName},${patient.dateOfBirth},${patient.sexOrGender},${patient.phone},${patient.email},${patient.insuranceMemberId}`,
+      ].join("\n"),
+      "utf8",
+    );
+
+    await expect(detectNewReadyFileForPatient(inbox, before, patient)).resolves.toBe(join(inbox, "match.ready.csv"));
+  });
+
   it("returns an empty snapshot for a missing inbox", async () => {
     const inbox = join(tmpdir(), "missing-computer-use-ready-files");
 
@@ -90,6 +120,10 @@ describe("Computer Use patient flow harness", () => {
     expect(packageJson.scripts["desktop:patient-flow"]).not.toMatch(/(^|&&|\s)electron(\s|$)/);
   });
 
+  it("keeps npm lifecycle banners out of command stdout", async () => {
+    await expect(readFile(".npmrc", "utf8")).resolves.toContain("loglevel=silent");
+  });
+
   it("keeps runner stdout reserved for the final success JSON", async () => {
     const script = await readFile("scripts/run-electron-patient-flow.mjs", "utf8");
 
@@ -97,5 +131,12 @@ describe("Computer Use patient flow harness", () => {
     expect(script).toContain('stdio: ["ignore", "pipe", "pipe"]');
     expect(script).toContain("process.stderr.write(codexResult.output)");
     expect(script).toContain('JSON.stringify({ status: "exported", patient, readyPath }');
+  });
+
+  it("detects whether codex output shows Computer Use activity", () => {
+    expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}')).toBe(true);
+    expect(codexOutputShowsComputerUse("called get_app_state for Intake Queue")).toBe(true);
+    expect(codexOutputShowsComputerUse('failed to load plugin="computer-use@openai-bundled"')).toBe(false);
+    expect(codexOutputShowsComputerUse("completed without tools")).toBe(false);
   });
 });

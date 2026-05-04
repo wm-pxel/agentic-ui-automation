@@ -4,7 +4,8 @@ import { spawn } from "node:child_process";
 import { defaultIntakeInbox } from "../src/handoff/intakeHandoff.ts";
 import {
   buildComputerUsePrompt,
-  detectNewReadyFile,
+  codexOutputShowsComputerUse,
+  detectNewReadyFileForPatient,
   readyFileSnapshot,
   syntheticComputerUsePatient,
 } from "../src/desktop/patientFlowHarness.ts";
@@ -31,10 +32,20 @@ if (codexResult.status !== 0) {
   console.error(`Computer Use patient flow failed: codex exec exited with status ${codexResult.status}.`);
   process.exit(codexResult.status ?? 1);
 }
+if (!codexOutputShowsComputerUse(codexResult.output)) {
+  if (codexResult.output.length > 0) {
+    process.stderr.write(codexResult.output);
+    if (!codexResult.output.endsWith("\n")) process.stderr.write("\n");
+  }
+  console.error("Computer Use patient flow failed: codex exec did not report Computer Use tool activity.");
+  process.exit(1);
+}
 
 const readyPath = await waitForNewReadyFile(inbox, before, pollTimeoutMs);
 if (!readyPath) {
-  console.error(`Computer Use patient flow failed: no new .ready.csv file appeared in ${inbox} within ${pollTimeoutMs}ms.`);
+  console.error(
+    `Computer Use patient flow failed: no new single-patient .ready.csv file for ${patient.firstName} ${patient.lastName} appeared in ${inbox} within ${pollTimeoutMs}ms.`,
+  );
   process.exit(1);
 }
 
@@ -45,7 +56,7 @@ function runCodex(prompt) {
     const outputChunks = [];
     const child = spawn(
       "codex",
-      ["exec", "--sandbox", "danger-full-access", "-c", 'approval_policy="never"', "-C", process.cwd(), prompt],
+      ["exec", "-m", "gpt-5.4", "--json", "--sandbox", "danger-full-access", "-c", 'approval_policy="never"', "-C", process.cwd(), prompt],
       {
         cwd: process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
@@ -64,12 +75,12 @@ function runCodex(prompt) {
 async function waitForNewReadyFile(inboxPath, before, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   do {
-    const readyPath = await detectNewReadyFile(inboxPath, before);
+    const readyPath = await detectNewReadyFileForPatient(inboxPath, before, patient);
     if (readyPath) return readyPath;
     await delay(pollIntervalMs);
   } while (Date.now() < deadline);
 
-  return detectNewReadyFile(inboxPath, before);
+  return detectNewReadyFileForPatient(inboxPath, before, patient);
 }
 
 function delay(ms) {

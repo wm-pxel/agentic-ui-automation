@@ -1,5 +1,6 @@
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { parse } from "csv-parse/sync";
 import type { SyntheticPatientInput } from "./intakeQueue.js";
 
 export function syntheticComputerUsePatient(now = new Date()): SyntheticPatientInput {
@@ -41,6 +42,29 @@ export async function detectNewReadyFile(inbox: string, before: Set<string>): Pr
   return created.length > 0 ? join(inbox, created[0]) : null;
 }
 
+export async function detectNewReadyFileForPatient(
+  inbox: string,
+  before: Set<string>,
+  patient: SyntheticPatientInput,
+): Promise<string | null> {
+  const after = await readyFileSnapshot(inbox);
+  const created = [...after].filter((entry) => !before.has(entry)).sort();
+  for (const fileName of created) {
+    const filePath = join(inbox, fileName);
+    if (await readyFileContainsOnlyPatient(filePath, patient)) {
+      return filePath;
+    }
+  }
+  return null;
+}
+
+export function codexOutputShowsComputerUse(output: string): boolean {
+  if (/failed to load plugin=.*computer-use/i.test(output) || /Computer Use unavailable/i.test(output)) {
+    return false;
+  }
+  return /mcp__computer_use__|mcp__computer_use__\w+|computer_use|get_app_state|list_apps/i.test(output);
+}
+
 export function buildComputerUsePrompt({ patient, inbox }: { patient: SyntheticPatientInput; inbox: string }): string {
   return `You are driving the already-running visible Intake Queue desktop app as a third-party desktop application.
 
@@ -64,6 +88,26 @@ ${inbox}
 6. Leave the Intake Queue app running when finished.
 
 Report the UI status text and the exported file path if the app displays one.`;
+}
+
+async function readyFileContainsOnlyPatient(filePath: string, patient: SyntheticPatientInput): Promise<boolean> {
+  const content = await readFile(filePath, "utf8");
+  const records = parse(content, {
+    columns: true,
+    skip_empty_lines: true,
+  }) as Array<Record<string, string>>;
+  if (records.length !== 1) return false;
+
+  const record = records[0];
+  return (
+    record.firstName === patient.firstName &&
+    record.lastName === patient.lastName &&
+    record.dateOfBirth === patient.dateOfBirth &&
+    record.sexOrGender === patient.sexOrGender &&
+    record.phone === patient.phone &&
+    record.email === patient.email &&
+    record.insuranceMemberId === patient.insuranceMemberId
+  );
 }
 
 function isMissingDirectoryError(error: unknown): boolean {
