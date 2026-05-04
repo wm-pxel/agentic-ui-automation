@@ -609,7 +609,9 @@ describe("FileAuditStore", () => {
             status: "succeeded",
             agentConfidence: 0.62,
             confidenceThreshold: 0.8,
+            agentRationale: "The visible label could refer to another contact field.",
             approvalSource: "operator_edited",
+            originalProposedValue: "+13125550198",
             finalValue: "+13125550999",
           },
         ],
@@ -632,7 +634,7 @@ describe("FileAuditStore", () => {
     expect(summary).not.toContain("Intake Evidence");
     expect(summary).toContain("| sex_at_birth | female | 0.97 | sexOrGender | Birth Sex | Female | select | succeeded | select[name=\"form_sex\"] |");
     expect(summary).toContain("| province | IL | 0.96 | state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
-    expect(summary).toContain("| phone | 3125550198 | 0.99 | phone | Phone Number | +13125550198 | fill | succeeded; operator_edited; agent 62%; threshold 80%; final +13125550999 | input[name=\"phoneNumber\"] |");
+    expect(summary).toContain("| phone | 3125550198 | 0.99 | phone | Phone Number | +13125550198 | fill | succeeded; operator_edited; agent 62%; threshold 80%; proposed +13125550198; final +13125550999; rationale The visible label could refer to another contact field. | input[name=\"phoneNumber\"] |");
     expect(summary).toContain("| given_name | Ava |  | firstName |  |  |  | not mapped |  |");
     expect(summary).not.toContain("## AI Source Extraction");
     expect(summary).not.toContain("## Intake to OpenMRS Field Mapping");

@@ -351,7 +351,9 @@ function mappingIntervention(mapping: ReportFieldMapping): string {
     mapping.approvalSource,
     mapping.agentConfidence === undefined ? undefined : `agent ${Math.round(mapping.agentConfidence * 100)}%`,
     mapping.confidenceThreshold === undefined ? undefined : `threshold ${Math.round(mapping.confidenceThreshold * 100)}%`,
+    mapping.originalProposedValue ? `proposed ${mapping.originalProposedValue}` : undefined,
     mapping.finalValue && mapping.finalValue !== mapping.normalizedValue ? `final ${mapping.finalValue}` : undefined,
+    mapping.agentRationale ? `rationale ${mapping.agentRationale}` : undefined,
     mapping.skipReason,
   ].filter((value): value is string => Boolean(value));
   return parts.join("; ");
