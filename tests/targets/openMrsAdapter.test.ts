@@ -246,10 +246,215 @@ describe("OpenMrsAdapter", () => {
     );
   });
 
+  it("prompts to confirm a low-confidence required OpenMRS field", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-confirmed-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [{ action: "confirm", value: "Ava" }],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.8,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const fieldDecisions = fieldDecisionsWithFirstLowConfidence();
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      ...fieldDecisions,
+      { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "openmrs-demo-001" });
+    expect(page.evaluations[0]).toMatchObject({
+      targetField: "Given Name",
+      proposedValue: "Ava",
+      required: true,
+      confidence: 0.61,
+      threshold: 0.8,
+    });
+    expect(page.filled).toContainEqual({ selector: 'input[name="givenName"]', value: "Ava" });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "firstName",
+        targetField: "Given Name",
+        status: "succeeded",
+        approvalSource: "operator_confirmed",
+        agentConfidence: 0.61,
+        confidenceThreshold: 0.8,
+        finalValue: "Ava",
+      }),
+    );
+  });
+
+  it("uses the operator-edited value for a low-confidence required OpenMRS field", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-edited-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [{ action: "edit", value: "Avery" }],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.8,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      ...fieldDecisionsWithFirstLowConfidence(),
+      { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "openmrs-demo-001" });
+    expect(page.filled).toContainEqual({ selector: 'input[name="givenName"]', value: "Avery" });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "firstName",
+        targetField: "Given Name",
+        status: "succeeded",
+        approvalSource: "operator_edited",
+        originalProposedValue: "Ava",
+        finalValue: "Avery",
+      }),
+    );
+  });
+
+  it("skips an optional low-confidence OpenMRS field when the operator skips it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-skipped-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [{ action: "skip", value: "" }],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.8,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const fieldDecisions = openMrsFieldMappings(record("demo-001")).map((mapping, index) => ({
+      actionId: `fill-openmrs-field:${mapping.targetField}`,
+      confidence: index === 6 ? 0.61 : 0.91,
+      rationale: index === 6 ? "The address field needs confirmation." : `The ${mapping.targetField} field is visible.`,
+    }));
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      ...fieldDecisions,
+      { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "openmrs-demo-001" });
+    expect(page.filled).not.toContainEqual({ selector: 'input[name="address1"]', value: "1200 West Lake Street" });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "streetAddress",
+        targetField: "Address Line 1",
+        status: "skipped",
+        approvalSource: "operator_skipped",
+        skipReason: "Operator skipped optional OpenMRS field.",
+      }),
+    );
+  });
+
+  it("returns an exception when the operator stops low-confidence OpenMRS field confirmation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-stopped-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [{ action: "stop", value: "" }],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.8,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      ...fieldDecisionsWithFirstLowConfidence(),
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toMatchObject({
+      status: "exception",
+      exception: {
+        code: "ui_state_unexpected",
+        field: "firstName",
+        proposedValue: "Ava",
+        agentConfidence: 0.61,
+        confidenceThreshold: 0.8,
+      },
+    });
+  });
+
+  it("returns an exception when the OpenMRS field confirmation prompt fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-prompt-failed-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [new Error("Prompt script failed")],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.8,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      ...fieldDecisionsWithFirstLowConfidence(),
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toMatchObject({
+      status: "exception",
+      exception: {
+        code: "ui_state_unexpected",
+        field: "firstName",
+        message: "OpenMRS field confirmation prompt failed.",
+        proposedValue: "Ava",
+        agentConfidence: 0.61,
+        confidenceThreshold: 0.8,
+      },
+    });
+  });
+
   it("records low-confidence OpenMRS field approval failures with auditable metadata", async () => {
     const root = await mkdtemp(join(tmpdir(), "openmrs-field-approval-low-confidence-"));
     const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
-    const page = successfulCreatePage();
+    const page = successfulCreatePage({
+      promptResults: [{ action: "stop", value: "" }],
+    });
     const adapter = new OpenMrsAdapter(
       {
         ...openMrsConfig(),
@@ -270,32 +475,28 @@ describe("OpenMrsAdapter", () => {
     ]);
 
     await adapter.prepare();
-    let error: unknown;
-    try {
-      await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
-    } catch (caught) {
-      error = caught;
-    }
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
 
-    expect(error).toBeInstanceOf(Error);
-    expect(error).toMatchObject({
-      code: "ui_state_unexpected",
-      severity: "error",
-      field: "firstName",
-      message: "OpenMRS field Given Name requires operator confirmation.",
-      suggestedRemediation: "The Given Name field might be hidden by a validation banner.",
-      screenshotPath: "screenshots/demo-001/openmrs/field-review-given-name.png",
-      proposedValue: "Ava",
-      agentConfidence: 0.42,
-      confidenceThreshold: 0.8,
-      agentRationale: "The Given Name field might be hidden by a validation banner.",
+    expect(result).toMatchObject({
+      status: "exception",
+      exception: {
+        code: "ui_state_unexpected",
+        severity: "error",
+        field: "firstName",
+        message: "Operator stopped OpenMRS field confirmation.",
+        suggestedRemediation: "The Given Name field might be hidden by a validation banner.",
+        screenshotPath: "screenshots/demo-001/openmrs/field-review-given-name.png",
+        proposedValue: "Ava",
+        agentConfidence: 0.42,
+        confidenceThreshold: 0.8,
+      },
     });
     expect(audit.getReportDetails().fieldMappings).toContainEqual(
       expect.objectContaining({
         sourceField: "firstName",
         targetField: "Given Name",
         status: "failed",
-        errorMessage: "OpenMRS field Given Name requires operator confirmation.",
+        errorMessage: "Operator stopped OpenMRS field confirmation.",
         agentConfidence: 0.42,
         confidenceThreshold: 0.8,
         agentRationale: "The Given Name field might be hidden by a validation banner.",
@@ -418,11 +619,20 @@ function loginSelectors(): string[] {
   return ['input[name="username"]', 'input[name="password"]', '#Registration\\ Desk', "#loginButton"];
 }
 
+function fieldDecisionsWithFirstLowConfidence() {
+  return openMrsFieldMappings(record("demo-001")).map((mapping, index) => ({
+    actionId: `fill-openmrs-field:${mapping.targetField}`,
+    confidence: index === 0 ? 0.61 : 0.91,
+    rationale: index === 0 ? "The first field needs confirmation." : `The ${mapping.targetField} field is visible.`,
+  }));
+}
+
 function successfulCreatePage(options: {
   availableSelectors?: string[];
   visibleSelectors?: string[];
   omittedSelectors?: string[];
   bodyTexts?: string[];
+  promptResults?: unknown[];
 } = {}): FakeOpenMrsPage {
   const omitted = new Set(options.omittedSelectors ?? []);
   const registrationSelectors = [
@@ -478,6 +688,7 @@ function successfulCreatePage(options: {
       ['select[name="gender"]', "select"],
       ['select[name="birthdateMonth"]', "select"],
     ],
+    promptResults: options.promptResults,
   });
 }
 
@@ -524,6 +735,8 @@ class FakeOpenMrsPage {
   readonly selected: Array<{ selector: string; option: unknown }> = [];
   readonly actionOptions: Array<{ action: "fill" | "select"; selector: string; options: { timeout?: number } | undefined }> = [];
   readonly clicked: string[] = [];
+  readonly evaluations: unknown[] = [];
+  promptResults: unknown[] = [];
   private readonly bodyTexts: string[];
   private screenshotCount = 0;
   private lastBodyText = "";
@@ -535,6 +748,7 @@ class FakeOpenMrsPage {
     clickHides?: Record<string, string[]>;
     bodyTexts?: string[];
     tagNames?: Array<[string, string]>;
+    promptResults?: unknown[];
   }) {
     this.availableSelectors = new Set(options.availableSelectors);
     this.visibleSelectors = options.visibleSelectors ? new Set(options.visibleSelectors) : undefined;
@@ -542,6 +756,7 @@ class FakeOpenMrsPage {
     this.clickHides = new Map(Object.entries(options.clickHides ?? {}));
     this.bodyTexts = [...(options.bodyTexts ?? [])];
     this.tagNames = new Map(options.tagNames ?? []);
+    this.promptResults = [...(options.promptResults ?? [])];
   }
 
   async goto(url: string, options?: unknown): Promise<void> {
@@ -559,6 +774,15 @@ class FakeOpenMrsPage {
 
   locator(selector: string): FakeOpenMrsLocator {
     return new FakeOpenMrsLocator(this, selector);
+  }
+
+  async evaluate<T, Arg>(_pageFunction: (input: Arg) => Promise<T> | T, input: Arg): Promise<T> {
+    this.evaluations.push(input);
+    const result = this.promptResults.shift();
+    if (result instanceof Error) {
+      throw result;
+    }
+    return result as T;
   }
 
   hasSelector(selector: string): boolean {

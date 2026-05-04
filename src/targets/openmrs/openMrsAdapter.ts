@@ -18,6 +18,7 @@ const DEFAULT_OPENMRS_BASE_URL = "https://o2.openmrs.org/openmrs";
 const DEFAULT_OPENMRS_USERNAME = "admin";
 const DEFAULT_OPENMRS_PASSWORD = "Admin123";
 const OPENMRS_ACTION_TIMEOUT_MS = 5000;
+const OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface OpenMrsConfig {
   baseUrl?: string;
@@ -40,6 +41,7 @@ interface OpenMrsBrowser {
 
 interface OpenMrsPage {
   goto(url: string, options: { waitUntil: "domcontentloaded" }): Promise<unknown>;
+  evaluate<T, Arg>(pageFunction: (input: Arg) => T | Promise<T>, arg: Arg): Promise<T>;
   locator(selector: string): OpenMrsLocator;
   screenshot(options: { fullPage: boolean }): Promise<Buffer>;
   waitForLoadState(state: "networkidle"): Promise<unknown>;
@@ -82,6 +84,28 @@ interface ApprovedFieldMapping {
   skipReason?: string;
 }
 
+type OperatorPromptAction = "confirm" | "edit" | "skip" | "stop";
+
+interface OperatorPromptResult {
+  action: OperatorPromptAction;
+  value: string;
+}
+
+interface OperatorPromptInput {
+  sourceField: string;
+  targetField: string;
+  proposedValue: string;
+  required: boolean;
+  confidence: number;
+  threshold: number;
+  rationale: string;
+}
+
+interface FieldSkippedError {
+  kind: "field-skipped";
+  approval: ApprovedFieldMapping;
+}
+
 class OpenMrsFieldApprovalRequiredError extends Error {
   readonly code = "ui_state_unexpected";
   readonly severity = "error";
@@ -91,13 +115,14 @@ class OpenMrsFieldApprovalRequiredError extends Error {
   constructor(
     readonly field: string,
     readonly targetField: string,
+    message: string,
     readonly suggestedRemediation: string,
     readonly screenshotPath: string,
     readonly proposedValue: string,
     readonly agentConfidence: number,
     readonly confidenceThreshold: number,
   ) {
-    super(`OpenMRS field ${targetField} requires operator confirmation.`);
+    super(message);
     this.name = "OpenMrsFieldApprovalRequiredError";
     this.agentRationale = suggestedRemediation;
   }
@@ -198,8 +223,16 @@ export class OpenMrsAdapter implements TargetAdapter {
       });
 
       await expandOptionalSection(page, OPENMRS_CONTACT_SECTION_CANDIDATES);
-      for (const mapping of openMrsFieldMappings(context.record)) {
-        await fillMappedField(context, page, mapping, this.config);
+      try {
+        for (const mapping of openMrsFieldMappings(context.record)) {
+          await fillMappedField(context, page, mapping, this.config);
+        }
+      } catch (error) {
+        if (isValidationExceptionLike(error)) {
+          await writeTargetIssue(context, error);
+          return { status: "exception", exception: error };
+        }
+        throw error;
       }
 
       const filled = await page.screenshot({ fullPage: true });
@@ -420,6 +453,26 @@ async function fillMappedField(context: TargetRunContext, page: OpenMrsPage, map
       finalValue: approval.value,
     });
   } catch (error) {
+    if (isFieldSkippedError(error)) {
+      await context.audit.writeFieldMapping({
+        recordId: context.record.sourceRecordId,
+        target: "openmrs",
+        sourceField: mapping.sourceField,
+        targetField: mapping.targetField,
+        normalizedValue: mapping.value,
+        mappingConfidence: mapping.mappingConfidence,
+        selectorCandidates: mapping.selectors,
+        status: "skipped",
+        agentConfidence: error.approval.agentConfidence,
+        confidenceThreshold: error.approval.confidenceThreshold,
+        agentRationale: error.approval.agentRationale,
+        approvalSource: error.approval.approvalSource,
+        finalValue: mapping.value,
+        skipReason: error.approval.skipReason,
+      });
+      return;
+    }
+
     const errorMessage = error instanceof Error ? error.message : String(error);
     const failedApproval = approval ?? approvalFromError(error);
     await context.audit.writeFieldMapping({
@@ -507,21 +560,199 @@ async function approveMappedField(
 
 async function promptForMappedField(
   _context: TargetRunContext,
-  _page: OpenMrsPage,
+  page: OpenMrsPage,
   mapping: FieldMapping,
   decision: { confidence: number; rationale: string },
   threshold: number,
   screenshotPath: string,
 ): Promise<ApprovedFieldMapping> {
+  const input: OperatorPromptInput = {
+    sourceField: String(mapping.sourceField),
+    targetField: mapping.targetField,
+    proposedValue: mapping.value,
+    required: mapping.required === true,
+    confidence: decision.confidence,
+    threshold,
+    rationale: decision.rationale,
+  };
+
+  let result: unknown;
+  try {
+    result = await withFieldPromptTimeout(page.evaluate(showOpenMrsFieldConfirmationPrompt, input));
+  } catch {
+    return stopFieldMapping(mapping, decision, threshold, screenshotPath, "OpenMRS field confirmation prompt failed.");
+  }
+
+  if (!isOperatorPromptResult(result)) {
+    return stopFieldMapping(mapping, decision, threshold, screenshotPath, "OpenMRS field confirmation prompt returned an invalid response.");
+  }
+
+  if (result.action === "confirm") {
+    return {
+      value: mapping.value,
+      approvalSource: "operator_confirmed",
+      agentConfidence: decision.confidence,
+      confidenceThreshold: threshold,
+      agentRationale: decision.rationale,
+    };
+  }
+
+  if (result.action === "edit") {
+    const value = result.value.trim();
+    if (mapping.required && value.length === 0) {
+      return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Required OpenMRS field confirmation returned a blank value.");
+    }
+    return {
+      value,
+      approvalSource: value === mapping.value ? "operator_confirmed" : "operator_edited",
+      agentConfidence: decision.confidence,
+      confidenceThreshold: threshold,
+      agentRationale: decision.rationale,
+      originalProposedValue: mapping.value,
+    };
+  }
+
+  if (result.action === "skip" && !mapping.required) {
+    throw {
+      kind: "field-skipped",
+      approval: {
+        value: mapping.value,
+        approvalSource: "operator_skipped",
+        agentConfidence: decision.confidence,
+        confidenceThreshold: threshold,
+        agentRationale: decision.rationale,
+        skipReason: "Operator skipped optional OpenMRS field.",
+      },
+    } satisfies FieldSkippedError;
+  }
+
+  return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Operator stopped OpenMRS field confirmation.");
+}
+
+function stopFieldMapping(
+  mapping: FieldMapping,
+  decision: { confidence: number; rationale: string },
+  threshold: number,
+  screenshotPath: string,
+  message: string,
+): ApprovedFieldMapping {
   throw new OpenMrsFieldApprovalRequiredError(
     String(mapping.sourceField),
     mapping.targetField,
+    message,
     decision.rationale,
     screenshotPath,
     mapping.value,
     decision.confidence,
     threshold,
   );
+}
+
+function withFieldPromptTimeout<T>(prompt: Promise<T>): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<T>((_resolve, reject) => {
+    timeout = setTimeout(() => reject(new Error("OpenMRS field confirmation prompt timed out.")), OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MS);
+  });
+  return Promise.race([prompt, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
+function showOpenMrsFieldConfirmationPrompt(input: OperatorPromptInput): Promise<OperatorPromptResult> {
+  return new Promise((resolve) => {
+    document.querySelector("#agentic-openmrs-field-confirmation")?.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "agentic-openmrs-field-confirmation";
+    overlay.style.cssText =
+      "position:fixed;inset:0;z-index:2147483647;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;color:#111827;";
+
+    const form = document.createElement("form");
+    form.style.cssText =
+      "width:min(560px,calc(100vw - 32px));background:#fff;border-radius:8px;box-shadow:0 24px 80px rgba(0,0,0,.35);padding:24px;display:grid;gap:16px;";
+
+    const title = document.createElement("h2");
+    title.textContent = "Confirm OpenMRS Field";
+    title.style.cssText = "margin:0;font-size:22px;line-height:1.2;";
+
+    const details = document.createElement("dl");
+    details.style.cssText = "margin:0;display:grid;grid-template-columns:max-content 1fr;gap:8px 12px;font-size:14px;";
+    const addDetail = (label: string, value: string) => {
+      const term = document.createElement("dt");
+      term.textContent = label;
+      term.style.cssText = "font-weight:700;color:#374151;";
+      const description = document.createElement("dd");
+      description.textContent = value;
+      description.style.cssText = "margin:0;color:#111827;overflow-wrap:anywhere;";
+      details.append(term, description);
+    };
+    addDetail("Target field", input.targetField);
+    addDetail("Source field", input.sourceField);
+    addDetail("Confidence", String(input.confidence));
+    addDetail("Threshold", String(input.threshold));
+    addDetail("Rationale", input.rationale);
+
+    const valueInput = document.createElement("input");
+    valueInput.value = input.proposedValue;
+    valueInput.style.cssText = "width:100%;box-sizing:border-box;border:1px solid #9ca3af;border-radius:6px;padding:10px 12px;font-size:16px;";
+    valueInput.setAttribute("aria-label", "OpenMRS field value");
+
+    const error = document.createElement("div");
+    error.style.cssText = "min-height:18px;color:#b91c1c;font-size:13px;";
+
+    const buttons = document.createElement("div");
+    buttons.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;";
+    const finish = (action: OperatorPromptAction) => {
+      const value = valueInput.value;
+      if ((action === "confirm" || action === "edit") && input.required && value.trim().length === 0) {
+        error.textContent = "Required fields cannot be blank.";
+        valueInput.focus();
+        return;
+      }
+      overlay.remove();
+      resolve({ action, value });
+    };
+    const addButton = (label: string, action: OperatorPromptAction, kind: "primary" | "secondary" | "danger" = "secondary") => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.style.cssText =
+        "border:1px solid #9ca3af;border-radius:6px;padding:9px 12px;font-size:14px;cursor:pointer;background:#fff;color:#111827;";
+      if (kind === "primary") button.style.cssText += "background:#2563eb;border-color:#2563eb;color:#fff;";
+      if (kind === "danger") button.style.cssText += "background:#b91c1c;border-color:#b91c1c;color:#fff;";
+      button.addEventListener("click", () => finish(action));
+      buttons.append(button);
+    };
+
+    addButton("Confirm", "confirm", "primary");
+    addButton("Use Edited Value", "edit");
+    if (!input.required) addButton("Skip", "skip");
+    addButton("Stop Record", "stop", "danger");
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      finish("confirm");
+    });
+    form.append(title, details, valueInput, error, buttons);
+    overlay.append(form);
+    document.body.append(overlay);
+    valueInput.focus();
+    valueInput.select();
+  });
+}
+
+function isOperatorPromptResult(value: unknown): value is OperatorPromptResult {
+  if (typeof value !== "object" || value === null) return false;
+  const input = value as Record<string, unknown>;
+  return ["confirm", "edit", "skip", "stop"].includes(String(input.action)) && typeof input.value === "string";
+}
+
+function isFieldSkippedError(value: unknown): value is FieldSkippedError {
+  return typeof value === "object" && value !== null && (value as { kind?: unknown }).kind === "field-skipped";
+}
+
+function isValidationExceptionLike(value: unknown): value is ValidationException & Record<string, unknown> {
+  return typeof value === "object" && value !== null && "code" in value && "message" in value;
 }
 
 function approvalFromError(error: unknown): ApprovedFieldMapping | undefined {
