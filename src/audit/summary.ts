@@ -269,6 +269,7 @@ function appendOpenMrsRecordReviews(lines: string[], details: ReportDetails | un
     const comparisonRows = openMrsComparisonRows(mappings, extraction, input);
     if (comparisonRows.length > 0) {
       lines.push("#### Intake to OpenMRS Comparison", "");
+      lines.push("Rows highlighted yellow in the viewer indicate OpenMRS mappings whose confidence is below the configured threshold.", "");
       lines.push("| Intake Field | Intake Value | Mapping Confidence | Normalized Field | OpenMRS Field | EMR Value | Action | Status | Selector or Error |");
       lines.push("| --- | --- | ---: | --- | --- | --- | --- | --- | --- |");
       for (const row of comparisonRows) {
@@ -347,16 +348,24 @@ function openMrsComparisonRows(
 }
 
 function mappingIntervention(mapping: ReportFieldMapping): string {
+  const lowConfidenceFlag = mappingLowConfidenceFlag(mapping);
   const parts = [
+    lowConfidenceFlag,
     mapping.approvalSource,
     mapping.agentConfidence === undefined ? undefined : `agent ${Math.round(mapping.agentConfidence * 100)}%`,
-    mapping.confidenceThreshold === undefined ? undefined : `threshold ${Math.round(mapping.confidenceThreshold * 100)}%`,
+    lowConfidenceFlag || mapping.confidenceThreshold === undefined ? undefined : `threshold ${Math.round(mapping.confidenceThreshold * 100)}%`,
     mapping.originalProposedValue === undefined ? undefined : `proposed ${metadataValue(mapping.originalProposedValue)}`,
     mapping.finalValue === undefined ? undefined : `final ${metadataValue(mapping.finalValue)}`,
     mapping.agentRationale === undefined ? undefined : `rationale ${metadataValue(mapping.agentRationale)}`,
     mapping.skipReason === undefined ? undefined : metadataValue(mapping.skipReason),
   ].filter((value): value is string => Boolean(value));
   return parts.join("; ");
+}
+
+function mappingLowConfidenceFlag(mapping: ReportFieldMapping): string | undefined {
+  if (mapping.mappingConfidence === undefined || mapping.confidenceThreshold === undefined) return undefined;
+  if (mapping.mappingConfidence >= mapping.confidenceThreshold) return undefined;
+  return `low confidence: ${Math.round(mapping.mappingConfidence * 100)}% below threshold ${Math.round(mapping.confidenceThreshold * 100)}%`;
 }
 
 function metadataValue(value: string): string {

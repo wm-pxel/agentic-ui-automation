@@ -420,7 +420,7 @@ async function renderSelectedRun() {
 
   const tabs = document.createElement("div");
   tabs.className = "tabs";
-  tabs.append(tab("executive-summary", "Executive summary", run.hasExecutiveSummary), tab("summary", "Summary", run.hasSummary));
+  tabs.append(tab("executive-summary", "Executive Summary", run.hasExecutiveSummary), tab("summary", "Summary", run.hasSummary));
 
   const artifacts = document.createElement("nav");
   artifacts.className = "artifact-links";
@@ -674,6 +674,12 @@ dd {
 .markdown-view td {
   padding: 8px;
   border: 1px solid #d7dde3;
+}
+.markdown-view tr.attention-row {
+  background: #fff4d6;
+}
+.markdown-view tr.attention-row td {
+  border-color: #e1b85f;
 }
 .align-right {
   text-align: right;

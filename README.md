@@ -13,13 +13,24 @@ Run these from the repository root when you want the full Electron-to-OpenMRS
 flow. Start the watcher, Electron intake app, and run viewer together:
 
 ```sh
-npm run dev:all -- --openmrs-field-confidence-threshold 0.9
+npm run dev:all -- --openmrs-field-confidence-threshold 0.99
 ```
 
 This keeps the handoff watcher, desktop app, and local audit viewer running in
 one terminal with prefixed logs. Its watcher uses interactive OpenMRS field
-confirmation with a `0.9` mapping-confidence threshold. The individual commands
-remain available when you want to debug one service at a time:
+confirmation with a `0.99` mapping-confidence threshold. The intentionally high
+threshold is for demo purposes so below-threshold mapping review and highlighting
+are easy to see. For unattended E2E runs, disable those prompts while keeping
+the same threshold:
+
+```sh
+npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-confidence-threshold 0.99
+```
+
+When prompts are disabled, below-threshold OpenMRS mappings use the AI-mapped
+value and are flagged in `summary.md`; the local viewer highlights those rows.
+The individual commands remain available when you want to debug one service at a
+time:
 
 ```sh
 npm run watch:intake
@@ -599,6 +610,15 @@ npm run dev:all -- --openmrs-field-confidence-threshold 0.9
 
 This starts `watch:intake` with interactive OpenMRS field confirmation enabled
 and a `0.9` mapping-confidence threshold, plus the Electron app and viewer.
+Disable those prompts for unattended local runs with:
+
+```sh
+npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-confidence-threshold 0.9
+```
+
+When prompts are disabled, below-threshold OpenMRS mappings still use the
+AI-mapped value and are flagged in `summary.md`; the local viewer highlights
+those rows.
 
 Packaging dry run:
 

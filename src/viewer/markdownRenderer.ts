@@ -128,13 +128,20 @@ function renderTable(lines: string[], startIndex: number, options: RenderMarkdow
     .map((header, columnIndex) => renderTableCell("th", header, alignments[columnIndex], options))
     .join("");
   const bodyHtml = rows
-    .map((row) => `<tr>${row.map((cell, columnIndex) => renderTableCell("td", cell, alignments[columnIndex], options)).join("")}</tr>`)
+    .map((row) => {
+      const classAttribute = tableRowNeedsAttention(row) ? ' class="attention-row"' : "";
+      return `<tr${classAttribute}>${row.map((cell, columnIndex) => renderTableCell("td", cell, alignments[columnIndex], options)).join("")}</tr>`;
+    })
     .join("");
 
   return {
     html: `<table><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>`,
     nextIndex: index,
   };
+}
+
+function tableRowNeedsAttention(row: string[]): boolean {
+  return row.some((cell) => /\blow confidence:\s*\d+% below threshold \d+%/i.test(cell));
 }
 
 function renderTableCell(

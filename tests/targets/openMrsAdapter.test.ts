@@ -410,7 +410,7 @@ describe("OpenMrsAdapter", () => {
     const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
     const page = successfulCreatePage({
       promptResults: confirmLowMappingPromptResults(),
-      rejectedPageFunctionPattern: /__name|addButton\("Confirm"|Use Edited Value|Use Shown Value/,
+      rejectedPageFunctionPattern: /__name|addButton\("Confirm"|Use Edited Value|Use Shown Value|use AI-mapped value/,
     });
     const adapter = new OpenMrsAdapter(
       {

@@ -32,6 +32,7 @@ type DevAllOptions = {
 };
 
 type DevAllConfig = {
+  openMrsInteractiveFieldConfirmation: boolean;
   openMrsFieldConfidenceThreshold: string;
 };
 
@@ -40,7 +41,7 @@ const devAllCommands: DevAllCommand[] = [
     name: "watch",
     script: "watch:intake",
     args: (config) => [
-      "--openmrs-interactive-field-confirmation",
+      ...(config.openMrsInteractiveFieldConfirmation ? ["--openmrs-interactive-field-confirmation"] : []),
       "--openmrs-field-confidence-threshold",
       config.openMrsFieldConfidenceThreshold,
     ],
@@ -112,9 +113,19 @@ export async function runDevAll(options: DevAllOptions = {}): Promise<number> {
 }
 
 function parseDevAllArgs(args: string[]): DevAllConfig {
+  let openMrsInteractiveFieldConfirmation = true;
   let openMrsFieldConfidenceThreshold = "0.9";
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    if (arg === "--openmrs-interactive-field-confirmation") {
+      openMrsInteractiveFieldConfirmation = true;
+      continue;
+    }
+    if (arg === "--no-openmrs-interactive-field-confirmation") {
+      openMrsInteractiveFieldConfirmation = false;
+      continue;
+    }
+
     if (arg === "--openmrs-field-confidence-threshold") {
       const value = args[index + 1];
       validateOpenMrsFieldConfidenceThreshold(value);
@@ -134,7 +145,7 @@ function parseDevAllArgs(args: string[]): DevAllConfig {
     throw new Error(`Unknown dev:all option: ${arg}`);
   }
 
-  return { openMrsFieldConfidenceThreshold };
+  return { openMrsInteractiveFieldConfirmation, openMrsFieldConfidenceThreshold };
 }
 
 function validateOpenMrsFieldConfidenceThreshold(value: string | undefined): asserts value is string {

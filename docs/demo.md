@@ -48,7 +48,10 @@ npm run dev:all
 ```
 
 The bundled watcher runs with interactive OpenMRS field confirmation enabled and
-a `0.9` mapping-confidence threshold.
+a `0.9` mapping-confidence threshold. For unattended local demos, run
+`npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-confidence-threshold 0.9`.
+When prompts are disabled, below-threshold OpenMRS mappings use the AI-mapped
+value and are flagged in `summary.md` and highlighted in the viewer.
 
 For the full desktop E2E, click `New Patient`, review or edit the generated
 synthetic intake fields, add the patient to the queue, keep that created record
@@ -180,7 +183,8 @@ Interactive field confirmation is optional. When
 can pause before writing fields whose mapping confidence is below the configured
 threshold. Confirm, edit, skip optional fields, or stop the record from the
 in-browser prompt. This mode forces OpenMRS concurrency to `1` so prompts remain
-tied to one active record.
+tied to one active record. In `npm run dev:all`, pass
+`--no-openmrs-interactive-field-confirmation` to run without these prompts.
 
 For `data/demo/intake-records.json`, the expected clean OpenMRS target result is:
 

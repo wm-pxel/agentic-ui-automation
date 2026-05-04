@@ -789,7 +789,7 @@ function fieldPromptEvaluationScript(input: OperatorPromptInput): string {
       buttons.appendChild(button);
     }
 
-    addButton("use AI-mapped value", "confirm", "primary");
+    addButton("Use AI-Mapped Value", "confirm", "primary");
     addButton("Apply Typed Value", "edit");
     if (!input.required) addButton("Skip", "skip");
     addButton("Stop Record", "stop", "danger");

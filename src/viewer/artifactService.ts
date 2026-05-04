@@ -70,9 +70,9 @@ const MARKDOWN_FILES: Record<MarkdownKind, string> = {
 };
 
 const KNOWN_ARTIFACTS: Array<{ name: string; path: string }> = [
-  { name: "Structured report", path: "report.json" },
-  { name: "Event log", path: "events.jsonl" },
-  { name: "Normalized records", path: "input/normalized-records.json" },
+  { name: "Structured Report", path: "report.json" },
+  { name: "Event Log", path: "events.jsonl" },
+  { name: "Normalized Records", path: "input/normalized-records.json" },
   { name: "Exceptions", path: "exceptions" },
   { name: "Screenshots", path: "screenshots" },
 ];

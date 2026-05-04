@@ -74,6 +74,21 @@ describe("renderMarkdown", () => {
     expect(html).not.toContain("<td>uses A\\</td>");
   });
 
+  it("highlights OpenMRS rows that flag below-threshold mapping confidence", () => {
+    const html = renderMarkdown(
+      [
+        "| Intake Field | Status |",
+        "| --- | --- |",
+        "| sex_at_birth | succeeded; low confidence: 97% below threshold 99% |",
+        "| phone | succeeded |",
+      ].join("\n"),
+      { runId: "run-review" },
+    );
+
+    expect(html).toContain('<tr class="attention-row"><td>sex_at_birth</td><td>succeeded; low confidence: 97% below threshold 99%</td></tr>');
+    expect(html).toContain("<tr><td>phone</td><td>succeeded</td></tr>");
+  });
+
   it("escapes raw HTML and unsafe javascript URLs", () => {
     const html = renderMarkdown('<script>alert("x")</script>\n\n[bad](javascript:alert(1))', {
       runId: "run-safe",

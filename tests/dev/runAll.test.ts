@@ -67,6 +67,30 @@ describe("runDevAll", () => {
     await expect(running).resolves.toBe(0);
   });
 
+  it("can start the watcher without interactive OpenMRS field confirmation", async () => {
+    const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
+    const running = runDevAll({
+      args: ["--no-openmrs-interactive-field-confirmation"],
+      cwd: "/repo",
+      spawnProcess: (command, args) => {
+        const child = new FakeChildProcess();
+        spawned.push({ command, args, child });
+        return child;
+      },
+      stdout: writable(),
+      stderr: writable(),
+    });
+
+    expect(spawned.map(({ command, args }) => [command, ...args])).toEqual([
+      ["npm", "run", "watch:intake", "--", "--openmrs-field-confidence-threshold", "0.9"],
+      ["npm", "run", "desktop:dev"],
+      ["npm", "run", "viewer"],
+    ]);
+
+    spawned[0]?.child.exit(0);
+    await expect(running).resolves.toBe(0);
+  });
+
   it("stops the remaining dev services when one command fails", async () => {
     const spawned: FakeChildProcess[] = [];
     const running = runDevAll({

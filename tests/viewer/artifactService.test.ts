@@ -174,19 +174,19 @@ describe("createArtifactService", () => {
 
     expect(runs[0].artifacts).toEqual([
       {
-        name: "Structured report",
+        name: "Structured Report",
         path: "report.json",
         type: "file",
         url: `/api/runs/${runId}/artifact/report.json`,
       },
       {
-        name: "Event log",
+        name: "Event Log",
         path: "events.jsonl",
         type: "file",
         url: `/api/runs/${runId}/artifact/events.jsonl`,
       },
       {
-        name: "Normalized records",
+        name: "Normalized Records",
         path: "input/normalized-records.json",
         type: "file",
         url: `/api/runs/${runId}/artifact/input/normalized-records.json`,
