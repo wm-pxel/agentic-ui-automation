@@ -614,21 +614,23 @@ dd {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 18px;
 }
-.tab,
-.artifact-links a {
-  border: 1px solid #cfd6dd;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #1e252b;
-  font: inherit;
-  font-size: 14px;
-  line-height: 1;
-  text-decoration: none;
+.tabs {
+  margin-top: 22px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #dfe4ea;
 }
 .tab {
-  padding: 9px 12px;
+  min-width: 148px;
+  padding: 11px 16px;
+  border: 1px solid #aebdca;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #17242d;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
   cursor: pointer;
 }
 .tab.selected {
@@ -640,8 +642,19 @@ dd {
   color: #98a2ad;
   cursor: not-allowed;
 }
+.artifact-links {
+  margin-top: 12px;
+}
 .artifact-links a {
-  padding: 8px 10px;
+  padding: 6px 8px;
+  border: 1px solid #d8dde4;
+  border-radius: 6px;
+  background: #f7f8fa;
+  color: #52606c;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  text-decoration: none;
 }
 .markdown-view {
   max-width: 980px;

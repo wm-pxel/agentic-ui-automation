@@ -123,6 +123,23 @@ describe("createViewerServer", () => {
     }
   });
 
+  it("serves CSS that emphasizes summary tabs over artifact links", async () => {
+    const runsDir = await makeRunsDir();
+    const viewer = createViewerServer({ runsDir });
+    await viewer.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      const css = await fetchText(`${viewer.url()}/assets/styles.css`);
+
+      expect(css).toContain(".tabs {\n  margin-top: 22px;");
+      expect(css).toContain("font-size: 15px;\n  font-weight: 700;");
+      expect(css).toContain(".artifact-links a {\n  padding: 6px 8px;");
+      expect(css).toContain("font-size: 12px;");
+      expect(css).toContain("color: #52606c;");
+    } finally {
+      await viewer.close();
+    }
+  });
+
   it("escapes directory listing values from run IDs, paths, and entry names", async () => {
     const runsDir = await makeRunsDir();
     const runId = "run-2026-05-04T12-00-00-000Z-<script>";
