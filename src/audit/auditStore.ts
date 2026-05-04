@@ -21,6 +21,14 @@ export interface WriteEventInput {
   exceptionCode?: AuditEvent["exceptionCode"];
 }
 
+export type ReportFieldMappingStatus = "succeeded" | "failed" | "skipped";
+export type ReportFieldApprovalSource =
+  | "agent"
+  | "operator_confirmed"
+  | "operator_edited"
+  | "operator_skipped"
+  | "operator_stopped";
+
 export interface ReportFieldMapping {
   recordId: string;
   target: TargetName;
@@ -31,7 +39,14 @@ export interface ReportFieldMapping {
   selectorCandidates: string[];
   selectedSelector?: string;
   action?: "fill" | "select";
-  status: "succeeded" | "failed";
+  status: ReportFieldMappingStatus;
+  agentConfidence?: number;
+  confidenceThreshold?: number;
+  agentRationale?: string;
+  approvalSource?: ReportFieldApprovalSource;
+  originalProposedValue?: string;
+  finalValue?: string;
+  skipReason?: string;
   errorMessage?: string;
 }
 
@@ -98,6 +113,8 @@ export interface RunReport {
   };
   details: ReportDetails;
 }
+
+export type BuildReportInput = Omit<RunReport, "runId" | "counts" | "details"> & RunReport["counts"];
 
 export class FileAuditStore {
   private readonly screenshotCounts = new Map<string, number>();
@@ -227,6 +244,21 @@ export class FileAuditStore {
         rawInput: cloneJsonValue(input.rawInput),
       })),
       targetEvidence: this.reportDetails.targetEvidence.map((evidence) => ({ ...evidence })),
+    };
+  }
+
+  buildReport(input: BuildReportInput): RunReport {
+    return {
+      runId: this.runId,
+      status: input.status,
+      totalRecords: input.totalRecords,
+      counts: {
+        preflightExceptions: input.preflightExceptions,
+        environmentExceptions: input.environmentExceptions,
+        closeExceptions: input.closeExceptions,
+        targetCounts: input.targetCounts,
+      },
+      details: this.getReportDetails(),
     };
   }
 

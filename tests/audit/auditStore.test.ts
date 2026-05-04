@@ -239,6 +239,72 @@ describe("FileAuditStore", () => {
     });
   });
 
+  it("preserves OpenMRS field confirmation metadata in reports", async () => {
+    const root = await mkdtemp(join(tmpdir(), "audit-field-confirmation-"));
+    const store = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
+
+    await store.writeFieldMapping({
+      recordId: "demo-001",
+      target: "openmrs",
+      sourceField: "phone",
+      targetField: "Phone Number",
+      normalizedValue: "+13125550198",
+      mappingConfidence: 0.99,
+      selectorCandidates: ['input[name="phoneNumber"]'],
+      selectedSelector: 'input[name="phoneNumber"]',
+      action: "fill",
+      status: "succeeded",
+      agentConfidence: 0.62,
+      confidenceThreshold: 0.8,
+      agentRationale: "The visible label could refer to another contact field.",
+      approvalSource: "operator_edited",
+      originalProposedValue: "+13125550198",
+      finalValue: "+13125550999",
+    });
+
+    await store.writeFieldMapping({
+      recordId: "demo-001",
+      target: "openmrs",
+      sourceField: "streetAddress",
+      targetField: "Address Line 1",
+      normalizedValue: "1200 West Lake Street",
+      mappingConfidence: 0.98,
+      selectorCandidates: ['input[name="address1"]'],
+      status: "skipped",
+      agentConfidence: 0.55,
+      confidenceThreshold: 0.8,
+      agentRationale: "The optional address field was not clearly visible.",
+      approvalSource: "operator_skipped",
+      skipReason: "Operator skipped optional field.",
+    });
+
+    const report = store.buildReport({
+      status: "completed",
+      totalRecords: 1,
+      preflightExceptions: 0,
+      environmentExceptions: 0,
+      closeExceptions: 0,
+      targetCounts: { openmrs: { succeeded: 1, exception: 0, skipped: 0 } },
+    });
+
+    expect(report.details.fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "phone",
+        approvalSource: "operator_edited",
+        originalProposedValue: "+13125550198",
+        finalValue: "+13125550999",
+      }),
+    );
+    expect(report.details.fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "streetAddress",
+        status: "skipped",
+        approvalSource: "operator_skipped",
+        skipReason: "Operator skipped optional field.",
+      }),
+    );
+  });
+
   it("writes parseable JSONL events with the expected fields", async () => {
     const root = await mkdtemp(join(tmpdir(), "audit-jsonl-"));
     const store = await FileAuditStore.create({
@@ -541,6 +607,10 @@ describe("FileAuditStore", () => {
             selectedSelector: 'input[name="phoneNumber"]',
             action: "fill",
             status: "succeeded",
+            agentConfidence: 0.62,
+            confidenceThreshold: 0.8,
+            approvalSource: "operator_edited",
+            finalValue: "+13125550999",
           },
         ],
       },
@@ -562,7 +632,7 @@ describe("FileAuditStore", () => {
     expect(summary).not.toContain("Intake Evidence");
     expect(summary).toContain("| sex_at_birth | female | 0.97 | sexOrGender | Birth Sex | Female | select | succeeded | select[name=\"form_sex\"] |");
     expect(summary).toContain("| province | IL | 0.96 | state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
-    expect(summary).toContain("| phone | 3125550198 | 0.99 | phone | Phone Number | +13125550198 | fill | succeeded | input[name=\"phoneNumber\"] |");
+    expect(summary).toContain("| phone | 3125550198 | 0.99 | phone | Phone Number | +13125550198 | fill | succeeded; operator_edited; agent 62%; threshold 80%; final +13125550999 | input[name=\"phoneNumber\"] |");
     expect(summary).toContain("| given_name | Ava |  | firstName |  |  |  | not mapped |  |");
     expect(summary).not.toContain("## AI Source Extraction");
     expect(summary).not.toContain("## Intake to OpenMRS Field Mapping");
