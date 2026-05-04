@@ -160,9 +160,10 @@ For `data/demo/intake-records.json`, the expected clean OpenMRS target result is
   `after-fill.png`, and a patient-dashboard `after-save.png` with contact info
   expanded when OpenMRS exposes it.
 - `summary.md` includes an OpenMRS record review with raw intake input,
-  patient-dashboard proof screenshots, AI confidence, and source-to-OpenMRS
-  comparisons. Optional contact fields that are unavailable in a public demo
-  layout may be reported as failed mappings without failing the target record.
+  patient-dashboard proof screenshots, per-field mapping confidence, and
+  source-to-OpenMRS comparisons. Optional contact fields that are unavailable in
+  a public demo layout may be reported as failed mappings without failing the
+  target record.
 
 The public OpenMRS demo keeps submitted patients for a while. If you rerun the
 same input without `--synthetic-suffix`, duplicate patient detection can make

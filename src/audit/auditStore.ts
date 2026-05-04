@@ -27,6 +27,7 @@ export interface ReportFieldMapping {
   sourceField: string;
   targetField: string;
   normalizedValue: string;
+  mappingConfidence?: number;
   selectorCandidates: string[];
   selectedSelector?: string;
   action?: "fill" | "select";

@@ -4,6 +4,7 @@ export interface FieldMapping {
   sourceField: keyof NormalizedIntakeRecord;
   targetField: string;
   value: string;
+  mappingConfidence: number;
   selectors: string[];
   required?: boolean;
 }
@@ -15,6 +16,7 @@ export function openMrsFieldMappings(record: NormalizedIntakeRecord): FieldMappi
       sourceField: "firstName",
       targetField: "Given Name",
       value: record.firstName,
+      mappingConfidence: 0.99,
       selectors: ['input[name="givenName"]'],
       required: true,
     },
@@ -22,6 +24,7 @@ export function openMrsFieldMappings(record: NormalizedIntakeRecord): FieldMappi
       sourceField: "lastName",
       targetField: "Family Name",
       value: record.lastName,
+      mappingConfidence: 0.99,
       selectors: ['input[name="familyName"]'],
       required: true,
     },
@@ -29,6 +32,7 @@ export function openMrsFieldMappings(record: NormalizedIntakeRecord): FieldMappi
       sourceField: "sexOrGender",
       targetField: "Gender",
       value: openMrsGender(record.sexOrGender),
+      mappingConfidence: 0.97,
       selectors: ['select[name="gender"]', "#gender-field"],
       required: true,
     },
@@ -36,6 +40,7 @@ export function openMrsFieldMappings(record: NormalizedIntakeRecord): FieldMappi
       sourceField: "dateOfBirth",
       targetField: "Birthdate Day",
       value: birthdate.day,
+      mappingConfidence: 0.96,
       selectors: ['input[name="birthdateDay"]', "#birthdateDay-field"],
       required: true,
     },
@@ -43,6 +48,7 @@ export function openMrsFieldMappings(record: NormalizedIntakeRecord): FieldMappi
       sourceField: "dateOfBirth",
       targetField: "Birthdate Month",
       value: birthdate.month,
+      mappingConfidence: 0.96,
       selectors: ['select[name="birthdateMonth"]', "#birthdateMonth-field"],
       required: true,
     },
@@ -50,6 +56,7 @@ export function openMrsFieldMappings(record: NormalizedIntakeRecord): FieldMappi
       sourceField: "dateOfBirth",
       targetField: "Birthdate Year",
       value: birthdate.year,
+      mappingConfidence: 0.96,
       selectors: ['input[name="birthdateYear"]', "#birthdateYear-field"],
       required: true,
     },
@@ -57,30 +64,35 @@ export function openMrsFieldMappings(record: NormalizedIntakeRecord): FieldMappi
       sourceField: "streetAddress",
       targetField: "Address Line 1",
       value: record.streetAddress,
+      mappingConfidence: 0.98,
       selectors: ['input[name="address1"]', "#address1"],
     },
     {
       sourceField: "city",
       targetField: "City/Village",
       value: record.city,
+      mappingConfidence: 0.98,
       selectors: ['input[name="cityVillage"]', "#cityVillage"],
     },
     {
       sourceField: "state",
       targetField: "State/Province",
       value: openMrsStateLabel(record.state),
+      mappingConfidence: 0.96,
       selectors: ['input[name="stateProvince"]', "#stateProvince"],
     },
     {
       sourceField: "zip",
       targetField: "Postal Code",
       value: record.zip,
+      mappingConfidence: 0.98,
       selectors: ['input[name="postalCode"]', "#postalCode"],
     },
     {
       sourceField: "phone",
       targetField: "Phone Number",
       value: record.phone,
+      mappingConfidence: 0.99,
       selectors: ['input[name="phoneNumber"]', 'input.phone'],
     },
   ];

@@ -94,6 +94,22 @@ describe("desktop intake queue", () => {
         lastName: "Rivera",
         sourceFormat: "json",
         rawSourceExcerpt: expect.stringContaining("Jordan Rivera"),
+        aiExtraction: {
+          model: "manual-electron-intake",
+          sourceDocumentName: "Electron New Patient",
+          fields: {
+            firstName: {
+              value: "Jordan",
+              confidence: 1,
+              evidence: "First Name: Jordan",
+            },
+            phone: {
+              value: "3125550199",
+              confidence: 1,
+              evidence: "Phone: 3125550199",
+            },
+          },
+        },
       },
       normalizedRecord: {
         phone: "+13125550199",
@@ -102,5 +118,52 @@ describe("desktop intake queue", () => {
     });
     expect(updated.items[1]?.sourceRecordId).toBe(queue.items[0]?.sourceRecordId);
     expect(updated.sourceName).toBe(queue.sourceName);
+  });
+
+  it("preserves new synthetic patient extraction metadata through CSV handoff", async () => {
+    const inbox = await mkdtemp(join(tmpdir(), "intake-created-handoff-"));
+    tempDirs.push(inbox);
+    const queue = addSyntheticPatientRecord(await loadSeedIntakeQueue(), {
+      firstName: "Jordan",
+      lastName: "Rivera",
+      dateOfBirth: "1991-06-12",
+      sexOrGender: "female",
+      phone: "3125550199",
+      email: "jordan.rivera@example.test",
+      streetAddress: "400 West Madison Street",
+      city: "Chicago",
+      state: "IL",
+      zip: "60606",
+      insurancePayer: "Aetna",
+      insuranceMemberId: "AET998877",
+      insuranceGroupId: "GRP4",
+      reasonForVisit: "New patient wellness visit",
+      preferredContactMethod: "email",
+      notes: "Created in the Electron intake app.",
+    });
+
+    const createdId = queue.items[0]?.sourceRecordId;
+    const result = await exportReadyRecords({
+      queue,
+      inbox,
+      selectedRecordIds: createdId ? [createdId] : [],
+    });
+    const [exported] = await loadSourceRecords(result.readyPath);
+
+    expect(exported?.aiExtraction).toMatchObject({
+      model: "manual-electron-intake",
+      fields: {
+        firstName: {
+          value: "Jordan",
+          confidence: 1,
+          evidence: "First Name: Jordan",
+        },
+        phone: {
+          value: "3125550199",
+          confidence: 1,
+          evidence: "Phone: 3125550199",
+        },
+      },
+    });
   });
 });

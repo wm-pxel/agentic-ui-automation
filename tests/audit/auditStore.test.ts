@@ -512,6 +512,7 @@ describe("FileAuditStore", () => {
             sourceField: "sexOrGender",
             targetField: "Birth Sex",
             normalizedValue: "Female",
+            mappingConfidence: 0.97,
             selectorCandidates: ['select[name="form_sex"]', 'select[name="sex"]'],
             selectedSelector: 'select[name="form_sex"]',
             action: "select",
@@ -523,6 +524,7 @@ describe("FileAuditStore", () => {
             sourceField: "state",
             targetField: "State",
             normalizedValue: "Illinois",
+            mappingConfidence: 0.96,
             selectorCandidates: ['input[name="form_state"]', 'select[name="form_state"]'],
             selectedSelector: 'select[name="form_state"]',
             action: "select",
@@ -534,6 +536,7 @@ describe("FileAuditStore", () => {
             sourceField: "phone",
             targetField: "Phone Number",
             normalizedValue: "+13125550198",
+            mappingConfidence: 0.99,
             selectorCandidates: ['input[name="phoneNumber"]'],
             selectedSelector: 'input[name="phoneNumber"]',
             action: "fill",
@@ -555,11 +558,12 @@ describe("FileAuditStore", () => {
     expect(summary).not.toContain("![OpenMRS filled fields screenshot for demo-001](screenshots/demo-001/openmrs/after-fill.png)");
     expect(summary).toContain("![OpenMRS proof screenshot for demo-001](screenshots/demo-001/openmrs/after-save.png)");
     expect(summary).toContain("#### Intake to OpenMRS Comparison");
-    expect(summary).toContain("| Intake Field | Intake Value | AI Confidence | Intake Evidence | Normalized Field | OpenMRS Field | EMR Value | Action | Status | Selector or Error |");
-    expect(summary).toContain("| sex_at_birth | female | 0.94 | sex_at_birth: female | sexOrGender | Birth Sex | Female | select | succeeded | select[name=\"form_sex\"] |");
-    expect(summary).toContain("| province | IL | 0.93 | province: IL | state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
-    expect(summary).toContain("| phone | 3125550198 |  |  | phone | Phone Number | +13125550198 | fill | succeeded | input[name=\"phoneNumber\"] |");
-    expect(summary).toContain("| given_name | Ava | 0.96 | Name: Ava Nguyen | firstName |  |  |  | not mapped |  |");
+    expect(summary).toContain("| Intake Field | Intake Value | Mapping Confidence | Normalized Field | OpenMRS Field | EMR Value | Action | Status | Selector or Error |");
+    expect(summary).not.toContain("Intake Evidence");
+    expect(summary).toContain("| sex_at_birth | female | 0.97 | sexOrGender | Birth Sex | Female | select | succeeded | select[name=\"form_sex\"] |");
+    expect(summary).toContain("| province | IL | 0.96 | state | State | Illinois | select | succeeded | select[name=\"form_state\"] |");
+    expect(summary).toContain("| phone | 3125550198 | 0.99 | phone | Phone Number | +13125550198 | fill | succeeded | input[name=\"phoneNumber\"] |");
+    expect(summary).toContain("| given_name | Ava |  | firstName |  |  |  | not mapped |  |");
     expect(summary).not.toContain("## AI Source Extraction");
     expect(summary).not.toContain("## Intake to OpenMRS Field Mapping");
   });

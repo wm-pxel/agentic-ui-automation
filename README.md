@@ -7,8 +7,35 @@ extract intake records, validates them deterministically, asks an agent driver t
 approve bounded UI actions, runs one or more target adapters, and writes a
 traceable audit package for each run.
 
+## Full E2E Commands
+
+Run these from the repository root when you want the full Electron-to-OpenMRS
+flow. Start the watcher first:
+
+```sh
+npm run watch:intake
+```
+
+Start the Electron app for visual/manual use:
+
+```sh
+npm run desktop:dev
+```
+
+Run the scripted Electron patient creation/export flow:
+
+```sh
+npm run desktop:patient-flow
+```
+
+`desktop:patient-flow` launches its own Electron instance, creates one synthetic
+patient through the `New Patient` form, exports only that record, and exits. If
+the watcher is running, it picks up the exported handoff and continues into
+OpenMRS.
+
 ## Contents
 
+- [Full E2E Commands](#full-e2e-commands)
 - [What It Demonstrates](#what-it-demonstrates)
 - [Current Status](#current-status)
 - [Architecture](#architecture)
@@ -330,9 +357,8 @@ For each normalized valid source record, the OpenMRS adapter is expected to:
 
 For the checked-in demo file, four records are valid and three records are
 intentionally invalid and stop in preflight validation. One valid record is
-deliberately written with uncertain source wording so the AI confidence column in
-`summary.md` includes lower-confidence examples. A clean OpenMRS target pass
-therefore means:
+deliberately written with uncertain source wording so source extraction metadata
+includes lower-confidence examples. A clean OpenMRS target pass therefore means:
 
 - `preflightExceptions` is `3`.
 - `targetCounts.openmrs.succeeded` is `4`.
@@ -343,9 +369,9 @@ therefore means:
   OpenMRS exposes it.
 - `executive-summary.md` gives a quick run outcome, while `summary.md` includes
   an OpenMRS record review with raw intake input, patient-dashboard proof
-  screenshots, AI confidence, and source-to-OpenMRS comparisons. On public demo
-  layouts, optional contact fields that are unavailable may appear as failed
-  mappings without causing a target exception.
+  screenshots, per-field mapping confidence, and source-to-OpenMRS comparisons.
+  On public demo layouts, optional contact fields that are unavailable may
+  appear as failed mappings without causing a target exception.
 
 Manual verification:
 
@@ -376,8 +402,8 @@ Manual verification:
 7. Search for the four generated last names from `normalized-records.json`.
 8. Open each patient record and confirm the demographic and contact fields match
    `normalized-records.json` for the fields present in that demo layout. Use the
-   OpenMRS record review in `summary.md` to see source values, confidence,
-   selectors, and which optional fields were unavailable.
+   OpenMRS record review in `summary.md` to see source values, mapping
+   confidence, selectors, and which optional fields were unavailable.
 9. Confirm the audit log includes an `after-save` event for each valid record:
 
    ```sh

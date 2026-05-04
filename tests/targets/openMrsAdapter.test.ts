@@ -174,6 +174,7 @@ describe("OpenMrsAdapter", () => {
         sourceField: "sexOrGender",
         targetField: "Gender",
         normalizedValue: "Female",
+        mappingConfidence: 0.97,
         selectedSelector: 'select[name="gender"]',
         action: "select",
         status: "succeeded",

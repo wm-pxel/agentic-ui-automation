@@ -97,6 +97,7 @@ export function addSyntheticPatientRecord(
     sourceRecordId,
     sourceFormat: "json",
     rawSourceExcerpt: syntheticSourceExcerpt(input, sourceRecordId),
+    aiExtraction: syntheticAiExtraction(input),
   };
 
   return buildIntakeQueue(queue.sourcePath, [record, ...queue.items.map((item) => item.record)]);
@@ -150,6 +151,50 @@ function syntheticSourceExcerpt(input: SyntheticPatientInput, sourceRecordId: st
     `Notes: ${String(input.notes ?? "").trim()}`,
   ];
   return values.filter((value) => !value.endsWith(":")).join("\n");
+}
+
+function syntheticAiExtraction(input: SyntheticPatientInput): Record<string, unknown> {
+  const fields = Object.fromEntries(
+    syntheticFieldEntries(input).map(([field, label, value]) => [
+      field,
+      {
+        sourceLabel: label,
+        value,
+        confidence: 1,
+        evidence: `${label}: ${value}`,
+      },
+    ]),
+  );
+
+  return {
+    model: "manual-electron-intake",
+    sourceDocumentName: "Electron New Patient",
+    fields,
+    additionalFields: {},
+    issues: [],
+  };
+}
+
+function syntheticFieldEntries(input: SyntheticPatientInput): Array<[string, string, string]> {
+  const entries: Array<[string, string, string]> = [
+    ["firstName", "First Name", String(input.firstName ?? "").trim()],
+    ["lastName", "Last Name", String(input.lastName ?? "").trim()],
+    ["dateOfBirth", "Date Of Birth", String(input.dateOfBirth ?? "").trim()],
+    ["sexOrGender", "Gender", String(input.sexOrGender ?? "").trim()],
+    ["phone", "Phone", String(input.phone ?? "").trim()],
+    ["email", "Email", String(input.email ?? "").trim()],
+    ["streetAddress", "Street Address", String(input.streetAddress ?? "").trim()],
+    ["city", "City", String(input.city ?? "").trim()],
+    ["state", "State", String(input.state ?? "").trim()],
+    ["zip", "ZIP", String(input.zip ?? "").trim()],
+    ["insurancePayer", "Insurance Payer", String(input.insurancePayer ?? "").trim()],
+    ["insuranceMemberId", "Member ID", String(input.insuranceMemberId ?? "").trim()],
+    ["insuranceGroupId", "Group ID", String(input.insuranceGroupId ?? "").trim()],
+    ["reasonForVisit", "Reason For Visit", String(input.reasonForVisit ?? "").trim()],
+    ["preferredContactMethod", "Preferred Contact", String(input.preferredContactMethod ?? "").trim()],
+    ["notes", "Notes", String(input.notes ?? "").trim()],
+  ];
+  return entries.filter((entry) => entry[2].length > 0);
 }
 
 function aiIssuesFor(record: RawIntakeRecord): Array<{ field?: string; message: string; severity: string }> {

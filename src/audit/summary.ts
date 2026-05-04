@@ -269,11 +269,11 @@ function appendOpenMrsRecordReviews(lines: string[], details: ReportDetails | un
     const comparisonRows = openMrsComparisonRows(mappings, extraction, input);
     if (comparisonRows.length > 0) {
       lines.push("#### Intake to OpenMRS Comparison", "");
-      lines.push("| Intake Field | Intake Value | AI Confidence | Intake Evidence | Normalized Field | OpenMRS Field | EMR Value | Action | Status | Selector or Error |");
-      lines.push("| --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |");
+      lines.push("| Intake Field | Intake Value | Mapping Confidence | Normalized Field | OpenMRS Field | EMR Value | Action | Status | Selector or Error |");
+      lines.push("| --- | --- | ---: | --- | --- | --- | --- | --- | --- |");
       for (const row of comparisonRows) {
         lines.push(
-          `| ${cell(row.sourceLabel)} | ${cell(row.sourceValue)} | ${cell(row.confidence)} | ${cell(row.evidence)} | ${cell(row.normalizedField)} | ${cell(row.targetField)} | ${cell(row.emrValue)} | ${cell(row.action)} | ${cell(row.status)} | ${cell(row.selectorOrError)} |`,
+          `| ${cell(row.sourceLabel)} | ${cell(row.sourceValue)} | ${cell(row.confidence)} | ${cell(row.normalizedField)} | ${cell(row.targetField)} | ${cell(row.emrValue)} | ${cell(row.action)} | ${cell(row.status)} | ${cell(row.selectorOrError)} |`,
         );
       }
       lines.push("");
@@ -285,7 +285,6 @@ interface OpenMrsComparisonRow {
   sourceLabel: string;
   sourceValue: string;
   confidence?: number;
-  evidence: string;
   normalizedField: string;
   targetField: string;
   emrValue: string;
@@ -311,14 +310,11 @@ function openMrsComparisonRows(
     const source = {
       sourceLabel: extractedSource?.sourceLabel ?? inputSource?.sourceLabel ?? mapping.sourceField,
       value: inputSource?.value ?? extractedSource?.value ?? "",
-      confidence: extractedSource?.confidence,
-      evidence: extractedSource?.evidence ?? "",
     };
     rows.push({
       sourceLabel: source.sourceLabel,
       sourceValue: source.value,
-      confidence: source.confidence,
-      evidence: source.evidence,
+      confidence: mapping.mappingConfidence,
       normalizedField: mapping.sourceField,
       targetField: mapping.targetField,
       emrValue: mapping.normalizedValue,
@@ -338,8 +334,6 @@ function openMrsComparisonRows(
     rows.push({
       sourceLabel: field.sourceLabel ?? field.sourceField,
       sourceValue: inputSource?.value ?? field.value,
-      confidence: field.confidence,
-      evidence: field.evidence ?? "",
       normalizedField: field.sourceField,
       targetField: "",
       emrValue: "",
@@ -354,8 +348,8 @@ function openMrsComparisonRows(
 
 function recordInputFieldLookup(
   input: ReportRecordInput | undefined,
-): Map<string, { sourceLabel: string; value: string; confidence?: number; evidence: string }> {
-  const lookup = new Map<string, { sourceLabel: string; value: string; confidence?: number; evidence: string }>();
+): Map<string, { sourceLabel: string; value: string }> {
+  const lookup = new Map<string, { sourceLabel: string; value: string }>();
   if (!input || !isPlainObject(input.rawInput)) return lookup;
 
   for (const [field, value] of Object.entries(input.rawInput)) {
@@ -363,8 +357,6 @@ function recordInputFieldLookup(
     lookup.set(field, {
       sourceLabel: field,
       value: String(value),
-      confidence: undefined,
-      evidence: "",
     });
   }
   return lookup;
@@ -372,15 +364,13 @@ function recordInputFieldLookup(
 
 function extractionFieldLookup(
   extraction: ReportAiExtraction | undefined,
-): Map<string, { sourceLabel: string; value: string; confidence?: number; evidence: string }> {
-  const lookup = new Map<string, { sourceLabel: string; value: string; confidence?: number; evidence: string }>();
+): Map<string, { sourceLabel: string; value: string }> {
+  const lookup = new Map<string, { sourceLabel: string; value: string }>();
   if (!extraction) return lookup;
   for (const field of [...extraction.fields, ...extraction.additionalFields]) {
     lookup.set(field.sourceField, {
       sourceLabel: field.sourceLabel ?? field.sourceField,
       value: field.value,
-      confidence: field.confidence,
-      evidence: field.evidence ?? "",
     });
   }
   return lookup;
