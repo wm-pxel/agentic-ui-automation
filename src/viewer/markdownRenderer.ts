@@ -49,13 +49,10 @@ export function renderMarkdown(markdown: string, options: RenderMarkdownOptions)
       continue;
     }
 
-    if (line.startsWith("- ")) {
-      const items: string[] = [];
-      while (index < lines.length && (lines[index] ?? "").startsWith("- ")) {
-        items.push(`<li>${renderInline((lines[index] ?? "").slice(2).trim(), options)}</li>`);
-        index += 1;
-      }
-      blocks.push(`<ul>${items.join("")}</ul>`);
+    if (isBulletLine(line)) {
+      const { html, nextIndex } = renderBulletList(lines, index, options);
+      blocks.push(html);
+      index = nextIndex;
       continue;
     }
 
@@ -65,7 +62,7 @@ export function renderMarkdown(markdown: string, options: RenderMarkdownOptions)
       (lines[index] ?? "").trim() !== "" &&
       !/^```/.test(lines[index] ?? "") &&
       !/^(#{1,6})\s+/.test(lines[index] ?? "") &&
-      !(lines[index] ?? "").startsWith("- ") &&
+      !isBulletLine(lines[index] ?? "") &&
       !isTableStart(lines, index)
     ) {
       paragraphLines.push((lines[index] ?? "").trim());
@@ -75,6 +72,45 @@ export function renderMarkdown(markdown: string, options: RenderMarkdownOptions)
   }
 
   return blocks.join("\n");
+}
+
+function renderBulletList(
+  lines: string[],
+  startIndex: number,
+  options: RenderMarkdownOptions,
+): { html: string; nextIndex: number } {
+  const items: Array<{ level: number; text: string }> = [];
+  let index = startIndex;
+
+  while (index < lines.length) {
+    const bullet = parseBulletLine(lines[index] ?? "");
+    if (!bullet) break;
+    items.push(bullet);
+    index += 1;
+  }
+
+  let itemIndex = 0;
+  function renderLevel(level: number): string {
+    let html = "<ul>";
+    while (itemIndex < items.length) {
+      const item = items[itemIndex];
+      if (!item || item.level < level) break;
+      if (item.level > level) {
+        html += renderLevel(level + 1);
+        continue;
+      }
+
+      html += `<li>${renderInline(item.text, options)}`;
+      itemIndex += 1;
+      while (itemIndex < items.length && (items[itemIndex]?.level ?? 0) > level) {
+        html += renderLevel(level + 1);
+      }
+      html += "</li>";
+    }
+    return `${html}</ul>`;
+  }
+
+  return { html: renderLevel(0), nextIndex: index };
 }
 
 function renderTable(lines: string[], startIndex: number, options: RenderMarkdownOptions): { html: string; nextIndex: number } {
@@ -125,12 +161,43 @@ function isTableDivider(line: string): boolean {
 }
 
 function parseTableCells(line: string): string[] {
-  return line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    .map((cell) => cell.trim());
+  const trimmed = line.trim();
+  const start = trimmed.startsWith("|") ? 1 : 0;
+  const end = trimmed.endsWith("|") ? trimmed.length - 1 : trimmed.length;
+  const cells: string[] = [];
+  let cell = "";
+
+  for (let index = start; index < end; index += 1) {
+    const character = trimmed[index];
+    const nextCharacter = trimmed[index + 1];
+    if (character === "\\" && nextCharacter === "|") {
+      cell += "|";
+      index += 1;
+      continue;
+    }
+    if (character === "|") {
+      cells.push(cell.trim());
+      cell = "";
+      continue;
+    }
+    cell += character;
+  }
+
+  cells.push(cell.trim());
+  return cells;
+}
+
+function isBulletLine(line: string): boolean {
+  return parseBulletLine(line) !== null;
+}
+
+function parseBulletLine(line: string): { level: number; text: string } | null {
+  const match = line.match(/^(\s*)-\s+(.+)$/);
+  if (!match) return null;
+  return {
+    level: match[1].length > 0 ? 1 : 0,
+    text: match[2].trim(),
+  };
 }
 
 function renderInline(markdown: string, options: RenderMarkdownOptions): string {
