@@ -592,17 +592,22 @@ async function promptForMappedField(
   }
 
   if (result.action === "confirm") {
+    const value = openMrsOperatorEditedValue(mapping, result.value.trim());
+    if (mapping.required && value.length === 0) {
+      return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Required OpenMRS field confirmation returned a blank value.");
+    }
     return {
-      value: mapping.value,
-      approvalSource: "operator_confirmed",
+      value,
+      approvalSource: value === mapping.value ? "operator_confirmed" : "operator_edited",
       agentConfidence: decision.confidence,
       confidenceThreshold: threshold,
       agentRationale: decision.rationale,
+      originalProposedValue: value === mapping.value ? undefined : mapping.value,
     };
   }
 
   if (result.action === "edit") {
-    const value = result.value.trim();
+    const value = openMrsOperatorEditedValue(mapping, result.value.trim());
     if (mapping.required && value.length === 0) {
       return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Required OpenMRS field confirmation returned a blank value.");
     }
@@ -631,6 +636,34 @@ async function promptForMappedField(
   }
 
   return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Operator stopped OpenMRS field confirmation.");
+}
+
+function openMrsOperatorEditedValue(mapping: FieldMapping, value: string): string {
+  if (mapping.targetField === "Gender") {
+    return openMrsSelectLabel(value, ["Female", "Male", "Unknown"]);
+  }
+  if (mapping.targetField === "Birthdate Month") {
+    return openMrsSelectLabel(value, [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ]);
+  }
+  return value;
+}
+
+function openMrsSelectLabel(value: string, labels: string[]): string {
+  const normalizedValue = value.trim().toLowerCase();
+  return labels.find((label) => label.toLowerCase() === normalizedValue) ?? value;
 }
 
 async function evaluateFieldPromptWithRetry(page: OpenMrsPage, input: OperatorPromptInput): Promise<unknown> {
@@ -756,8 +789,8 @@ function fieldPromptEvaluationScript(input: OperatorPromptInput): string {
       buttons.appendChild(button);
     }
 
-    addButton("Confirm", "confirm", "primary");
-    addButton("Use Edited Value", "edit");
+    addButton("use AI-mapped value", "confirm", "primary");
+    addButton("Apply Typed Value", "edit");
     if (!input.required) addButton("Skip", "skip");
     addButton("Stop Record", "stop", "danger");
 

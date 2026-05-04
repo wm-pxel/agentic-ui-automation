@@ -329,12 +329,88 @@ describe("OpenMrsAdapter", () => {
     );
   });
 
-  it("injects the OpenMRS field prompt without TS runtime helper references", async () => {
+  it("normalizes an operator-edited OpenMRS gender value before selecting it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-edited-gender-normalized-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [{ action: "edit", value: "male" }, ...confirmLowMappingPromptResults().slice(1)],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.99,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "openmrs-demo-001" });
+    expect(page.selected).toContainEqual({ selector: 'select[name="gender"]', option: { label: "Male" } });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "sexOrGender",
+        targetField: "Gender",
+        status: "succeeded",
+        approvalSource: "operator_edited",
+        originalProposedValue: "Female",
+        finalValue: "Male",
+      }),
+    );
+  });
+
+  it("treats a changed OpenMRS prompt value as an edit when the operator clicks confirm", async () => {
+    const root = await mkdtemp(join(tmpdir(), "openmrs-field-confirm-changed-gender-"));
+    const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
+    const page = successfulCreatePage({
+      promptResults: [{ action: "confirm", value: "Male" }, ...confirmLowMappingPromptResults().slice(1)],
+    });
+    const adapter = new OpenMrsAdapter(
+      {
+        ...openMrsConfig(),
+        interactiveFieldConfirmation: true,
+        fieldConfidenceThreshold: 0.99,
+      },
+      {
+        launchBrowser: async () => new FakeOpenMrsBrowser(page),
+      },
+    );
+    const agent = new QueuedAgent([
+      { actionId: "navigate-new-patient", confidence: 0.91, rationale: "The registration app is visible." },
+      { actionId: "save-patient", confidence: 0.88, rationale: "The registration fields are filled." },
+    ]);
+
+    await adapter.prepare();
+    const result = await adapter.runRecord({ runId: "run-openmrs", record: record("demo-001"), audit, agent });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "openmrs-demo-001" });
+    expect(page.selected).toContainEqual({ selector: 'select[name="gender"]', option: { label: "Male" } });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "sexOrGender",
+        targetField: "Gender",
+        status: "succeeded",
+        approvalSource: "operator_edited",
+        originalProposedValue: "Female",
+        finalValue: "Male",
+      }),
+    );
+  });
+
+  it("injects the OpenMRS field prompt without TS runtime helper references or ambiguous button labels", async () => {
     const root = await mkdtemp(join(tmpdir(), "openmrs-field-prompt-serializable-"));
     const audit = await FileAuditStore.create({ runsDir: root, runId: "run-openmrs" });
     const page = successfulCreatePage({
       promptResults: confirmLowMappingPromptResults(),
-      rejectedPageFunctionPattern: /__name/,
+      rejectedPageFunctionPattern: /__name|addButton\("Confirm"|Use Edited Value|Use Shown Value/,
     });
     const adapter = new OpenMrsAdapter(
       {
@@ -866,6 +942,13 @@ function successfulCreatePage(options: {
       ['select[name="gender"]', "select"],
       ['select[name="birthdateMonth"]', "select"],
     ],
+    selectOptions: [
+      ['select[name="gender"]', ["Female", "Male", "Unknown"]],
+      [
+        'select[name="birthdateMonth"]',
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+      ],
+    ],
     promptResults: options.promptResults,
     rejectedPageFunctionPattern: options.rejectedPageFunctionPattern,
   });
@@ -908,6 +991,7 @@ class FakeOpenMrsPage {
   readonly clickReveals: Map<string, string[]>;
   readonly clickHides: Map<string, string[]>;
   readonly tagNames: Map<string, string>;
+  readonly selectOptions: Map<string, string[]>;
   readonly gotos: Array<{ url: string; options?: unknown }> = [];
   readonly waitStates: string[] = [];
   readonly filled: Array<{ selector: string; value: string }> = [];
@@ -928,6 +1012,7 @@ class FakeOpenMrsPage {
     clickHides?: Record<string, string[]>;
     bodyTexts?: string[];
     tagNames?: Array<[string, string]>;
+    selectOptions?: Array<[string, string[]]>;
     promptResults?: unknown[];
     rejectedPageFunctionPattern?: RegExp;
   }) {
@@ -937,6 +1022,7 @@ class FakeOpenMrsPage {
     this.clickHides = new Map(Object.entries(options.clickHides ?? {}));
     this.bodyTexts = [...(options.bodyTexts ?? [])];
     this.tagNames = new Map(options.tagNames ?? []);
+    this.selectOptions = new Map(options.selectOptions ?? []);
     this.promptResults = [...(options.promptResults ?? [])];
     this.rejectedPageFunctionPattern = options.rejectedPageFunctionPattern;
   }
@@ -1031,6 +1117,11 @@ class FakeOpenMrsLocator {
   }
 
   async selectOption(option: unknown, options?: { timeout?: number }): Promise<string[]> {
+    const allowedOptions = this.page.selectOptions.get(this.selector);
+    const requestedLabel = typeof option === "object" && option !== null && "label" in option ? String((option as { label: unknown }).label) : String(option);
+    if (allowedOptions && !allowedOptions.includes(requestedLabel)) {
+      throw new Error(`did not find option ${requestedLabel} for ${this.selector}`);
+    }
     this.page.selected.push({ selector: this.selector, option });
     this.page.actionOptions.push({ action: "select", selector: this.selector, options });
     return [];
