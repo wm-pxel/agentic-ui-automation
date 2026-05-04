@@ -351,12 +351,16 @@ function mappingIntervention(mapping: ReportFieldMapping): string {
     mapping.approvalSource,
     mapping.agentConfidence === undefined ? undefined : `agent ${Math.round(mapping.agentConfidence * 100)}%`,
     mapping.confidenceThreshold === undefined ? undefined : `threshold ${Math.round(mapping.confidenceThreshold * 100)}%`,
-    mapping.originalProposedValue ? `proposed ${mapping.originalProposedValue}` : undefined,
-    mapping.finalValue && mapping.finalValue !== mapping.normalizedValue ? `final ${mapping.finalValue}` : undefined,
-    mapping.agentRationale ? `rationale ${mapping.agentRationale}` : undefined,
-    mapping.skipReason,
+    mapping.originalProposedValue === undefined ? undefined : `proposed ${metadataValue(mapping.originalProposedValue)}`,
+    mapping.finalValue === undefined ? undefined : `final ${metadataValue(mapping.finalValue)}`,
+    mapping.agentRationale === undefined ? undefined : `rationale ${metadataValue(mapping.agentRationale)}`,
+    mapping.skipReason === undefined ? undefined : metadataValue(mapping.skipReason),
   ].filter((value): value is string => Boolean(value));
   return parts.join("; ");
+}
+
+function metadataValue(value: string): string {
+  return value === "" ? "<empty>" : value;
 }
 
 function recordInputFieldLookup(
