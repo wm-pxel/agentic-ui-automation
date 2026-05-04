@@ -1,82 +1,70 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { _electron as electron } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { defaultIntakeInbox } from "../dist/src/handoff/intakeHandoff.js";
+import {
+  buildComputerUsePrompt,
+  detectNewReadyFile,
+  readyFileSnapshot,
+  syntheticComputerUsePatient,
+} from "../dist/src/desktop/patientFlowHarness.js";
 
-const appMain = resolve("dist/src/desktop/main.js");
+const pollIntervalMs = 1_000;
+const requestedTimeoutMs = Number.parseInt(process.env.DESKTOP_PATIENT_FLOW_TIMEOUT_MS ?? "120000", 10);
+const pollTimeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0 ? requestedTimeoutMs : 120_000;
+const inbox = defaultIntakeInbox();
+const patient = syntheticComputerUsePatient();
 
-if (!existsSync(appMain)) {
-  console.error("Electron desktop build not found. Run `npm run desktop:build` first.");
+await mkdir(inbox, { recursive: true });
+const before = await readyFileSnapshot(inbox);
+const prompt = buildComputerUsePrompt({ patient, inbox });
+
+const codexStatus = await runCodex(prompt).catch((error) => {
+  console.error(`Computer Use patient flow failed: could not start codex exec: ${error.message}`);
+  return 1;
+});
+if (codexStatus !== 0) {
+  console.error(`Computer Use patient flow failed: codex exec exited with status ${codexStatus}.`);
+  process.exit(codexStatus ?? 1);
+}
+
+const readyPath = await waitForNewReadyFile(inbox, before, pollTimeoutMs);
+if (!readyPath) {
+  console.error(`Computer Use patient flow failed: no new .ready.csv file appeared in ${inbox} within ${pollTimeoutMs}ms.`);
   process.exit(1);
 }
 
-const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
-const patient = {
-  firstName: "Computer",
-  lastName: `Use ${stamp}`,
-  dateOfBirth: "1992-09-23",
-  sexOrGender: "female",
-  phone: `312555${stamp.slice(-4)}`,
-  email: `computer.use.${stamp}@example.test`,
-  streetAddress: "500 West Monroe Street",
-  city: "Chicago",
-  state: "IL",
-  zip: "60661",
-  insurancePayer: "Aetna",
-  insuranceMemberId: `CU${stamp.slice(-8)}`,
-  insuranceGroupId: "GRP4",
-  reasonForVisit: "New patient wellness visit",
-  preferredContactMethod: "email",
-  notes: "Created by the scripted Electron patient flow.",
-};
+console.log(JSON.stringify({ status: "exported", patient, readyPath }, null, 2));
 
-const app = await electron.launch({ args: [appMain] });
+function runCodex(prompt) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "codex",
+      ["exec", "--sandbox", "danger-full-access", "-c", 'approval_policy="never"', "-C", process.cwd(), prompt],
+      {
+        cwd: process.cwd(),
+        stdio: "inherit",
+      },
+    );
 
-try {
-  const page = await app.firstWindow();
-  await page.waitForLoadState("domcontentloaded");
-  await page.waitForFunction(() => document.getElementById("total-count")?.textContent !== "0");
+    child.on("error", reject);
+    child.on("close", (code) => resolve(code));
+  });
+}
 
-  const selectAll = page.locator("#select-all");
-  if (await selectAll.isChecked()) {
-    await selectAll.click();
-  }
+async function waitForNewReadyFile(inboxPath, before, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const readyPath = await detectNewReadyFile(inboxPath, before);
+    if (readyPath) return readyPath;
+    await delay(pollIntervalMs);
+  } while (Date.now() < deadline);
 
-  await page.getByRole("button", { name: "New Patient" }).click();
-  await page.locator("#patient-dialog").waitFor({ state: "visible" });
+  return detectNewReadyFile(inboxPath, before);
+}
 
-  await page.locator('input[name="firstName"]').fill(patient.firstName);
-  await page.locator('input[name="lastName"]').fill(patient.lastName);
-  await page.locator('input[name="dateOfBirth"]').fill(patient.dateOfBirth);
-  await page.locator('select[name="sexOrGender"]').selectOption(patient.sexOrGender);
-  await page.locator('input[name="phone"]').fill(patient.phone);
-  await page.locator('input[name="email"]').fill(patient.email);
-  await page.locator('input[name="streetAddress"]').fill(patient.streetAddress);
-  await page.locator('input[name="city"]').fill(patient.city);
-  await page.locator('input[name="state"]').fill(patient.state);
-  await page.locator('input[name="zip"]').fill(patient.zip);
-  await page.locator('input[name="insurancePayer"]').fill(patient.insurancePayer);
-  await page.locator('input[name="insuranceMemberId"]').fill(patient.insuranceMemberId);
-  await page.locator('input[name="insuranceGroupId"]').fill(patient.insuranceGroupId);
-  await page.locator('select[name="preferredContactMethod"]').selectOption(patient.preferredContactMethod);
-  await page.locator('input[name="reasonForVisit"]').fill(patient.reasonForVisit);
-  await page.locator('textarea[name="notes"]').fill(patient.notes);
-
-  await page.getByRole("button", { name: "Add Patient" }).click();
-  await page.locator("#detail-name").filter({ hasText: `${patient.firstName} ${patient.lastName}` }).waitFor();
-  await page.locator("#selected-count").filter({ hasText: "1" }).waitFor();
-
-  await page.getByRole("button", { name: "Export Selected" }).click();
-  const handoffLabel = page.locator("#handoff-label");
-  await handoffLabel.filter({ hasText: "Exported 1 records to " }).waitFor();
-  const label = (await handoffLabel.textContent()) ?? "";
-  const readyPath = label.replace(/^Exported 1 records to /, "").trim();
-
-  if (!readyPath || readyPath === label) {
-    throw new Error(`Could not parse exported ready path from status text: ${label}`);
-  }
-
-  console.log(JSON.stringify({ patient, readyPath }, null, 2));
-} finally {
-  await app.close();
+function delay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

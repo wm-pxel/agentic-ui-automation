@@ -22,16 +22,19 @@ Start the Electron app for visual/manual use:
 npm run desktop:dev
 ```
 
-Run the scripted Electron patient creation/export flow:
+With the Electron app already visible, run the Computer Use patient
+creation/export flow:
 
 ```sh
 npm run desktop:patient-flow
 ```
 
-`desktop:patient-flow` launches its own Electron instance, creates one synthetic
-patient through the `New Patient` form, exports only that record, and exits. If
-the watcher is running, it picks up the exported handoff and continues into
-OpenMRS.
+`desktop:patient-flow` uses Codex Computer Use to click and type through the
+already-running Intake Queue app. It creates one synthetic patient through the
+`New Patient` form, exports only that record, leaves the app running, and does
+not launch a private Electron instance or call IPC, preload APIs, or app
+internals. If the watcher is running, it picks up the exported handoff and
+continues into OpenMRS.
 
 ## Contents
 
@@ -225,7 +228,8 @@ In a second terminal, start the Electron intake app for visual/manual use:
 npm run desktop:dev
 ```
 
-To run the Electron patient creation and export steps by script:
+With the Electron app already running and visible, automate the patient creation
+and export steps through Codex Computer Use:
 
 ```sh
 npm run desktop:patient-flow
@@ -233,10 +237,13 @@ npm run desktop:patient-flow
 
 For manual use, click `New Patient`, review or edit the generated synthetic
 intake fields, add the patient to the queue, keep the created record selected,
-and click `Export Selected`. For scripted use, `desktop:patient-flow` launches
-its own Electron app instance, creates one synthetic patient through the
-`New Patient` form, exports only that record, prints the generated patient data
-and handoff path, and exits. In both cases, the watcher processes
+and click `Export Selected`. For scripted use, `desktop:patient-flow` requires
+`npm run desktop:dev` to already be running. It uses Codex Computer Use to drive
+the visible app like a third-party desktop app, creates one synthetic patient
+through the `New Patient` form, exports only that record, prints the generated
+patient data and handoff path, and leaves the app running. It does not launch a
+private Electron instance and does not use Playwright, IPC, preload APIs,
+`window.intakeApp`, or other app internals. In both cases, the watcher processes
 `~/Downloads/agentic-ui-intake/*.ready.csv`, moves the file to
 `processed/<runId>.csv` after completion, and writes the OpenMRS audit package
 under `runs/<run-id>/`.

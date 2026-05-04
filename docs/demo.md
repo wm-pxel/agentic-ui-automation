@@ -49,11 +49,18 @@ in a spreadsheet app:
 ~/Downloads/agentic-ui-intake/*.ready.csv
 ```
 
-The Electron patient creation and export steps can also be automated:
+With `npm run desktop:dev` already running and the app visible, the patient
+creation and export steps can also be automated through Codex Computer Use:
 
 ```sh
 npm run desktop:patient-flow
 ```
+
+This command clicks and types through the visible Intake Queue UI like a
+third-party desktop app. It creates one synthetic patient, exports only that
+record, prints the generated patient data and handoff path, and leaves the app
+running. It does not launch a private Electron instance and does not use
+Playwright, IPC, preload APIs, `window.intakeApp`, or app internals.
 
 The desktop app only exports. Start the watcher separately when ready files
 should run through the EMR workflow:
