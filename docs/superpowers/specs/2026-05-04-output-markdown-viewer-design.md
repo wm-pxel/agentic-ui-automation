@@ -1,178 +1,237 @@
-# Output Markdown Viewer Design
+# Output Markdown Viewer And Computer Use Patient Flow Design
 
 ## Purpose
 
-Build a local web app for reviewing generated audit Markdown files from workflow
-runs. The first version should optimize for developer and operator triage while
-remaining readable enough for demo or audit review. It should focus on
-`executive-summary.md` and `summary.md`, with enough run awareness to make
-relative screenshots and artifact links work.
+Add two related operator conveniences around the existing Electron-to-OpenMRS
+workflow:
 
-The viewer must preserve the existing audit contract. It reads from run folders
-and serves artifacts locally, but it does not write to run folders or change
-generated outputs.
+- A black-box desktop patient creation command that uses Codex Computer Use to
+  drive the already-open Electron intake app like a third-party app.
+- A local web viewer for persisted run artifacts, especially
+  `executive-summary.md` and `summary.md`.
+
+The workflow must remain synthetic/demo-data only. The durable source of truth
+after a run is still the exported handoff file and the audit package under
+`runs/<run-id>/`; the viewer reads those artifacts without modifying them.
+
+## Approved Commands
+
+The front-and-center E2E flow remains three commands:
+
+```sh
+npm run watch:intake
+npm run desktop:dev
+npm run desktop:patient-flow
+```
+
+`npm run desktop:patient-flow` changes from launching its own Electron instance
+to driving the visible `Intake Queue` desktop app through Computer Use. The app
+must already be running from `npm run desktop:dev`.
+
+The artifact viewer is a separate command:
+
+```sh
+npm run artifacts:viewer
+```
+
+It starts a local read-only web app for browsing run outputs under `runs/`.
 
 ## Scope
 
 In scope:
 
-- Add a separate local viewer command, exposed through `npm run viewer`.
-- Serve a browser UI from a localhost-only TypeScript HTTP server.
-- Default to reading the existing `runs/` directory, with a configurable
-  `--runs-dir`.
+- Replace the public `desktop:patient-flow` implementation with a black-box
+  Computer Use flow against the existing visible app window.
+- Keep the patient-flow command UI-only: no Electron IPC, preload API,
+  `window.intakeApp`, Playwright/Electron attach, or private Electron launch.
+- Generate synthetic patient data, enter it through the visible New Patient
+  form, export only that patient, and print JSON containing the patient fields
+  and exported `readyPath`.
+- Leave the Electron app running after the Computer Use flow completes.
+- Add a separate local viewer command, exposed through
+  `npm run artifacts:viewer`.
+- Serve a browser UI from a localhost-only Node/TypeScript HTTP server.
+- Default the viewer to reading the existing `runs/` directory, with a
+  configurable `--runs-dir`.
 - List discovered runs newest-first.
 - Render `executive-summary.md` and `summary.md` for a selected run.
-- Resolve run-relative links and images so screenshots and artifact links work
-  from rendered Markdown.
-- Provide small raw artifact links for `report.json`, `events.jsonl`,
+- Expose `report.json`, `events.jsonl`, normalized records, exceptions, and
+  screenshots as read-only artifacts when present.
+
+Out of scope:
+
+- Persisting the transient Electron intake queue across app launches.
+- Mutating run artifacts from the viewer.
+- Editing, deleting, rerunning, or approving workflow runs from the viewer.
+- General-purpose third-party desktop automation beyond this patient creation
+  flow.
+- A hosted audit portal, authentication model, or multi-user deployment.
+
+## Computer Use Patient Flow
+
+`npm run desktop:patient-flow` should run a tightly scoped Codex/Computer Use
+task. It treats `Intake Queue` as a third-party app and uses only desktop-level
+actions and observations.
+
+Flow:
+
+1. Confirm the `Intake Queue` app/window is already running.
+2. Focus the visible window.
+3. Generate synthetic patient data for this run.
+4. Click `New Patient`.
+5. Fill all required patient form fields through UI interactions.
+6. Click `Add Patient`.
+7. Confirm the created patient appears in the queue or detail view.
+8. Ensure only the created patient is selected for export.
+9. Click `Export Selected`.
+10. Watch `~/Downloads/agentic-ui-intake` for a new `*.ready.csv`.
+11. Print JSON with `status`, `patient`, and `readyPath`.
+
+The command must fail with a clear message if the app is not running, the
+expected window cannot be focused, a required control cannot be found, or no new
+handoff file appears. It must not fall back to app internals.
+
+Because Computer Use is a Codex capability rather than a normal Node library,
+the implementation can be an npm wrapper around `codex exec` with a narrow prompt
+and a small local harness for generating patient data and detecting handoff
+files. The command should be explicit that it requires Codex Computer Use
+availability.
+
+## Artifact Viewer Architecture
+
+The viewer is a separate local web app. It should not be part of the Electron
+intake app and should not run workflows. It only reads completed run artifacts.
+
+The server owns all filesystem access. It validates the configured runs
+directory, discovers run folders, reads known artifact files, and serves static
+viewer assets. It binds to localhost by default and prints the URL on startup.
+
+The browser UI is a compact operational dashboard:
+
+- Left pane: run list, newest first.
+- Right pane: selected run review.
+- Tabs: `Executive Summary`, `Summary`, and raw artifact views/links.
+- Artifact strip: links to `report.json`, `events.jsonl`,
   `input/normalized-records.json`, `exceptions/`, and `screenshots/` when those
-  artifacts exist.
+  paths exist.
+- Screenshot links and images from Markdown should resolve in the browser.
 
-Out of scope for the first version:
+The UI is read-only. Empty `runs/` directories should render an empty state
+instead of an error.
 
-- Editing, deleting, rerunning, or approving workflow runs.
-- Mutating audit artifacts or writing generated viewer files into run folders.
-- A full audit portal, authentication model, or multi-user deployment.
-- General-purpose CommonMark parity beyond the Markdown patterns generated by
-  this repository.
+## Viewer CLI
 
-## Architecture
-
-The feature will add a separate local viewer command, exposed as
-`npm run viewer`, backed by a small TypeScript HTTP server. The server reads a
-configured runs directory and exposes read-only routes for run metadata,
-Markdown files, and artifact files. It must bind to localhost by default and
-print the local URL on startup.
-
-The browser app is a lightweight static frontend served by that server. It lists
-run folders, opens a selected run, renders `executive-summary.md` and
-`summary.md`, and rewrites run-relative links so screenshots and artifact paths
-resolve through the local server.
-
-This should remain separate from the existing Electron intake app. The intake app
-continues to focus on creating and exporting synthetic intake records, while the
-viewer focuses on reviewing completed run outputs.
-
-## Components
-
-### Viewer CLI
-
-The viewer command starts the local server and accepts:
+`npm run artifacts:viewer` starts the server. The underlying CLI should accept:
 
 - `--runs-dir <path>`: directory containing run folders. Defaults to `runs`.
 - `--port <number>`: preferred local port. Defaults to `4173`.
 
-If the default port is unavailable, startup should fail with a clear message
-asking the user to pass `--port`. The first version should avoid automatic port
-selection so local URLs are predictable during demos.
+If the requested port is unavailable, the command should choose the next
+available port and print it. The printed URL is the source of truth for users
+and for browser automation.
 
-The command should fail fast for invalid configuration, including a missing
-`runsDir`, a path that is not a directory, an invalid port, or a bind failure.
-It should not start workflow execution.
+Invalid configuration should fail fast: missing runs directory, non-directory
+runs path, invalid port, or bind failure.
 
-### Artifact Service
-
-The server-side artifact service owns all filesystem access for the viewer. It
-discovers run folders under `runsDir`, sorts them newest-first, and reads known
-files from a selected run.
+## Artifact Service
 
 For each run, the service should return:
 
 - Run ID.
-- Status, total record count, and exception counts when available from
-  `run.json` or `report.json`.
-- A timestamp derived from metadata when available, with folder-name fallback.
+- Status and counts from `run.json` or `report.json` when available.
+- Timestamp from metadata when available, with folder-name fallback.
 - Available Markdown files.
-- Available artifact groups and raw artifact URLs.
+- Available raw artifact files and directories.
 
-Artifact file serving must reject path traversal and must only serve files from
-inside the configured `runsDir`.
+Artifact serving must reject path traversal and must only serve files inside the
+configured runs directory. Directory views should be constrained to artifact
+directories and should not become a general filesystem browser.
 
-### Browser UI
+## Markdown Rendering
 
-Use the two-pane layout approved during brainstorming:
-
-- Left pane: persistent run list.
-- Right pane: selected run review.
-
-The run list should show run ID, status when available, record count, exception
-counts, and timestamp. The selected run view should provide tabs for
-`Executive Summary` and `Summary`, then render the chosen Markdown in the main
-pane. A compact artifact strip should link to related raw files and directories
-when available.
-
-The UI should be read-only. Empty directories should show an empty state instead
-of an error.
-
-### Markdown Renderer
-
-The first version should include a deliberately small Markdown renderer scoped to
-the repository's generated summaries. It must support:
+The viewer should render the Markdown patterns generated by this repository:
 
 - Headings.
 - Paragraphs.
-- Bulleted lists.
-- Markdown tables.
+- Bulleted and numbered lists.
+- Tables.
 - Fenced code blocks.
 - Inline code.
 - Links.
 - Images.
 
-The renderer should escape raw HTML by default. It should rewrite relative links
-and image sources through server routes so paths such as
-`screenshots/<record-id>/openmrs/after-save.png` work from the browser.
+Raw HTML should be escaped by default. Relative links and image paths should be
+rewritten through viewer routes so run-relative paths such as
+`screenshots/<record-id>/openmrs/after-save.png` render correctly.
+
+Use `markdown-it` with raw HTML disabled so generated summaries render with a
+well-tested parser while local artifact URL rewriting stays under repository
+control.
 
 ## Data Flow
 
-1. User runs the viewer command.
-2. The server validates `runsDir`, binds locally, serves the browser assets, and
-   prints the local URL.
-3. The browser requests the run list.
-4. The artifact service scans run folders and returns summarized metadata.
-5. The user selects a run and Markdown tab.
-6. The browser requests the Markdown file for that run.
-7. The Markdown renderer renders the file and rewrites run-relative artifact
-   references.
-8. Screenshots and raw artifact links are served by the artifact service from
-   inside the configured `runsDir`.
+Patient flow:
+
+1. User starts watcher.
+2. User starts Electron intake app.
+3. User runs `npm run desktop:patient-flow`.
+4. Computer Use drives the existing app UI.
+5. The app exports a new handoff file.
+6. The watcher processes the handoff and writes `runs/<run-id>/`.
+
+Viewer flow:
+
+1. User runs `npm run artifacts:viewer`.
+2. Server validates `runsDir`, binds locally, serves browser assets, and prints
+   the URL.
+3. Browser requests the run list.
+4. User selects a run and Markdown tab.
+5. Browser requests Markdown and artifact data for that run.
+6. Markdown is rendered with local artifact links and images.
 
 ## Error Handling
 
-Startup errors should be explicit and should prevent the server from running.
-Per-run errors should stay isolated:
+Computer Use patient-flow errors:
 
-- Missing `executive-summary.md` or `summary.md`: keep the run visible and show a
-  "not available" state for that tab.
-- Malformed `run.json` or `report.json`: fall back to folder-derived metadata
-  and avoid breaking run discovery.
-- Missing artifact file: return `404` from the artifact route.
-- Invalid artifact path or path traversal attempt: return `400` or `404` and do
-  not disclose files outside `runsDir`.
+- App not running: explain that `npm run desktop:dev` must be started first.
+- Window or controls unavailable: fail without fallback to internals.
+- Handoff file missing after export: report the watched inbox path.
+- Computer Use unavailable: explain that the command requires Codex Computer Use.
+
+Viewer errors:
+
+- Missing `executive-summary.md` or `summary.md`: keep the run visible and show
+  a tab-level "not available" state.
+- Malformed `run.json` or `report.json`: fall back to folder-derived metadata.
+- Missing artifact file: return `404`.
+- Invalid artifact path or traversal attempt: return `400` or `404` without
+  disclosing files outside `runsDir`.
 
 ## Testing
 
-Add focused Vitest coverage for the server-side artifact service:
+Unit tests should cover the code we own:
 
-- Run discovery.
-- Newest-first sorting.
-- Metadata fallback when JSON files are missing or malformed.
-- Markdown file reads.
-- Artifact path safety.
-- Missing file behavior.
+- Viewer run discovery and newest-first sorting.
+- Metadata fallback for missing or malformed JSON.
+- Markdown/report/artifact loading.
+- Artifact path containment.
+- Markdown rendering for generated summary patterns.
+- Viewer CLI option parsing and startup failures where practical.
+- Any local harness logic for generating patient data and detecting new handoff
+  files.
 
-Add CLI tests for viewer option parsing and startup error cases where practical
-without leaving a server running after tests.
+Computer Use itself should be verified by a local E2E run rather than unit tests:
 
-Add renderer tests for the Markdown patterns used by generated summaries:
+```sh
+npm run watch:intake
+npm run desktop:dev
+npm run desktop:patient-flow
+```
 
-- Tables.
-- Fenced code blocks.
-- Relative links.
-- Screenshot images.
-- HTML escaping.
+Then confirm a new `.ready.csv` is processed, a new `runs/<run-id>/summary.md`
+exists, and that run renders in the viewer.
 
-Before claiming implementation complete, run the repository's required
-verification:
+Before claiming implementation complete, run:
 
 ```sh
 npm run typecheck
@@ -182,11 +241,15 @@ git diff --check
 
 ## Documentation
 
-Update `README.md` when implementing the feature to document:
+Update `README.md` when implementing:
 
-- How to start the viewer.
-- Default `runs/` behavior and `--runs-dir`.
-- Local-only/read-only behavior.
-- Which audit artifacts the viewer exposes.
+- Keep the three E2E commands front and center.
+- State that `desktop:patient-flow` requires the visible Electron app to already
+  be running and requires Codex Computer Use.
+- Make clear that `desktop:patient-flow` does not launch Electron or use app
+  internals.
+- Document `npm run artifacts:viewer`, default port, `--runs-dir`, local-only
+  behavior, and read-only artifact access.
 
-Update `docs/demo.md` if the viewer becomes part of manual demo validation.
+Update `docs/demo.md` if the viewer becomes part of the manual demo validation
+flow.
