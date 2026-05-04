@@ -56,7 +56,7 @@ function runCodex(prompt) {
     const outputChunks = [];
     const child = spawn(
       "codex",
-      ["exec", "-m", "gpt-5.4", "--json", "--sandbox", "danger-full-access", "-c", 'approval_policy="never"', "-C", process.cwd(), prompt],
+      ["exec", "-m", "gpt-5.4", "--json", "--sandbox", "read-only", "-c", 'approval_policy="never"', "-C", process.cwd(), prompt],
       {
         cwd: process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],

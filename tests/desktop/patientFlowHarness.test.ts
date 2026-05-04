@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildComputerUsePrompt,
+  codexOutputShowsForbiddenAutomation,
   codexOutputShowsComputerUse,
   detectNewReadyFile,
   detectNewReadyFileForPatient,
@@ -67,8 +68,8 @@ describe("Computer Use patient flow harness", () => {
     await writeFile(
       join(inbox, "wrong.ready.csv"),
       [
-        "sourceRecordId,firstName,lastName,dateOfBirth,sexOrGender,phone,email,insuranceMemberId",
-        "wrong,Ava,Nguyen,1990-01-01,female,3125550000,ava@example.test,WRONG",
+        "sourceRecordId,firstName,lastName,dateOfBirth,sexOrGender,phone,email,streetAddress,city,state,zip,insurancePayer,insuranceMemberId,insuranceGroupId,reasonForVisit,preferredContactMethod,notes",
+        "wrong,Ava,Nguyen,1990-01-01,female,3125550000,ava@example.test,1 Main,Chicago,IL,60601,Aetna,WRONG,GRP,Visit,email,Wrong",
       ].join("\n"),
       "utf8",
     );
@@ -77,8 +78,26 @@ describe("Computer Use patient flow harness", () => {
     await writeFile(
       join(inbox, "match.ready.csv"),
       [
-        "sourceRecordId,firstName,lastName,dateOfBirth,sexOrGender,phone,email,insuranceMemberId",
-        `desktop-created,${patient.firstName},${patient.lastName},${patient.dateOfBirth},${patient.sexOrGender},${patient.phone},${patient.email},${patient.insuranceMemberId}`,
+        "sourceRecordId,firstName,lastName,dateOfBirth,sexOrGender,phone,email,streetAddress,city,state,zip,insurancePayer,insuranceMemberId,insuranceGroupId,reasonForVisit,preferredContactMethod,notes",
+        [
+          "desktop-created",
+          patient.firstName,
+          patient.lastName,
+          patient.dateOfBirth,
+          patient.sexOrGender,
+          patient.phone,
+          patient.email,
+          patient.streetAddress,
+          patient.city,
+          patient.state,
+          patient.zip,
+          patient.insurancePayer,
+          patient.insuranceMemberId,
+          patient.insuranceGroupId,
+          patient.reasonForVisit,
+          patient.preferredContactMethod,
+          patient.notes,
+        ].join(","),
       ].join("\n"),
       "utf8",
     );
@@ -137,6 +156,13 @@ describe("Computer Use patient flow harness", () => {
     expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}')).toBe(true);
     expect(codexOutputShowsComputerUse("called get_app_state for Intake Queue")).toBe(true);
     expect(codexOutputShowsComputerUse('failed to load plugin="computer-use@openai-bundled"')).toBe(false);
+    expect(codexOutputShowsComputerUse('{"type":"tool_call","name":"mcp__computer_use__get_app_state"}\n{"type":"tool_call","name":"exec_command"}')).toBe(false);
     expect(codexOutputShowsComputerUse("completed without tools")).toBe(false);
+  });
+
+  it("detects forbidden non-UI automation in codex output", () => {
+    expect(codexOutputShowsForbiddenAutomation('{"type":"tool_call","name":"exec_command"}')).toBe(true);
+    expect(codexOutputShowsForbiddenAutomation("used window.intakeApp.exportReady")).toBe(true);
+    expect(codexOutputShowsForbiddenAutomation("used only mcp__computer_use__click")).toBe(false);
   });
 });

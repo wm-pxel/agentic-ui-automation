@@ -62,7 +62,14 @@ export function codexOutputShowsComputerUse(output: string): boolean {
   if (/failed to load plugin=.*computer-use/i.test(output) || /Computer Use unavailable/i.test(output)) {
     return false;
   }
+  if (codexOutputShowsForbiddenAutomation(output)) {
+    return false;
+  }
   return /mcp__computer_use__|mcp__computer_use__\w+|computer_use|get_app_state|list_apps/i.test(output);
+}
+
+export function codexOutputShowsForbiddenAutomation(output: string): boolean {
+  return /exec_command|apply_patch|write_stdin|shell command|Playwright|_electron|window\.intakeApp|intake:export/i.test(output);
 }
 
 export function buildComputerUsePrompt({ patient, inbox }: { patient: SyntheticPatientInput; inbox: string }): string {
@@ -106,7 +113,16 @@ async function readyFileContainsOnlyPatient(filePath: string, patient: Synthetic
     record.sexOrGender === patient.sexOrGender &&
     record.phone === patient.phone &&
     record.email === patient.email &&
-    record.insuranceMemberId === patient.insuranceMemberId
+    record.streetAddress === patient.streetAddress &&
+    record.city === patient.city &&
+    record.state === patient.state &&
+    record.zip === patient.zip &&
+    record.insurancePayer === patient.insurancePayer &&
+    record.insuranceMemberId === patient.insuranceMemberId &&
+    record.insuranceGroupId === (patient.insuranceGroupId ?? "") &&
+    record.reasonForVisit === patient.reasonForVisit &&
+    record.preferredContactMethod === patient.preferredContactMethod &&
+    record.notes === (patient.notes ?? "")
   );
 }
 
