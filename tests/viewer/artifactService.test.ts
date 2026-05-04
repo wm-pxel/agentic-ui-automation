@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -236,6 +236,20 @@ describe("createArtifactService", () => {
     await expect(service.readMarkdown("run-2026-05-01T12-00-00-000Z-missing-markdown", "summary")).resolves.toBeNull();
   });
 
+  it("rejects Markdown symlinks that resolve outside the selected run", async () => {
+    const runsDir = await makeRunsDir();
+    const outsideDir = await makeRunsDir();
+    const runDir = join(runsDir, "run-2026-05-01T12-00-00-000Z-markdown-symlink");
+    await mkdir(runDir, { recursive: true });
+    const outsideSummary = join(outsideDir, "summary.md");
+    await writeFile(outsideSummary, "# Outside Summary\n");
+    await symlink(outsideSummary, join(runDir, "summary.md"));
+
+    const service = createArtifactService({ runsDir });
+
+    await expect(service.readMarkdown("run-2026-05-01T12-00-00-000Z-markdown-symlink", "summary")).resolves.toBeNull();
+  });
+
   it("resolves artifact files only inside the configured runs directory", async () => {
     const runsDir = await makeRunsDir();
     await writeRun(runsDir, "run-2026-05-01T12-00-00-000Z-artifacts", {
@@ -271,6 +285,37 @@ describe("createArtifactService", () => {
     await expect(service.listArtifactDirectory("../outside", "screenshots")).resolves.toBeNull();
     await expect(service.listArtifactDirectory("run-2026-05-01T12-00-00-000Z-artifacts", "/tmp")).resolves.toBeNull();
     await expect(service.listArtifactDirectory("run-2026-05-01T12-00-00-000Z-artifacts", "screenshots/\0")).resolves.toBeNull();
+  });
+
+  it("rejects artifact file symlinks that resolve outside the selected run", async () => {
+    const runsDir = await makeRunsDir();
+    const outsideDir = await makeRunsDir();
+    const runId = "run-2026-05-01T12-00-00-000Z-file-symlink";
+    const runDir = join(runsDir, runId);
+    await mkdir(join(runDir, "screenshots"), { recursive: true });
+    const outsideFile = join(outsideDir, "proof.png");
+    await writeFile(outsideFile, "outside");
+    await symlink(outsideFile, join(runDir, "screenshots", "proof.png"));
+
+    const service = createArtifactService({ runsDir });
+
+    await expect(service.resolveArtifact(runId, "screenshots/proof.png")).resolves.toBeNull();
+  });
+
+  it("rejects artifact directory symlinks that resolve outside the selected run", async () => {
+    const runsDir = await makeRunsDir();
+    const outsideDir = await makeRunsDir();
+    const runId = "run-2026-05-01T12-00-00-000Z-directory-symlink";
+    const runDir = join(runsDir, runId);
+    const outsideScreenshots = join(outsideDir, "screenshots");
+    await mkdir(runDir, { recursive: true });
+    await mkdir(outsideScreenshots, { recursive: true });
+    await writeFile(join(outsideScreenshots, "proof.png"), "outside");
+    await symlink(outsideScreenshots, join(runDir, "screenshots"));
+
+    const service = createArtifactService({ runsDir });
+
+    await expect(service.listArtifactDirectory(runId, "screenshots")).resolves.toBeNull();
   });
 });
 

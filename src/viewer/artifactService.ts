@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { extname, isAbsolute, join, posix, relative, resolve } from "node:path";
 
 export type MarkdownKind = "summary" | "executive-summary";
@@ -97,8 +97,10 @@ export function createArtifactService(options: ArtifactServiceOptions): Artifact
     if (!runDir) return null;
 
     const fileName = MARKDOWN_FILES[kind];
+    const markdownPath = join(runDir, fileName);
     try {
-      const markdown = await readFile(join(runDir, fileName), "utf8");
+      if (!(await realPathIsInside(runDir, markdownPath))) return null;
+      const markdown = await readFile(markdownPath, "utf8");
       return { fileName, markdown };
     } catch (error) {
       if (isMissingFileError(error)) return null;
@@ -111,6 +113,7 @@ export function createArtifactService(options: ArtifactServiceOptions): Artifact
     if (!artifact) return null;
 
     try {
+      if (!(await realPathIsInside(artifact.runDir, artifact.absolutePath))) return null;
       const artifactStat = await stat(artifact.absolutePath);
       if (!artifactStat.isFile()) return null;
       return {
@@ -128,6 +131,7 @@ export function createArtifactService(options: ArtifactServiceOptions): Artifact
     if (!artifact) return null;
 
     try {
+      if (!(await realPathIsInside(artifact.runDir, artifact.absolutePath))) return null;
       const artifactStat = await stat(artifact.absolutePath);
       if (!artifactStat.isDirectory()) return null;
       const children = await readdir(artifact.absolutePath, { withFileTypes: true });
@@ -233,14 +237,14 @@ function resolveArtifactPath(
   runsRoot: string,
   runId: string,
   artifactPath: string,
-): { absolutePath: string; normalizedPath: string } | null {
+): { absolutePath: string; normalizedPath: string; runDir: string } | null {
   const runDir = resolveRunDir(runsRoot, runId);
   const normalizedPath = normalizeArtifactPath(artifactPath);
   if (!runDir || normalizedPath === null) return null;
 
   const absolutePath = resolve(runDir, ...normalizedPath.split("/").filter(Boolean));
   if (!isPathInside(runDir, absolutePath)) return null;
-  return { absolutePath, normalizedPath };
+  return { absolutePath, normalizedPath, runDir };
 }
 
 function normalizeArtifactPath(artifactPath: string): string | null {
@@ -269,6 +273,11 @@ function isSafeRunId(runId: string): boolean {
 function isPathInside(parent: string, child: string): boolean {
   const childRelativePath = relative(parent, child);
   return childRelativePath === "" || (!childRelativePath.startsWith("..") && !isAbsolute(childRelativePath));
+}
+
+async function realPathIsInside(parent: string, child: string): Promise<boolean> {
+  const [realParent, realChild] = await Promise.all([realpath(parent), realpath(child)]);
+  return isPathInside(realParent, realChild);
 }
 
 function isMarkdownKind(kind: string): kind is MarkdownKind {
