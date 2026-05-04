@@ -317,6 +317,22 @@ describe("createArtifactService", () => {
 
     await expect(service.listArtifactDirectory(runId, "screenshots")).resolves.toBeNull();
   });
+
+  it("rejects run directory symlinks that resolve outside the configured runs directory", async () => {
+    const runsDir = await makeRunsDir();
+    const outsideDir = await makeRunsDir();
+    const runId = "run-2026-05-01T12-00-00-000Z-run-symlink";
+    await mkdir(join(outsideDir, "screenshots"), { recursive: true });
+    await writeFile(join(outsideDir, "summary.md"), "# Outside Summary\n");
+    await writeFile(join(outsideDir, "screenshots", "proof.png"), "outside");
+    await symlink(outsideDir, join(runsDir, runId));
+
+    const service = createArtifactService({ runsDir });
+
+    await expect(service.readMarkdown(runId, "summary")).resolves.toBeNull();
+    await expect(service.resolveArtifact(runId, "screenshots/proof.png")).resolves.toBeNull();
+    await expect(service.listArtifactDirectory(runId, "screenshots")).resolves.toBeNull();
+  });
 });
 
 async function makeRunsDir(): Promise<string> {

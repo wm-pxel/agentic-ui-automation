@@ -99,7 +99,7 @@ export function createArtifactService(options: ArtifactServiceOptions): Artifact
     const fileName = MARKDOWN_FILES[kind];
     const markdownPath = join(runDir, fileName);
     try {
-      if (!(await realPathIsInside(runDir, markdownPath))) return null;
+      if (!(await realRunChildIsInside(runsRoot, runDir, markdownPath))) return null;
       const markdown = await readFile(markdownPath, "utf8");
       return { fileName, markdown };
     } catch (error) {
@@ -113,7 +113,7 @@ export function createArtifactService(options: ArtifactServiceOptions): Artifact
     if (!artifact) return null;
 
     try {
-      if (!(await realPathIsInside(artifact.runDir, artifact.absolutePath))) return null;
+      if (!(await realRunChildIsInside(runsRoot, artifact.runDir, artifact.absolutePath))) return null;
       const artifactStat = await stat(artifact.absolutePath);
       if (!artifactStat.isFile()) return null;
       return {
@@ -131,7 +131,7 @@ export function createArtifactService(options: ArtifactServiceOptions): Artifact
     if (!artifact) return null;
 
     try {
-      if (!(await realPathIsInside(artifact.runDir, artifact.absolutePath))) return null;
+      if (!(await realRunChildIsInside(runsRoot, artifact.runDir, artifact.absolutePath))) return null;
       const artifactStat = await stat(artifact.absolutePath);
       if (!artifactStat.isDirectory()) return null;
       const children = await readdir(artifact.absolutePath, { withFileTypes: true });
@@ -275,9 +275,9 @@ function isPathInside(parent: string, child: string): boolean {
   return childRelativePath === "" || (!childRelativePath.startsWith("..") && !isAbsolute(childRelativePath));
 }
 
-async function realPathIsInside(parent: string, child: string): Promise<boolean> {
-  const [realParent, realChild] = await Promise.all([realpath(parent), realpath(child)]);
-  return isPathInside(realParent, realChild);
+async function realRunChildIsInside(runsRoot: string, runDir: string, child: string): Promise<boolean> {
+  const [realRunsRoot, realRunDir, realChild] = await Promise.all([realpath(runsRoot), realpath(runDir), realpath(child)]);
+  return isPathInside(realRunsRoot, realRunDir) && isPathInside(realRunDir, realChild);
 }
 
 function isMarkdownKind(kind: string): kind is MarkdownKind {
