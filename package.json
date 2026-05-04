@@ -15,7 +15,7 @@
     "dev": "tsx src/cli.ts",
     "desktop:dev": "npm run desktop:build && electron dist/src/desktop/main.js",
     "desktop:build": "npm run build && node scripts/copy-desktop-assets.mjs",
-    "desktop:patient-flow": "npm run desktop:build && node scripts/run-electron-patient-flow.mjs",
+    "desktop:patient-flow": "tsx scripts/run-electron-patient-flow.mjs",
     "watch:intake": "tsx src/cli.ts watch --inbox ~/Downloads/agentic-ui-intake --targets openmrs --runs-dir runs --synthetic-suffix auto --openmrs-concurrency 2",
     "smoke:openmrs": "tsx src/cli.ts run --input data/demo/intake-records.json --targets openmrs --agent scripted --synthetic-suffix auto --openmrs-concurrency 2"
   },

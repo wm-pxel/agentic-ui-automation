@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -78,5 +78,24 @@ describe("Computer Use patient flow harness", () => {
     expect(prompt).toContain("/tmp/intake inbox");
     expect(prompt).toContain('"firstName": "Computer"');
     expect(prompt).toContain('"notes": "Created by the Computer Use desktop patient flow."');
+  });
+
+  it("keeps the desktop patient-flow npm command out of the Electron build path", async () => {
+    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(packageJson.scripts["desktop:patient-flow"]).toBe("tsx scripts/run-electron-patient-flow.mjs");
+    expect(packageJson.scripts["desktop:patient-flow"]).not.toContain("desktop:build");
+    expect(packageJson.scripts["desktop:patient-flow"]).not.toMatch(/(^|&&|\s)electron(\s|$)/);
+  });
+
+  it("keeps runner stdout reserved for the final success JSON", async () => {
+    const script = await readFile("scripts/run-electron-patient-flow.mjs", "utf8");
+
+    expect(script).not.toContain('stdio: "inherit"');
+    expect(script).toContain('stdio: ["ignore", "pipe", "pipe"]');
+    expect(script).toContain("process.stderr.write(codexResult.output)");
+    expect(script).toContain('JSON.stringify({ status: "exported", patient, readyPath }');
   });
 });

@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { mkdir } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { defaultIntakeInbox } from "../dist/src/handoff/intakeHandoff.js";
+import { defaultIntakeInbox } from "../src/handoff/intakeHandoff.ts";
 import {
   buildComputerUsePrompt,
   detectNewReadyFile,
   readyFileSnapshot,
   syntheticComputerUsePatient,
-} from "../dist/src/desktop/patientFlowHarness.js";
+} from "../src/desktop/patientFlowHarness.ts";
 
 const pollIntervalMs = 1_000;
 const requestedTimeoutMs = Number.parseInt(process.env.DESKTOP_PATIENT_FLOW_TIMEOUT_MS ?? "120000", 10);
@@ -19,13 +19,17 @@ await mkdir(inbox, { recursive: true });
 const before = await readyFileSnapshot(inbox);
 const prompt = buildComputerUsePrompt({ patient, inbox });
 
-const codexStatus = await runCodex(prompt).catch((error) => {
+const codexResult = await runCodex(prompt).catch((error) => {
   console.error(`Computer Use patient flow failed: could not start codex exec: ${error.message}`);
-  return 1;
+  return { status: 1, output: "" };
 });
-if (codexStatus !== 0) {
-  console.error(`Computer Use patient flow failed: codex exec exited with status ${codexStatus}.`);
-  process.exit(codexStatus ?? 1);
+if (codexResult.status !== 0) {
+  if (codexResult.output.length > 0) {
+    process.stderr.write(codexResult.output);
+    if (!codexResult.output.endsWith("\n")) process.stderr.write("\n");
+  }
+  console.error(`Computer Use patient flow failed: codex exec exited with status ${codexResult.status}.`);
+  process.exit(codexResult.status ?? 1);
 }
 
 const readyPath = await waitForNewReadyFile(inbox, before, pollTimeoutMs);
@@ -38,17 +42,22 @@ console.log(JSON.stringify({ status: "exported", patient, readyPath }, null, 2))
 
 function runCodex(prompt) {
   return new Promise((resolve, reject) => {
+    const outputChunks = [];
     const child = spawn(
       "codex",
       ["exec", "--sandbox", "danger-full-access", "-c", 'approval_policy="never"', "-C", process.cwd(), prompt],
       {
         cwd: process.cwd(),
-        stdio: "inherit",
+        stdio: ["ignore", "pipe", "pipe"],
       },
     );
 
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => outputChunks.push(chunk));
+    child.stderr.on("data", (chunk) => outputChunks.push(chunk));
     child.on("error", reject);
-    child.on("close", (code) => resolve(code));
+    child.on("close", (code) => resolve({ status: code, output: outputChunks.join("") }));
   });
 }
 
