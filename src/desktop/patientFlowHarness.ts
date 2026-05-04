@@ -36,6 +36,11 @@ export async function readyFileSnapshot(inbox: string): Promise<Set<string>> {
   }
 }
 
+export async function handoffCsvSnapshot(inbox: string): Promise<Set<string>> {
+  const entries = await handoffCsvFiles(inbox);
+  return new Set(entries.map((entry) => entry.relativePath));
+}
+
 export async function detectNewReadyFile(inbox: string, before: Set<string>): Promise<string | null> {
   const after = await readyFileSnapshot(inbox);
   const created = [...after].filter((entry) => !before.has(entry)).sort();
@@ -47,10 +52,9 @@ export async function detectNewReadyFileForPatient(
   before: Set<string>,
   patient: SyntheticPatientInput,
 ): Promise<string | null> {
-  const after = await readyFileSnapshot(inbox);
-  const created = [...after].filter((entry) => !before.has(entry)).sort();
-  for (const fileName of created) {
-    const filePath = join(inbox, fileName);
+  const after = await handoffCsvFiles(inbox);
+  const created = after.filter((entry) => !before.has(entry.relativePath)).sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  for (const { absolutePath: filePath } of created) {
     if (await readyFileContainsOnlyPatient(filePath, patient)) {
       return filePath;
     }
@@ -102,7 +106,11 @@ Report the UI status text and the exported file path if the app displays one.`;
 }
 
 async function readyFileContainsOnlyPatient(filePath: string, patient: SyntheticPatientInput): Promise<boolean> {
-  const content = await readFile(filePath, "utf8");
+  const content = await readFile(filePath, "utf8").catch((error) => {
+    if (isMissingDirectoryError(error)) return undefined;
+    throw error;
+  });
+  if (content === undefined) return false;
   const records = parse(content, {
     columns: true,
     skip_empty_lines: true,
@@ -132,6 +140,26 @@ async function readyFileContainsOnlyPatient(filePath: string, patient: Synthetic
 
 function isMissingDirectoryError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+async function handoffCsvFiles(inbox: string): Promise<Array<{ relativePath: string; absolutePath: string }>> {
+  const directories = ["", "processing", "processed", "failed"];
+  const groups = await Promise.all(
+    directories.map(async (directory) => {
+      const directoryPath = directory ? join(inbox, directory) : inbox;
+      const names = await readdir(directoryPath).catch((error) => {
+        if (isMissingDirectoryError(error)) return [];
+        throw error;
+      });
+      return names
+        .filter((name) => name.endsWith(".csv"))
+        .map((name) => ({
+          relativePath: directory ? `${directory}/${name}` : name,
+          absolutePath: join(directoryPath, name),
+        }));
+    }),
+  );
+  return groups.flat();
 }
 
 function codexJsonEvents(output: string): unknown[] {

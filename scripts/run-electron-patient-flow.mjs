@@ -6,7 +6,7 @@ import {
   buildComputerUsePrompt,
   codexOutputShowsComputerUse,
   detectNewReadyFileForPatient,
-  readyFileSnapshot,
+  handoffCsvSnapshot,
   syntheticComputerUsePatient,
 } from "../src/desktop/patientFlowHarness.ts";
 
@@ -17,7 +17,7 @@ const inbox = defaultIntakeInbox();
 const patient = syntheticComputerUsePatient();
 
 await mkdir(inbox, { recursive: true });
-const before = await readyFileSnapshot(inbox);
+const before = await handoffCsvSnapshot(inbox);
 const prompt = buildComputerUsePrompt({ patient, inbox });
 
 const codexResult = await runCodex(prompt, pollTimeoutMs).catch((error) => {
