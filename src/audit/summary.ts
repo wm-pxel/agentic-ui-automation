@@ -8,6 +8,7 @@ import type {
 } from "./auditStore.js";
 
 const TARGET_ORDER: TargetName[] = ["openmrs", "fake"];
+const SEVERITY_ORDER = ["error", "warning", "info"] as const;
 
 export interface SummaryInput {
   runId: string;
@@ -151,12 +152,12 @@ function appendExecutiveIssues(lines: string[], issues: ReportIssue[]): void {
 
   lines.push("## Top Issues", "");
   lines.push(
-    "| Record | Target | Phase | Code | Message | Evidence |",
-    "| --- | --- | --- | --- | --- | --- |",
+    "| Severity | Record | Target | Phase | Code | Message | Remediation | Evidence |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
   );
   for (const issue of issues.slice(0, 10)) {
     lines.push(
-      `| ${cell(issue.recordId)} | ${cell(issue.target)} | ${cell(issue.phase)} | ${cell(issue.exceptionCode)} | ${cell(issue.message)} | ${cell(issue.screenshotPath)} |`,
+      `| ${cell(issueSeverity(issue))} | ${cell(issue.recordId)} | ${cell(issue.target)} | ${cell(issue.phase)} | ${cell(issue.exceptionCode)} | ${cell(issue.message)} | ${cell(issue.suggestedRemediation)} | ${cell(issue.screenshotPath)} |`,
     );
   }
   if (issues.length > 10) {
@@ -203,15 +204,29 @@ function appendIssues(lines: string[], issues: ReportIssue[]): void {
     return;
   }
 
+  lines.push("### Severity Counts", "");
+  lines.push("| Severity | Count |", "| --- | ---: |");
+  for (const severity of SEVERITY_ORDER) {
+    const count = issues.filter((issue) => issueSeverity(issue) === severity).length;
+    if (count > 0) {
+      lines.push(`| ${severity} | ${count} |`);
+    }
+  }
+  lines.push("");
+
   lines.push(
-    "| Record | Target | Phase | Code | Message | Remediation | Evidence |",
-    "| --- | --- | --- | --- | --- | --- | --- |",
+    "| Severity | Record | Target | Phase | Code | Message | Remediation | Evidence |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
   );
   for (const issue of issues) {
     lines.push(
-      `| ${cell(issue.recordId)} | ${cell(issue.target)} | ${cell(issue.phase)} | ${cell(issue.exceptionCode)} | ${cell(issue.message)} | ${cell(issue.suggestedRemediation)} | ${cell(issue.screenshotPath)} |`,
+      `| ${cell(issueSeverity(issue))} | ${cell(issue.recordId)} | ${cell(issue.target)} | ${cell(issue.phase)} | ${cell(issue.exceptionCode)} | ${cell(issue.message)} | ${cell(issue.suggestedRemediation)} | ${cell(issue.screenshotPath)} |`,
     );
   }
+}
+
+function issueSeverity(issue: ReportIssue): "error" | "warning" | "info" {
+  return issue.severity ?? "error";
 }
 
 function appendOpenMrsRecordReviews(lines: string[], details: ReportDetails | undefined): void {

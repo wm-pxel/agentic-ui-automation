@@ -30,6 +30,31 @@ npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-c
 
 When prompts are disabled, below-threshold OpenMRS mappings use the AI-mapped
 value and are flagged in `summary.md`; the local viewer highlights those rows.
+Exception rows in the generated summaries include severity and remediation
+steps; the local viewer color-codes error, warning, and info severities.
+
+To generate deterministic preflight exceptions without touching OpenMRS, run the
+fake target against the normalized demo file. The checked-in input includes
+synthetic records with missing, ambiguous, and invalid fields:
+
+```sh
+npm run dev -- run --input data/demo/intake-records-normalized.json --targets fake --runs-dir runs --parser deterministic
+```
+
+Expected result: `completed_with_exceptions`, `preflightExceptions: 3`, and
+`targetCounts.fake.succeeded: 3`.
+
+To generate a viewer-friendly severity demo with one error, one warning, and
+one info row in the Top Issues table, run:
+
+```sh
+npm run dev -- run --input data/demo/intake-records-severity-levels.json --targets fake --runs-dir runs --parser deterministic
+```
+
+Expected result: `completed_with_exceptions`, `preflightExceptions: 1`, and
+`targetCounts.fake.succeeded: 1`. Open the run in `npm run viewer` to inspect
+the color-coded severity rows and remediation steps.
+
 The individual commands remain available when you want to debug one service at a
 time:
 
@@ -403,6 +428,8 @@ includes lower-confidence examples. A clean OpenMRS target pass therefore means:
 - `executive-summary.md` gives a quick run outcome, while `summary.md` includes
   an OpenMRS record review with raw intake input, patient-dashboard proof
   screenshots, per-field mapping confidence, and source-to-OpenMRS comparisons.
+  Issue sections categorize exceptions by severity and include remediation
+  guidance for manual review.
   On public demo layouts, optional contact fields that are unavailable may
   appear as failed mappings without causing a target exception.
 
@@ -497,9 +524,10 @@ npm run viewer -- --runs-dir runs --port 4555
 
 The app lists run folders newest-first, renders `executive-summary.md` and
 `summary.md`, and resolves run-relative links so screenshot evidence opens from
-the browser. It also exposes raw links for `report.json`, `events.jsonl`,
-`input/normalized-records.json`, `exceptions/`, and `screenshots/` when those
-artifacts exist.
+the browser. Issue tables include severity, remediation, and evidence columns;
+the viewer color-codes severity rows for faster triage. It also exposes raw
+links for `report.json`, `events.jsonl`, `input/normalized-records.json`,
+`exceptions/`, and `screenshots/` when those artifacts exist.
 
 The viewer is local-only and read-only. It does not run automation, edit
 records, delete patients, or modify audit artifacts.

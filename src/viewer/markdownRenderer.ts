@@ -116,6 +116,7 @@ function renderBulletList(
 function renderTable(lines: string[], startIndex: number, options: RenderMarkdownOptions): { html: string; nextIndex: number } {
   const headers = parseTableCells(lines[startIndex] ?? "");
   const alignments = parseTableCells(lines[startIndex + 1] ?? "").map((cell) => (/-+:$/.test(cell) ? "right" : "left"));
+  const severityColumnIndex = headers.findIndex((header) => header.trim().toLowerCase() === "severity");
   const rows: string[][] = [];
   let index = startIndex + 2;
 
@@ -129,8 +130,19 @@ function renderTable(lines: string[], startIndex: number, options: RenderMarkdow
     .join("");
   const bodyHtml = rows
     .map((row) => {
-      const classAttribute = tableRowNeedsAttention(row) ? ' class="attention-row"' : "";
-      return `<tr${classAttribute}>${row.map((cell, columnIndex) => renderTableCell("td", cell, alignments[columnIndex], options)).join("")}</tr>`;
+      const severity = severityForRow(row, severityColumnIndex);
+      const rowClasses = [
+        tableRowNeedsAttention(row) ? "attention-row" : "",
+        severity ? "severity-row" : "",
+        severity ? `severity-${severity}` : "",
+      ].filter(Boolean);
+      const classAttribute = rowClasses.length > 0 ? ` class="${rowClasses.join(" ")}"` : "";
+      return `<tr${classAttribute}>${row.map((cell, columnIndex) =>
+        renderTableCell("td", cell, alignments[columnIndex], options, {
+          isSeverityCell: severity !== undefined && columnIndex === severityColumnIndex,
+          severity,
+        }),
+      ).join("")}</tr>`;
     })
     .join("");
 
@@ -144,14 +156,34 @@ function tableRowNeedsAttention(row: string[]): boolean {
   return row.some((cell) => /\blow confidence:\s*\d+% below threshold \d+%/i.test(cell));
 }
 
+function severityForRow(row: string[], severityColumnIndex: number): "error" | "warning" | "info" | undefined {
+  if (severityColumnIndex < 0) return undefined;
+  const value = row[severityColumnIndex]?.trim().toLowerCase();
+  if (value === "error" || value === "warning" || value === "info") return value;
+  return undefined;
+}
+
 function renderTableCell(
   tagName: "td" | "th",
   value: string,
   alignment: string | undefined,
   options: RenderMarkdownOptions,
+  metadata: { isSeverityCell?: boolean; severity?: "error" | "warning" | "info" } = {},
 ): string {
-  const classAttribute = alignment === "right" ? ' class="align-right"' : "";
-  return `<${tagName}${classAttribute}>${renderInline(value, options)}</${tagName}>`;
+  const classNames = [
+    alignment === "right" ? "align-right" : "",
+    metadata.isSeverityCell && metadata.severity ? "severity-cell" : "",
+    metadata.isSeverityCell && metadata.severity ? `severity-${metadata.severity}` : "",
+  ].filter(Boolean);
+  const classAttribute = classNames.length > 0 ? ` class="${classNames.join(" ")}"` : "";
+  const content = metadata.isSeverityCell && metadata.severity
+    ? `<span class="severity-badge severity-${metadata.severity}">${labelSeverity(metadata.severity)}</span>`
+    : renderInline(value, options);
+  return `<${tagName}${classAttribute}>${content}</${tagName}>`;
+}
+
+function labelSeverity(severity: "error" | "warning" | "info"): string {
+  return severity.charAt(0).toUpperCase() + severity.slice(1);
 }
 
 function isTableStart(lines: string[], index: number): boolean {

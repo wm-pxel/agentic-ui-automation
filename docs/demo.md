@@ -202,7 +202,8 @@ For `data/demo/intake-records.json`, the expected clean OpenMRS target result is
   patient-dashboard proof screenshots, per-field mapping confidence, and
   source-to-OpenMRS comparisons. Optional contact fields that are unavailable in
   a public demo layout may be reported as failed mappings without failing the
-  target record.
+  target record. Issue tables categorize exceptions by severity and include
+  remediation steps for manual review.
 
 The public OpenMRS demo keeps submitted patients for a while. If you rerun the
 same input without `--synthetic-suffix`, duplicate patient detection can make
@@ -217,7 +218,8 @@ directory. A controlled target failure can still exit cleanly with
 `completed_with_exceptions`; do not treat a target smoke as passed unless that
 target has the expected success count and no environment or target exceptions in
 `run.json`. For browser-based review, run `npm run viewer` and select the
-generated run from the left pane.
+generated run from the left pane. The viewer color-codes issue rows by severity
+and keeps remediation steps visible beside each exception.
 
 ```sh
 RUN_ID="<run-id-from-cli-output>"

@@ -135,6 +135,10 @@ describe("createViewerServer", () => {
       expect(css).toContain(".artifact-links a {\n  padding: 6px 8px;");
       expect(css).toContain("font-size: 12px;");
       expect(css).toContain("color: #52606c;");
+      expect(css).toContain(".markdown-view tr.severity-error");
+      expect(css).toContain(".severity-badge.severity-error");
+      expect(css).toContain(".severity-badge.severity-warning");
+      expect(css).toContain(".severity-badge.severity-info");
     } finally {
       await viewer.close();
     }

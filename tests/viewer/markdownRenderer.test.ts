@@ -89,6 +89,24 @@ describe("renderMarkdown", () => {
     expect(html).toContain("<tr><td>phone</td><td>succeeded</td></tr>");
   });
 
+  it("color-codes issue rows and severity cells from generated summary tables", () => {
+    const html = renderMarkdown(
+      [
+        "| Severity | Record | Target | Phase | Code | Message | Remediation | Evidence |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| error | demo-001 | openmrs | target | verification_failed | Save could not be verified. | Review the after-save screenshot. | screenshots/demo-001/openmrs/after-save.png |",
+        "| warning | demo-002 | fake | validation | invalid_format | Optional field was malformed. | Correct the source field. |  |",
+      ].join("\n"),
+      { runId: "run-issues" },
+    );
+
+    expect(html).toContain('<tr class="severity-row severity-error">');
+    expect(html).toContain('<td class="severity-cell severity-error"><span class="severity-badge severity-error">Error</span></td>');
+    expect(html).toContain('<tr class="severity-row severity-warning">');
+    expect(html).toContain('<td class="severity-cell severity-warning"><span class="severity-badge severity-warning">Warning</span></td>');
+    expect(html).toContain("Review the after-save screenshot.");
+  });
+
   it("escapes raw HTML and unsafe javascript URLs", () => {
     const html = renderMarkdown('<script>alert("x")</script>\n\n[bad](javascript:alert(1))', {
       runId: "run-safe",

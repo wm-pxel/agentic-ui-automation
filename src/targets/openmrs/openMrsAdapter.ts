@@ -1411,6 +1411,7 @@ async function writeTargetIssue(
     phase: "target",
     target: "openmrs",
     recordId: context.record.sourceRecordId,
+    severity: exception.severity,
     exceptionCode: exception.code,
     message: exception.message,
     suggestedRemediation: exception.suggestedRemediation,

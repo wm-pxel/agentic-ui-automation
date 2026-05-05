@@ -1,0 +1,73 @@
+[
+  {
+    "sourceRecordId": "severity-error-missing-dob",
+    "firstName": "Jordan",
+    "lastName": "Taylor",
+    "dateOfBirth": "",
+    "sexOrGender": "Female",
+    "phone": "312-555-0160",
+    "email": "jordan.taylor@example.test",
+    "streetAddress": "400 South State Street",
+    "city": "Chicago",
+    "state": "IL",
+    "zip": "60605",
+    "insurancePayer": "Aetna",
+    "insuranceMemberId": "AET-SEV-001",
+    "reasonForVisit": "Severity demo validation error",
+    "preferredContactMethod": "phone"
+  },
+  {
+    "sourceRecordId": "severity-warning-info",
+    "firstName": "Riley",
+    "lastName": "Morgan",
+    "dateOfBirth": "1989-04-12",
+    "sexOrGender": "Male",
+    "phone": "312-555-0161",
+    "email": "riley.morgan@example.test",
+    "streetAddress": "500 West Madison Street",
+    "city": "Chicago",
+    "state": "IL",
+    "zip": "60661",
+    "insurancePayer": "Cigna",
+    "insuranceMemberId": "CIG-SEV-002",
+    "reasonForVisit": "Severity demo source extraction review",
+    "preferredContactMethod": "email",
+    "aiExtraction": {
+      "model": "demo-fixture",
+      "sourceDocumentName": "severity-levels-demo.json",
+      "fields": {
+        "firstName": {
+          "sourceLabel": "given_name",
+          "value": "Riley",
+          "confidence": 0.99,
+          "evidence": "given_name: Riley"
+        },
+        "lastName": {
+          "sourceLabel": "surname",
+          "value": "Morgan",
+          "confidence": 0.99,
+          "evidence": "surname: Morgan"
+        },
+        "dateOfBirth": {
+          "sourceLabel": "dob",
+          "value": "1989-04-12",
+          "confidence": 0.97,
+          "evidence": "dob: 1989-04-12"
+        }
+      },
+      "additionalFields": {},
+      "issues": [
+        {
+          "field": "insuranceMemberId",
+          "message": "Insurance member ID came from a low-quality source note.",
+          "severity": "warning"
+        },
+        {
+          "field": "preferredContactMethod",
+          "message": "Preferred contact method was inferred from appointment notes.",
+          "severity": "info"
+        }
+      ]
+    }
+  }
+]

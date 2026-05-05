@@ -681,6 +681,47 @@ dd {
 .markdown-view tr.attention-row td {
   border-color: #e1b85f;
 }
+.markdown-view tr.severity-error {
+  background: #fff1f2;
+}
+.markdown-view tr.severity-error td {
+  border-color: #f0b8c0;
+}
+.markdown-view tr.severity-warning {
+  background: #fff8e5;
+}
+.markdown-view tr.severity-warning td {
+  border-color: #e7c96d;
+}
+.markdown-view tr.severity-info {
+  background: #edf6ff;
+}
+.markdown-view tr.severity-info td {
+  border-color: #a8cdeb;
+}
+.severity-badge {
+  display: inline-flex;
+  align-items: center;
+  min-width: 64px;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.severity-badge.severity-error {
+  background: #b4232f;
+  color: #ffffff;
+}
+.severity-badge.severity-warning {
+  background: #8a5c00;
+  color: #ffffff;
+}
+.severity-badge.severity-info {
+  background: #1769a6;
+  color: #ffffff;
+}
 .align-right {
   text-align: right;
 }

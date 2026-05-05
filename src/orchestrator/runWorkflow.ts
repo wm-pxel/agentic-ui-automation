@@ -542,6 +542,7 @@ function issueFromException(input: {
     phase: input.phase,
     target: input.target,
     recordId: input.recordId,
+    severity: input.exception.severity,
     exceptionCode: input.exception.code,
     message: input.exception.message,
     suggestedRemediation: input.exception.suggestedRemediation,
@@ -571,15 +572,37 @@ function stringValue(value: unknown): string | undefined {
 async function writeAiExtractionDetails(audit: FileAuditStore, rawRecord: RawIntakeRecord): Promise<void> {
   const extraction = rawRecord.aiExtraction;
   if (!isAiExtractionMetadata(extraction)) return;
+  const recordId = String(rawRecord.sourceRecordId);
 
   await audit.writeAiExtraction({
-    recordId: String(rawRecord.sourceRecordId),
+    recordId,
     model: extraction.model,
     sourceDocumentName: extraction.sourceDocumentName,
     fields: extractionFields(extraction.fields),
     additionalFields: extractionFields(extraction.additionalFields),
     issues: extraction.issues,
   });
+
+  for (const issue of extraction.issues) {
+    await audit.writeReportIssue({
+      phase: "extraction",
+      recordId,
+      severity: issue.severity,
+      message: issue.message,
+      suggestedRemediation: remediationForExtractionIssue(issue.severity),
+    });
+  }
+}
+
+function remediationForExtractionIssue(severity: "info" | "warning" | "error"): string {
+  switch (severity) {
+    case "error":
+      return "Correct the extracted source field before running target automation.";
+    case "warning":
+      return "Review the source extraction evidence and confirm the field before relying on the run.";
+    case "info":
+      return "Review the source extraction note during audit sign-off.";
+  }
 }
 
 function extractionFields(value: Record<string, { sourceLabel?: string; value: string; confidence: number; evidence?: string }>) {

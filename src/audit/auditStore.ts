@@ -2,7 +2,14 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join } from "node:path";
 import { AuditEventSchema } from "../domain/schema.js";
-import type { AuditEvent, RunStatus, TargetName, TargetTaskStatus, ValidationException } from "../domain/schema.js";
+import type {
+  AuditEvent,
+  ExceptionSeverity,
+  RunStatus,
+  TargetName,
+  TargetTaskStatus,
+  ValidationException,
+} from "../domain/schema.js";
 
 export interface AuditStoreOptions {
   runsDir: string;
@@ -54,6 +61,7 @@ export interface ReportIssue {
   phase: string;
   target?: TargetName;
   recordId?: string;
+  severity?: ExceptionSeverity;
   exceptionCode?: AuditEvent["exceptionCode"];
   message: string;
   suggestedRemediation?: string;
@@ -334,6 +342,7 @@ function sameReportIssue(a: ReportIssue, b: ReportIssue): boolean {
     a.phase === b.phase &&
     a.target === b.target &&
     a.recordId === b.recordId &&
+    a.severity === b.severity &&
     a.exceptionCode === b.exceptionCode &&
     a.message === b.message &&
     a.screenshotPath === b.screenshotPath

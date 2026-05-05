@@ -114,6 +114,7 @@ describe("FileAuditStore", () => {
       phase: "target",
       target: "openmrs",
       recordId: "demo-001",
+      severity: "error",
       exceptionCode: "verification_failed",
       message: "OpenMRS still showed the new-patient form after save.",
       suggestedRemediation: "Review required fields and the after-save screenshot before retrying.",
@@ -201,6 +202,7 @@ describe("FileAuditStore", () => {
           phase: "target",
           target: "openmrs",
           recordId: "demo-001",
+          severity: "error",
           exceptionCode: "verification_failed",
           message: "OpenMRS still showed the new-patient form after save.",
           suggestedRemediation: "Review required fields and the after-save screenshot before retrying.",
@@ -223,6 +225,7 @@ describe("FileAuditStore", () => {
       fields: [{ sourceField: "firstName", value: "Ava", confidence: 0.96 }],
     });
     expect(report.details.issues[0]).toMatchObject({
+      severity: "error",
       exceptionCode: "verification_failed",
       screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
     });
@@ -565,6 +568,7 @@ describe("FileAuditStore", () => {
             phase: "target",
             target: "openmrs",
             recordId: "demo-001",
+            severity: "error",
             exceptionCode: "verification_failed",
             message: "OpenMRS still showed the new-patient form after save.",
             suggestedRemediation: "Review required fields.",
@@ -635,7 +639,9 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("## Issues");
     expect(summary).toContain("- [OpenMRS Record Review](#openmrs-record-review)");
     expect(summary).toContain("  - [Record demo-001](#record-demo-001)");
-    expect(summary).toContain("| demo-001 | openmrs | target | verification_failed | OpenMRS still showed the new-patient form after save. | Review required fields. | screenshots/demo-001/openmrs/after-save.png |");
+    expect(summary).toContain("| Severity | Count |");
+    expect(summary).toContain("| error | 1 |");
+    expect(summary).toContain("| error | demo-001 | openmrs | target | verification_failed | OpenMRS still showed the new-patient form after save. | Review required fields. | screenshots/demo-001/openmrs/after-save.png |");
     expect(summary).toContain("## OpenMRS Record Review");
     expect(summary).toContain("### Record demo-001");
     expect(summary).toContain("#### Intake Input");
@@ -692,6 +698,7 @@ describe("FileAuditStore", () => {
             phase: "target",
             target: "openmrs",
             recordId: "demo-002",
+            severity: "error",
             exceptionCode: "verification_failed",
             message: "OpenMRS could not verify the saved patient.",
             suggestedRemediation: "Review the filled-field screenshot.",
@@ -721,7 +728,7 @@ describe("FileAuditStore", () => {
     expect(executiveSummary).toContain("- 1 issue recorded.");
     expect(executiveSummary).toContain("- 1 OpenMRS field mapping failed.");
     expect(executiveSummary).toContain("- 1 OpenMRS record has screenshot evidence.");
-    expect(executiveSummary).toContain("| demo-002 | openmrs | target | verification_failed | OpenMRS could not verify the saved patient. | screenshots/demo-002/openmrs/after-fill.png |");
+    expect(executiveSummary).toContain("| error | demo-002 | openmrs | target | verification_failed | OpenMRS could not verify the saved patient. | Review the filled-field screenshot. | screenshots/demo-002/openmrs/after-fill.png |");
     expect(executiveSummary).toContain("| Full summary | runs/run-test/summary.md |");
     expect(executiveSummary).toContain("| Structured report | runs/run-test/report.json |");
     expect(executiveSummary).toContain("| Source input | data/demo/intake-records.json |");

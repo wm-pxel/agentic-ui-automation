@@ -117,6 +117,7 @@ describe("runWorkflow", () => {
         expect.objectContaining({
           recordId: "demo-validation-exception",
           phase: "validation",
+          severity: "error",
           exceptionCode: "missing_required_field",
           message: expect.stringContaining("dateOfBirth"),
         }),
@@ -124,6 +125,7 @@ describe("runWorkflow", () => {
           recordId: "demo-target-exception",
           target: "fake",
           phase: "target",
+          severity: "error",
           exceptionCode: "ui_state_unexpected",
           message: "Run record failed.",
         }),

@@ -127,6 +127,71 @@ describe("runCli", () => {
     });
   });
 
+  it("runs the severity-level demo input and writes error, warning, and info issues", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "agentic-ui-cli-severity-"));
+    tempDirs.push(runsDir);
+    const io = captureIo();
+
+    const exitCode = await runCli(
+      [
+        "node",
+        "agentic-ui",
+        "run",
+        "--input",
+        "data/demo/intake-records-severity-levels.json",
+        "--targets",
+        "fake",
+        "--runs-dir",
+        runsDir,
+        "--parser",
+        "deterministic",
+      ],
+      io,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.stderrText()).toBe("");
+    const result = JSON.parse(io.stdoutText()) as {
+      runId: string;
+      status: string;
+      preflightExceptions: number;
+      targetCounts: { fake?: { succeeded: number } };
+    };
+    expect(result.status).toBe("completed_with_exceptions");
+    expect(result.preflightExceptions).toBe(1);
+    expect(result.targetCounts.fake?.succeeded).toBe(1);
+
+    const report = await readJson(join(runsDir, result.runId, "report.json")) as {
+      details: { issues: Array<Record<string, unknown>> };
+    };
+    expect(report.details.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordId: "severity-error-missing-dob",
+          severity: "error",
+          exceptionCode: "missing_required_field",
+        }),
+        expect.objectContaining({
+          recordId: "severity-warning-info",
+          severity: "warning",
+          phase: "extraction",
+          message: "Insurance member ID came from a low-quality source note.",
+        }),
+        expect.objectContaining({
+          recordId: "severity-warning-info",
+          severity: "info",
+          phase: "extraction",
+          message: "Preferred contact method was inferred from appointment notes.",
+        }),
+      ]),
+    );
+
+    const executiveSummary = await readFile(join(runsDir, result.runId, "executive-summary.md"), "utf8");
+    expect(executiveSummary).toContain("| error | severity-error-missing-dob |");
+    expect(executiveSummary).toContain("| warning | severity-warning-info |");
+    expect(executiveSummary).toContain("| info | severity-warning-info |");
+  });
+
   it("returns exit code 1 and prints a concise message for parse errors", async () => {
     const io = captureIo();
 
