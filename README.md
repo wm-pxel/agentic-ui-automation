@@ -10,7 +10,11 @@ traceable audit package for each run.
 ## Full E2E Commands
 
 Run these from the repository root when you want the full Electron-to-OpenMRS
-flow. Start the watcher, Electron intake app, and run viewer together:
+flow.
+
+### Interactive Full Stack
+
+Start the watcher, Electron intake app, and run viewer together:
 
 ```sh
 npm run dev:all -- --agent openai --openmrs-field-confidence-threshold 0.99
@@ -21,8 +25,11 @@ one terminal with prefixed logs. Its watcher uses interactive OpenMRS field
 confirmation with a `0.99` mapping-confidence threshold. Edited prompt input is
 interpreted through the OpenAI-backed agent before the EMR field is filled. The
 intentionally high threshold is for demo purposes so below-threshold mapping
-review and highlighting are easy to see. For unattended E2E runs, disable those
-prompts while keeping the same threshold:
+review and highlighting are easy to see.
+
+### Unattended Full Stack
+
+For unattended E2E runs, disable prompts while keeping the same threshold:
 
 ```sh
 npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-confidence-threshold 0.99
@@ -33,16 +40,7 @@ value and are flagged in `summary.md`; the local viewer highlights those rows.
 Exception rows in the generated summaries include severity and remediation
 steps; the local viewer color-codes error, warning, and info severities.
 
-To generate deterministic preflight exceptions without touching OpenMRS, run the
-fake target against the normalized demo file. The checked-in input includes
-synthetic records with missing, ambiguous, and invalid fields:
-
-```sh
-npm run dev -- run --input data/demo/intake-records-normalized.json --targets fake --runs-dir runs --parser deterministic
-```
-
-Expected result: `completed_with_exceptions`, `preflightExceptions: 3`, and
-`targetCounts.fake.succeeded: 3`.
+### Severity Demo
 
 To generate a viewer-friendly severity demo with one error, one warning, and
 one info row in the Top Issues table, run:
@@ -55,6 +53,8 @@ Expected result: `completed_with_exceptions`, `preflightExceptions: 1`, and
 `targetCounts.fake.succeeded: 1`. Open the run in `npm run viewer` to inspect
 the color-coded severity rows and remediation steps.
 
+### Individual Services
+
 The individual commands remain available when you want to debug one service at a
 time:
 
@@ -63,6 +63,8 @@ npm run watch:intake
 npm run desktop:dev
 npm run viewer
 ```
+
+### Electron Export Via Computer Use
 
 With the Electron app already visible, drive the patient creation/export flow
 from this interactive Codex chat:
@@ -81,6 +83,11 @@ exported handoff and continues into OpenMRS.
 ## Contents
 
 - [Full E2E Commands](#full-e2e-commands)
+  - [Interactive Full Stack](#interactive-full-stack)
+  - [Unattended Full Stack](#unattended-full-stack)
+  - [Severity Demo](#severity-demo)
+  - [Individual Services](#individual-services)
+  - [Electron Export Via Computer Use](#electron-export-via-computer-use)
 - [What It Demonstrates](#what-it-demonstrates)
 - [Current Status](#current-status)
 - [Architecture](#architecture)
@@ -216,17 +223,17 @@ npm install
 Run the no-UI demo first:
 
 ```sh
-npm run dev -- run --input data/demo/intake-records-normalized.json --targets fake --runs-dir runs --parser deterministic
+npm run dev -- run --input data/demo/intake-records-severity-levels.json --targets fake --runs-dir runs --parser deterministic
 ```
 
 Expected result:
 
 - `status` is `completed_with_exceptions`.
-- `preflightExceptions` is `3`.
-- `targetCounts.fake.succeeded` is `3`.
+- `preflightExceptions` is `1`.
+- `targetCounts.fake.succeeded` is `1`.
 
-The status includes exceptions because the demo file contains three
-intentionally invalid records that should stop during validation.
+The status includes exceptions because the demo file contains an intentionally
+invalid record that should stop during validation.
 
 ## Desktop Intake App
 
