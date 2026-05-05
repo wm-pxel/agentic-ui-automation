@@ -25,6 +25,8 @@ const OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MESSAGE = "OpenMRS field confirmation p
 const OPENMRS_FIELD_CONFIRMATION_RETRY_DELAY_MS = 250;
 const OPENMRS_FIELD_CONFIRMATION_MAX_ATTEMPTS = 3;
 const OPENMRS_OPERATOR_VALUE_ACTION_PREFIX = "use-openmrs-operator-value:";
+const OPENMRS_OPERATOR_VALUE_RETRY_ACTION_ID = "retry-openmrs-operator-value";
+const OPENMRS_OPERATOR_VALUE_CONFIDENCE_THRESHOLD = 0.5;
 
 export interface OpenMrsConfig {
   baseUrl?: string;
@@ -101,10 +103,12 @@ interface OperatorPromptInput {
   sourceField: string;
   targetField: string;
   proposedValue: string;
+  value: string;
   required: boolean;
   confidence: number;
   threshold: number;
   rationale: string;
+  feedbackMessage?: string;
 }
 
 interface FieldSkippedError {
@@ -563,102 +567,146 @@ async function promptForMappedField(
   threshold: number,
   screenshotPath: string,
 ): Promise<ApprovedFieldMapping> {
-  const input: OperatorPromptInput = {
-    sourceField: String(mapping.sourceField),
-    targetField: mapping.targetField,
-    proposedValue: mapping.value,
-    required: mapping.required === true,
-    confidence: decision.confidence,
-    threshold,
-    rationale: decision.rationale,
-  };
+  let promptValue = mapping.value;
+  let feedbackMessage: string | undefined;
 
-  let result: unknown;
-  try {
-    result = await evaluateFieldPromptWithRetry(page, input);
-  } catch (error) {
-    if (isPromptTimeoutError(error)) {
-      await page.evaluate(cleanupOpenMrsFieldConfirmationPrompt, undefined).catch(() => undefined);
-      return stopFieldMapping(mapping, decision, threshold, screenshotPath, OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MESSAGE);
-    }
-    return stopFieldMapping(
-      mapping,
-      decision,
+  while (true) {
+    const input: OperatorPromptInput = {
+      sourceField: String(mapping.sourceField),
+      targetField: mapping.targetField,
+      proposedValue: mapping.value,
+      value: promptValue,
+      required: mapping.required === true,
+      confidence: decision.confidence,
       threshold,
-      screenshotPath,
-      `OpenMRS field confirmation prompt failed: ${errorMessage(error)}`,
-    );
-  }
-
-  if (!isOperatorPromptResult(result)) {
-    return stopFieldMapping(mapping, decision, threshold, screenshotPath, "OpenMRS field confirmation prompt returned an invalid response.");
-  }
-
-  if (result.action === "confirm") {
-    const rawValue = result.value.trim();
-    const interpretation = rawValue === mapping.value ? { value: mapping.value } : await interpretOpenMrsOperatorValue(_context, mapping, rawValue);
-    const value = interpretation.value;
-    if (mapping.required && value.length === 0) {
-      return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Required OpenMRS field confirmation returned a blank value.");
-    }
-    return {
-      value,
-      approvalSource: value === mapping.value ? "operator_confirmed" : "operator_edited",
-      agentConfidence: decision.confidence,
-      confidenceThreshold: threshold,
-      agentRationale: fieldApprovalRationale(decision.rationale, interpretation.rationale),
-      originalProposedValue: value === mapping.value ? undefined : mapping.value,
+      rationale: decision.rationale,
+      feedbackMessage,
     };
-  }
 
-  if (result.action === "edit") {
-    const interpretation = await interpretOpenMrsOperatorValue(_context, mapping, result.value.trim());
-    const value = interpretation.value;
-    if (mapping.required && value.length === 0) {
-      return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Required OpenMRS field confirmation returned a blank value.");
+    let result: unknown;
+    try {
+      result = await evaluateFieldPromptWithRetry(page, input);
+    } catch (error) {
+      if (isPromptTimeoutError(error)) {
+        await page.evaluate(cleanupOpenMrsFieldConfirmationPrompt, undefined).catch(() => undefined);
+        return stopFieldMapping(mapping, decision, threshold, screenshotPath, OPENMRS_FIELD_CONFIRMATION_TIMEOUT_MESSAGE);
+      }
+      return stopFieldMapping(
+        mapping,
+        decision,
+        threshold,
+        screenshotPath,
+        `OpenMRS field confirmation prompt failed: ${errorMessage(error)}`,
+      );
     }
-    return {
-      value,
-      approvalSource: value === mapping.value ? "operator_confirmed" : "operator_edited",
-      agentConfidence: decision.confidence,
-      confidenceThreshold: threshold,
-      agentRationale: fieldApprovalRationale(decision.rationale, interpretation.rationale),
-      originalProposedValue: mapping.value,
-    };
-  }
 
-  if (result.action === "skip" && !mapping.required) {
-    throw {
-      kind: "field-skipped",
-      approval: {
-        value: mapping.value,
-        approvalSource: "operator_skipped",
+    if (!isOperatorPromptResult(result)) {
+      return stopFieldMapping(mapping, decision, threshold, screenshotPath, "OpenMRS field confirmation prompt returned an invalid response.");
+    }
+
+    if (result.action === "confirm") {
+      const rawValue = result.value.trim();
+      const interpretation: OpenMrsOperatorValueInterpretation =
+        rawValue === mapping.value ? { status: "mapped", value: mapping.value } : await interpretOpenMrsOperatorValue(_context, mapping, rawValue);
+      if (interpretation.status === "retry") {
+        promptValue = rawValue;
+        feedbackMessage = interpretation.message;
+        continue;
+      }
+
+      const value = interpretation.value;
+      if (mapping.required && value.length === 0) {
+        await page.evaluate(cleanupOpenMrsFieldConfirmationPrompt, undefined).catch(() => undefined);
+        return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Required OpenMRS field confirmation returned a blank value.");
+      }
+      await page.evaluate(cleanupOpenMrsFieldConfirmationPrompt, undefined).catch(() => undefined);
+      return {
+        value,
+        approvalSource: value === mapping.value ? "operator_confirmed" : "operator_edited",
         agentConfidence: decision.confidence,
         confidenceThreshold: threshold,
-        agentRationale: decision.rationale,
-        skipReason: "Operator skipped optional OpenMRS field.",
-      },
-    } satisfies FieldSkippedError;
-  }
+        agentRationale: fieldApprovalRationale(decision.rationale, interpretation.rationale),
+        originalProposedValue: value === mapping.value ? undefined : mapping.value,
+      };
+    }
 
-  return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Operator stopped OpenMRS field confirmation.");
+    if (result.action === "edit") {
+      const rawValue = result.value.trim();
+      const interpretation = await interpretOpenMrsOperatorValue(_context, mapping, rawValue);
+      if (interpretation.status === "retry") {
+        promptValue = rawValue;
+        feedbackMessage = interpretation.message;
+        continue;
+      }
+
+      const value = interpretation.value;
+      if (mapping.required && value.length === 0) {
+        await page.evaluate(cleanupOpenMrsFieldConfirmationPrompt, undefined).catch(() => undefined);
+        return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Required OpenMRS field confirmation returned a blank value.");
+      }
+      await page.evaluate(cleanupOpenMrsFieldConfirmationPrompt, undefined).catch(() => undefined);
+      return {
+        value,
+        approvalSource: value === mapping.value ? "operator_confirmed" : "operator_edited",
+        agentConfidence: decision.confidence,
+        confidenceThreshold: threshold,
+        agentRationale: fieldApprovalRationale(decision.rationale, interpretation.rationale),
+        originalProposedValue: mapping.value,
+      };
+    }
+
+    if (result.action === "skip" && !mapping.required) {
+      throw {
+        kind: "field-skipped",
+        approval: {
+          value: mapping.value,
+          approvalSource: "operator_skipped",
+          agentConfidence: decision.confidence,
+          confidenceThreshold: threshold,
+          agentRationale: decision.rationale,
+          skipReason: "Operator skipped optional OpenMRS field.",
+        },
+      } satisfies FieldSkippedError;
+    }
+
+    return stopFieldMapping(mapping, decision, threshold, screenshotPath, "Operator stopped OpenMRS field confirmation.");
+  }
 }
+
+type OpenMrsOperatorValueInterpretation =
+  | { status: "mapped"; value: string; rationale?: string }
+  | { status: "retry"; message: string; rationale?: string };
 
 async function interpretOpenMrsOperatorValue(
   context: TargetRunContext,
   mapping: FieldMapping,
   operatorInput: string,
-): Promise<{ value: string; rationale?: string }> {
+): Promise<OpenMrsOperatorValueInterpretation> {
+  const deterministicValue = deterministicOpenMrsOperatorValue(mapping, operatorInput);
+  if (deterministicValue !== undefined) {
+    return {
+      status: "mapped",
+      value: deterministicValue,
+      rationale: `Operator input ${JSON.stringify(operatorInput)} deterministically maps to ${JSON.stringify(deterministicValue)}.`,
+    };
+  }
+
   const candidates = openMrsOperatorEditedValueCandidates(mapping, operatorInput);
   const fallbackValue = candidates[0] ?? operatorInput;
   if (candidates.length <= 1) {
-    return { value: fallbackValue };
+    return { status: "mapped", value: fallbackValue };
   }
 
-  const allowedActions = candidates.map((value, index) => ({
-    id: `${OPENMRS_OPERATOR_VALUE_ACTION_PREFIX}${index}`,
-    description: `Use ${JSON.stringify(value)} as the OpenMRS ${mapping.targetField} value.`,
-  }));
+  const allowedActions = [
+    ...candidates.map((value, index) => ({
+      id: `${OPENMRS_OPERATOR_VALUE_ACTION_PREFIX}${index}`,
+      description: `Use ${JSON.stringify(value)} as the OpenMRS ${mapping.targetField} value only if it confidently represents the operator typed input ${JSON.stringify(operatorInput)}.`,
+    })),
+    {
+      id: OPENMRS_OPERATOR_VALUE_RETRY_ACTION_ID,
+      description: `Ask the operator to try again because ${JSON.stringify(operatorInput)} cannot be confidently mapped to an OpenMRS ${mapping.targetField} value.`,
+    },
+  ];
   const decision = await context.agent.decide({
     target: "openmrs",
     recordId: context.record.sourceRecordId,
@@ -667,23 +715,48 @@ async function interpretOpenMrsOperatorValue(
     metadata: {
       sourceField: mapping.sourceField,
       targetField: mapping.targetField,
-      proposedValue: mapping.value,
+      instruction: "Interpret only operatorInput. Ignore the original AI-mapped value from the field confirmation prompt.",
       operatorInput,
       candidateValues: candidates,
       selectorCandidates: mapping.selectors,
       required: mapping.required === true,
     },
   });
+  if (decision.actionId === OPENMRS_OPERATOR_VALUE_RETRY_ACTION_ID) {
+    return {
+      status: "retry",
+      message: `AI could not confidently map ${JSON.stringify(operatorInput)} to an OpenMRS ${mapping.targetField} value. Try a clearer value.`,
+      rationale: decision.rationale,
+    };
+  }
   const selectedIndex = selectedOperatorValueIndex(decision.actionId);
   if (selectedIndex === undefined || selectedIndex < 0 || selectedIndex >= candidates.length) {
     return {
-      value: fallbackValue,
-      rationale: `Operator input ${JSON.stringify(operatorInput)} fell back to ${JSON.stringify(fallbackValue)} because the agent did not choose a valid interpretation.`,
+      status: "retry",
+      message: `AI could not map ${JSON.stringify(operatorInput)} to a valid OpenMRS ${mapping.targetField} value. Try a clearer value.`,
+      rationale: `The agent did not choose a valid interpretation for ${JSON.stringify(operatorInput)}.`,
+    };
+  }
+  if (decision.confidence < OPENMRS_OPERATOR_VALUE_CONFIDENCE_THRESHOLD) {
+    return {
+      status: "retry",
+      message: `AI was not confident enough to map ${JSON.stringify(operatorInput)} to an OpenMRS ${mapping.targetField} value. Try a clearer value.`,
+      rationale: decision.rationale,
+    };
+  }
+  const selectedValue = candidates[selectedIndex] ?? fallbackValue;
+  const retryMessage = operatorValueRetryMessage(mapping, operatorInput, selectedValue);
+  if (retryMessage) {
+    return {
+      status: "retry",
+      message: retryMessage,
+      rationale: decision.rationale,
     };
   }
 
   return {
-    value: candidates[selectedIndex] ?? fallbackValue,
+    status: "mapped",
+    value: selectedValue,
     rationale: decision.rationale,
   };
 }
@@ -721,31 +794,64 @@ function openMrsOperatorEditedValueCandidates(mapping: FieldMapping, value: stri
   return uniqueValues([openMrsOperatorEditedValue(mapping, value), value]);
 }
 
+function deterministicOpenMrsOperatorValue(mapping: FieldMapping, value: string): string | undefined {
+  const normalizedValue = openMrsOperatorEditedValue(mapping, value);
+  if (mapping.targetField === "Gender" && ["Female", "Male", "Unknown"].includes(normalizedValue)) {
+    return normalizedValue;
+  }
+  if (mapping.targetField === "Birthdate Month" && MONTH_LABELS_FOR_OPERATOR_INPUT.includes(normalizedValue)) {
+    return normalizedValue;
+  }
+  if (mapping.targetField === "State/Province" && OPENMRS_STATE_LABELS.includes(normalizedValue)) {
+    return normalizedValue;
+  }
+  return undefined;
+}
+
+function operatorValueRetryMessage(mapping: FieldMapping, operatorInput: string, selectedValue: string): string | undefined {
+  const deterministicValue = openMrsOperatorEditedValue(mapping, operatorInput);
+  if (selectedValue === mapping.value && deterministicValue !== mapping.value) {
+    return `AI could not confidently map ${JSON.stringify(operatorInput)} to a new OpenMRS ${mapping.targetField} value. Try a clearer value.`;
+  }
+  if (mapping.targetField === "Gender" && !["Female", "Male", "Unknown"].includes(selectedValue)) {
+    return `AI could not map ${JSON.stringify(operatorInput)} to Female, Male, or Unknown. Try a clearer value.`;
+  }
+  if (mapping.targetField === "Birthdate Month" && !MONTH_LABELS_FOR_OPERATOR_INPUT.includes(selectedValue)) {
+    return `AI could not map ${JSON.stringify(operatorInput)} to an OpenMRS birth month. Try a clearer value.`;
+  }
+  if (mapping.targetField === "State/Province" && !OPENMRS_STATE_LABELS.includes(selectedValue)) {
+    return `AI could not map ${JSON.stringify(operatorInput)} to a US state name. Try a clearer value.`;
+  }
+  return undefined;
+}
+
 function openMrsOperatorEditedValue(mapping: FieldMapping, value: string): string {
   if (mapping.targetField === "Gender") {
     return openMrsSelectLabel(value, ["Female", "Male", "Unknown"]);
   }
   if (mapping.targetField === "Birthdate Month") {
-    return openMrsSelectLabel(value, [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ]);
+    return openMrsSelectLabel(value, MONTH_LABELS_FOR_OPERATOR_INPUT);
   }
   if (mapping.targetField === "State/Province") {
     return openMrsStateLabel(value);
   }
   return value;
 }
+
+const MONTH_LABELS_FOR_OPERATOR_INPUT = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 
 function openMrsSelectLabel(value: string, labels: string[]): string {
   const normalizedValue = value.trim().toLowerCase();
@@ -862,15 +968,28 @@ function fieldPromptEvaluationScript(input: OperatorPromptInput): string {
     addDetail("Rationale", input.rationale);
 
     var valueInput = document.createElement("input");
-    valueInput.value = input.proposedValue;
+    valueInput.value = input.value;
     valueInput.style.cssText = "width:100%;box-sizing:border-box;border:1px solid #9ca3af;border-radius:6px;padding:10px 12px;font-size:16px;";
     valueInput.setAttribute("aria-label", "OpenMRS field value");
 
     var error = document.createElement("div");
     error.style.cssText = "min-height:18px;color:#b91c1c;font-size:13px;";
+    error.textContent = input.feedbackMessage || "";
+
+    var status = document.createElement("div");
+    status.style.cssText = "min-height:18px;color:#374151;font-size:13px;";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
 
     var buttons = document.createElement("div");
     buttons.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;";
+    var actionButtons = [];
+    function setBusy(isBusy) {
+      form.setAttribute("aria-busy", isBusy ? "true" : "false");
+      valueInput.disabled = isBusy;
+      for (var index = 0; index < actionButtons.length; index += 1) actionButtons[index].disabled = isBusy;
+      status.textContent = isBusy ? "AI is interpreting this value..." : "";
+    }
     function finish(action) {
       var value = valueInput.value;
       if ((action === "confirm" || action === "edit") && input.required && value.trim().length === 0) {
@@ -878,7 +997,13 @@ function fieldPromptEvaluationScript(input: OperatorPromptInput): string {
         valueInput.focus();
         return;
       }
-      overlay.remove();
+      if (action === "confirm" && value === input.proposedValue) {
+        overlay.remove();
+      } else if (action === "confirm" || action === "edit") {
+        setBusy(true);
+      } else {
+        overlay.remove();
+      }
       resolve({ action, value });
     }
     function addButton(label, action, kind) {
@@ -891,6 +1016,7 @@ function fieldPromptEvaluationScript(input: OperatorPromptInput): string {
       if (kind === "primary") button.style.cssText += "background:#2563eb;border-color:#2563eb;color:#fff;";
       if (kind === "danger") button.style.cssText += "background:#b91c1c;border-color:#b91c1c;color:#fff;";
       button.addEventListener("click", function () { finish(action); });
+      actionButtons.push(button);
       buttons.appendChild(button);
     }
 
@@ -907,6 +1033,7 @@ function fieldPromptEvaluationScript(input: OperatorPromptInput): string {
     form.appendChild(details);
     form.appendChild(valueInput);
     form.appendChild(error);
+    form.appendChild(status);
     form.appendChild(buttons);
     overlay.appendChild(form);
     document.body.append(overlay);
