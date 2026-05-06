@@ -145,7 +145,7 @@ describe("OpenMrsAdapter", () => {
         suggestedRemediation: "The OpenMRS dashboard was not ready.",
       },
     });
-    expect(agent.inputs[0].screenshotPath).toBe("screenshots/demo-001/openmrs/before-navigation.png");
+    expect(agent.inputs[0].screenshotPath).toBe("screenshots/demo-001/openmrs/0001-before-navigation.png");
     await expect(readFile(join(root, "run-openmrs", agent.inputs[0].screenshotPath!), "utf8")).resolves.toBe("screenshot-1");
   });
 
@@ -199,8 +199,8 @@ describe("OpenMrsAdapter", () => {
         recordId: "demo-001",
         target: "openmrs",
         status: "succeeded",
-        screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
-        fieldScreenshotPath: "screenshots/demo-001/openmrs/after-fill.png",
+        screenshotPath: "screenshots/demo-001/openmrs/0003-after-save.png",
+        fieldScreenshotPath: "screenshots/demo-001/openmrs/0002-after-fill.png",
         targetRecordId: "openmrs-demo-001",
         message: "submitted OpenMRS patient form and opened the patient dashboard",
       }),
@@ -1008,7 +1008,7 @@ describe("OpenMrsAdapter", () => {
         field: "sexOrGender",
         message: "Operator stopped OpenMRS field confirmation.",
         suggestedRemediation: "OpenMRS mapping confidence 0.97 is below threshold 0.99.",
-        screenshotPath: "screenshots/demo-001/openmrs/field-review-gender.png",
+        screenshotPath: "screenshots/demo-001/openmrs/0002-field-review-gender.png",
         proposedValue: "Female",
         confidenceThreshold: 0.99,
       },
@@ -1082,7 +1082,7 @@ describe("OpenMrsAdapter", () => {
         severity: "error",
         message: "OpenMRS indicated a possible duplicate patient.",
         suggestedRemediation: "Review the patient match screen and decide whether to merge, update, or skip.",
-        screenshotPath: "screenshots/demo-001/openmrs/after-save.png",
+        screenshotPath: "screenshots/demo-001/openmrs/0003-after-save.png",
       },
     });
     expect(audit.getReportDetails().issues).toContainEqual(

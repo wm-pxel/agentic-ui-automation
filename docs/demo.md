@@ -195,9 +195,10 @@ For `data/demo/intake-records.json`, the expected clean OpenMRS target result is
 - `targetCounts.openmrs.succeeded` is `4`.
 - `targetCounts.openmrs.exception` is `0`.
 - `exceptions/` only contains the intentional validation exceptions.
-- Each valid record has three OpenMRS screenshots: `before-navigation.png`,
-  `after-fill.png`, and a patient-dashboard `after-save.png` with contact info
-  expanded when OpenMRS exposes it.
+- Each valid record has three ordered OpenMRS screenshots:
+  `0001-before-navigation.png`, `0002-after-fill.png`, and a
+  patient-dashboard `0003-after-save.png` with contact info expanded when
+  OpenMRS exposes it.
 - `summary.md` includes an OpenMRS record review with raw intake input,
   patient-dashboard proof screenshots, per-field mapping confidence, and
   source-to-OpenMRS comparisons. Optional contact fields that are unavailable in

@@ -136,7 +136,7 @@ The workflow is a TypeScript CLI that turns synthetic intake source documents
 into audited UI data-entry runs. It uses OpenAI for optional source parsing and
 agent decisions, deterministic TypeScript validation for safety gates,
 Playwright for OpenMRS browser automation, and Electron for the local intake
-queue and CSV handoff app.
+queue and CSV handoff app, and a local read-only run viewer for audit review.
 
 | Layer | Technology | Role |
 | --- | --- | --- |
@@ -145,6 +145,7 @@ queue and CSV handoff app.
 | Validation contract | ![Zod][zod-badge] | Defines schemas for CLI config, records, agent decisions, and target results. |
 | Web target | ![Playwright][playwright-badge] ![OpenMRS][openmrs-badge] | Automates synthetic patient entry in browser-based OpenMRS demo environments. |
 | Desktop intake app | Electron | Reviews seeded or imported synthetic intake records and exports CSV handoff files. |
+| Run viewer | Node.js HTTP server | Serves a local read-only browser UI for generated run summaries and linked audit artifacts. |
 | Audit and verification | ![JSON][json-badge] ![Markdown][markdown-badge] ![Vitest][vitest-badge] | Writes run artifacts, reports, event logs, screenshots, and test coverage. |
 
 [node-badge]: https://img.shields.io/badge/Node.js-5FA04E?logo=nodedotjs&logoColor=white
@@ -170,6 +171,8 @@ flowchart LR
   CLI --> DesktopApp["Electron intake app"]
   DesktopApp --> Handoff["CSV handoff files"]
   Orchestrator --> Audit["File audit package"]
+  CLI --> Viewer["Local read-only run viewer"]
+  Audit --> Viewer
 ```
 
 ## Data Flow
@@ -206,11 +209,14 @@ flowchart TD
   Counts --> Reports
   TargetException --> Reports
   Reports --> AuditPackage["run.json, report.json,<br/>summary.md, executive-summary.md,<br/>events.jsonl"]
+  AuditPackage --> Viewer["Optional local viewer<br/>renders Markdown and linked artifacts"]
 ```
 
 The data flow converts source documents into raw intake records, applies
 deterministic validation before target entry, records all successful and
 exceptional paths, and finishes with the audit contract under `runs/<run-id>/`.
+The viewer reads those files after or during a run for local review; it does not
+write records, invoke target adapters, or mutate audit artifacts.
 
 ## Quick Start
 
@@ -462,8 +468,8 @@ Manual verification:
    find "runs/$RUN_ID/screenshots" -path "*/openmrs/*.png" | sort
    ```
 
-4. Open each `after-save.png` screenshot and confirm it shows the newly created
-   patient's dashboard with the generated synthetic patient name.
+4. Open each `*-after-save.png` screenshot and confirm it shows the newly
+   created patient's dashboard with the generated synthetic patient name.
 5. Log in to the same OpenMRS environment used by the run.
 6. Open the patient search or finder screen.
 7. Search for the four generated last names from `normalized-records.json`.
@@ -494,7 +500,7 @@ report.json
 events.jsonl
 input/normalized-records.json
 exceptions/*.json
-screenshots/<record-id>/<target>/<step>.png
+screenshots/<record-id>/<target>/<capture-order>-<step>.png
 ```
 
 Use the `runId` from CLI output to inspect a specific run:
@@ -510,8 +516,9 @@ find "runs/$RUN_ID/exceptions" -maxdepth 1 -type f -print -exec cat {} \;
 find "runs/$RUN_ID/screenshots" -type f | sort
 ```
 
-The screenshot tree is nested by record, target, and step so the audit trail can
-answer what the workflow saw for a specific record in a specific app.
+The screenshot tree is nested by record and target. Screenshot filenames are
+prefixed with capture order, such as `0001-before-navigation.png`, so sorted
+directory listings show what the workflow saw in the order it saw it.
 
 ## Run Viewer
 
@@ -675,6 +682,7 @@ src/adapters/      Shared target adapter contract and fake adapter
 src/desktop/       Electron intake app and seeded/imported queue service
 src/handoff/       CSV/JSON handoff file writer
 src/watcher/       Separate handoff watcher and workflow launcher
+src/viewer/        Local read-only HTTP viewer for run summaries and artifacts
 src/targets/       OpenMRS implementation
 tests/             Unit and integration-style coverage
 docs/demo.md       Longer smoke-demo walkthrough

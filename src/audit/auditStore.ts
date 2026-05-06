@@ -1,4 +1,4 @@
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join } from "node:path";
 import { AuditEventSchema } from "../domain/schema.js";
@@ -173,14 +173,15 @@ export class FileAuditStore {
     const safeRecordId = safeArtifactSegment(recordId, "record");
     const safeTarget = safeArtifactSegment(target, "target");
     const safeStep = safeArtifactSegment(step, "step");
-    const key = `${safeRecordId}/${safeTarget}/${safeStep}`;
+    const key = `${safeRecordId}/${safeTarget}`;
     const screenshotDir = join(this.runDir, "screenshots", safeRecordId, safeTarget);
     await mkdir(screenshotDir, { recursive: true });
+    await this.initializeScreenshotCount(key, screenshotDir);
     return this.writeUniqueArtifact({
       counts: this.screenshotCounts,
       key,
       makeRelativePath: (count) =>
-        join("screenshots", safeRecordId, safeTarget, count === 1 ? `${safeStep}.png` : `${safeStep}-${formatCount(count)}.png`),
+        join("screenshots", safeRecordId, safeTarget, `${formatCount(count)}-${safeStep}.png`),
       content: bytes,
     });
   }
@@ -280,6 +281,16 @@ export class FileAuditStore {
     return count;
   }
 
+  private async initializeScreenshotCount(key: string, screenshotDir: string): Promise<void> {
+    if (this.screenshotCounts.has(key)) {
+      return;
+    }
+
+    const entries = await readdir(screenshotDir);
+    const highestExisting = entries.reduce((highest, entry) => Math.max(highest, screenshotOrderPrefix(entry)), 0);
+    this.screenshotCounts.set(key, highestExisting);
+  }
+
   private async writeUniqueArtifact(input: {
     counts: Map<string, number>;
     key: string;
@@ -331,6 +342,11 @@ function safeArtifactSegment(value: string, fallback: string): string {
 
 function formatCount(count: number): string {
   return String(count).padStart(4, "0");
+}
+
+function screenshotOrderPrefix(filename: string): number {
+  const match = /^(\d{4})-/.exec(filename);
+  return match ? Number(match[1]) : 0;
 }
 
 function isFileExistsError(error: unknown): boolean {

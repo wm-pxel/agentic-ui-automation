@@ -31,7 +31,7 @@ describe("FileAuditStore", () => {
     await store.writeSummary("# Summary\n");
     await store.writeExecutiveSummary("# Executive Summary\n");
 
-    expect(screenshotPath).toContain("screenshots/demo-001/fake/after-save.png");
+    expect(screenshotPath).toContain("screenshots/demo-001/fake/0001-after-save.png");
 
     const events = await readFile(join(root, "run-test", "events.jsonl"), "utf8");
     expect(events).toContain("\"actionType\":\"click\"");
@@ -360,10 +360,25 @@ describe("FileAuditStore", () => {
     const second = await store.writeScreenshot("demo-001", "fake", "after-save", Buffer.from("two"));
 
     expect(first).not.toBe(second);
-    expect(first).toContain("screenshots/demo-001/fake/after-save");
-    expect(second).toContain("screenshots/demo-001/fake/after-save");
+    expect(first).toContain("screenshots/demo-001/fake/0001-after-save");
+    expect(second).toContain("screenshots/demo-001/fake/0002-after-save");
     await expect(readFile(join(root, "run-test", first), "utf8")).resolves.toBe("one");
     await expect(readFile(join(root, "run-test", second), "utf8")).resolves.toBe("two");
+  });
+
+  it("prefixes screenshot filenames by capture order", async () => {
+    const root = await mkdtemp(join(tmpdir(), "audit-screenshot-order-"));
+    const store = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
+
+    const before = await store.writeScreenshot("demo-001", "openmrs", "before-navigation", Buffer.from("before"));
+    const filled = await store.writeScreenshot("demo-001", "openmrs", "after-fill", Buffer.from("filled"));
+    const saved = await store.writeScreenshot("demo-001", "openmrs", "after-save", Buffer.from("saved"));
+
+    expect([before, filled, saved]).toEqual([
+      "screenshots/demo-001/openmrs/0001-before-navigation.png",
+      "screenshots/demo-001/openmrs/0002-after-fill.png",
+      "screenshots/demo-001/openmrs/0003-after-save.png",
+    ]);
   });
 
   it("sanitizes record IDs for screenshot and exception artifact paths", async () => {
@@ -377,7 +392,7 @@ describe("FileAuditStore", () => {
       message: "Missing source ID.",
     });
 
-    expect(screenshotPath).toBe("screenshots/case-001/fake/before-save.png");
+    expect(screenshotPath).toBe("screenshots/case-001/fake/0001-before-save.png");
     expect(exceptionPath).toBe("exceptions/record.json");
     await expect(readFile(join(root, "run-test", screenshotPath), "utf8")).resolves.toBe("png");
     await expect(readFile(join(root, "run-test", exceptionPath), "utf8")).resolves.toContain("Missing source ID.");
@@ -394,6 +409,20 @@ describe("FileAuditStore", () => {
     expect(first).not.toBe(second);
     await expect(readFile(join(root, "run-test", first), "utf8")).resolves.toBe("one");
     await expect(readFile(join(root, "run-test", second), "utf8")).resolves.toBe("two");
+  });
+
+  it("continues screenshot ordering across reopened stores", async () => {
+    const root = await mkdtemp(join(tmpdir(), "audit-resumed-screenshot-order-"));
+    const firstStore = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
+    const first = await firstStore.writeScreenshot("demo-001", "openmrs", "before-navigation", Buffer.from("before"));
+
+    const secondStore = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
+    const second = await secondStore.writeScreenshot("demo-001", "openmrs", "after-fill", Buffer.from("filled"));
+
+    expect([first, second]).toEqual([
+      "screenshots/demo-001/openmrs/0001-before-navigation.png",
+      "screenshots/demo-001/openmrs/0002-after-fill.png",
+    ]);
   });
 
   it("keeps repeated exceptions with unique paths", async () => {

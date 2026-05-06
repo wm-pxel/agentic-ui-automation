@@ -345,7 +345,7 @@ describe("runWorkflow", () => {
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
-    expect(agent.lastScreenshotPath).toBe("screenshots/demo-agent-context/fake/before-entry.png");
+    expect(agent.lastScreenshotPath).toBe("screenshots/demo-agent-context/fake/0001-before-entry.png");
     expect(agent.lastScreenshotRootDir).toBe(join(runsDir, "run-agent-context"));
   });
 
