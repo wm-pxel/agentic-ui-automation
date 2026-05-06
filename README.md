@@ -92,6 +92,7 @@ exported handoff and continues into OpenMRS.
 - [Current Status](#current-status)
 - [Architecture](#architecture)
 - [Data Flow](#data-flow)
+- [OpenAI API Touchpoints](#openai-api-touchpoints)
 - [Quick Start](#quick-start)
 - [Desktop Intake App](#desktop-intake-app)
 - [Handoff Watcher](#handoff-watcher)
@@ -218,6 +219,28 @@ deterministic validation before target entry, records all successful and
 exceptional paths, and finishes with the audit contract under `runs/<run-id>/`.
 The viewer reads those files after or during a run for local review; it does not
 write records, invoke target adapters, or mutate audit artifacts.
+
+## OpenAI API Touchpoints
+
+The workflow has two OpenAI API integration points. Both use the OpenAI
+Responses API through the `openai` Node SDK and require `OPENAI_API_KEY` when
+enabled.
+
+1. Source parsing: `src/parsing/aiIntakeParser.ts` calls OpenAI when
+   `--parser openai` is used. This is the default for direct `run` commands and
+   extracts structured intake records, confidence scores, and source evidence
+   from JSON, CSV, TXT, PDF, or DOCX text-bearing inputs. Use
+   `--parser deterministic` with normalized fixtures when a run should not call
+   OpenAI.
+2. UI decision agent: `src/agent/openAiUiAgent.ts` calls OpenAI when
+   `--agent openai` is used. This is optional because the default agent is
+   `scripted`. The OpenAI-backed agent chooses from bounded allowed actions and
+   can receive screenshot evidence when a target step needs visual context, such
+   as interpreting edited OpenMRS field-confirmation input.
+
+The Electron intake app also uses the source parser for imported PDF and DOCX
+files because those formats need text extraction before they can enter the
+normalized queue. JSON, CSV, and TXT imports use deterministic loading.
 
 ## Quick Start
 
