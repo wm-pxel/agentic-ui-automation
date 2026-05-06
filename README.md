@@ -144,8 +144,8 @@ queue and CSV handoff app, and a local read-only run viewer for audit review.
 | AI parsing and agent decisions | ![OpenAI][openai-badge] | Extracts variable intake documents and optionally approves bounded UI actions. |
 | Validation contract | ![Zod][zod-badge] | Defines schemas for CLI config, records, agent decisions, and target results. |
 | Web target | ![Playwright][playwright-badge] ![OpenMRS][openmrs-badge] | Automates synthetic patient entry in browser-based OpenMRS demo environments. |
-| Desktop intake app | Electron | Reviews seeded or imported synthetic intake records and exports CSV handoff files. |
-| Run viewer | Node.js HTTP server | Serves a local read-only browser UI for generated run summaries and linked audit artifacts. |
+| Desktop intake app | ![Electron][electron-badge] | Reviews seeded or imported synthetic intake records and exports CSV handoff files. |
+| Run viewer | ![Node.js][node-badge] HTTP server | Serves a local read-only browser UI for generated run summaries and linked audit artifacts. |
 | Audit and verification | ![JSON][json-badge] ![Markdown][markdown-badge] ![Vitest][vitest-badge] | Writes run artifacts, reports, event logs, screenshots, and test coverage. |
 
 [node-badge]: https://img.shields.io/badge/Node.js-5FA04E?logo=nodedotjs&logoColor=white
@@ -154,6 +154,7 @@ queue and CSV handoff app, and a local read-only run viewer for audit review.
 [zod-badge]: https://img.shields.io/badge/Zod-3E67B1?logo=zod&logoColor=white
 [playwright-badge]: https://img.shields.io/badge/Playwright-2EAD33?logo=playwright&logoColor=white
 [openmrs-badge]: https://img.shields.io/badge/OpenMRS-005A70
+[electron-badge]: https://img.shields.io/badge/Electron-47848F?logo=electron&logoColor=white
 [json-badge]: https://img.shields.io/badge/JSON-000000?logo=json&logoColor=white
 [markdown-badge]: https://img.shields.io/badge/Markdown-000000?logo=markdown&logoColor=white
 [vitest-badge]: https://img.shields.io/badge/Vitest-6E9F18?logo=vitest&logoColor=white
