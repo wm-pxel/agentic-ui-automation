@@ -2,14 +2,12 @@ import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { TargetAdapter, TargetAdapterResult, TargetPrepareContext, TargetRunContext } from "../../src/adapters/contract.js";
-import type { AgentDecision, AgentDecisionInput, AgentDriver } from "../../src/agent/types.js";
-import { FakeAdapter } from "../../src/adapters/fakeAdapter.js";
-import { ScriptedAgentDriver } from "../../src/agent/scriptedAgent.js";
+import type { AiWebTargetResult, AiWebTargetRunContext } from "../../src/targets/aiWebTargetRunner.js";
+import type { TargetProfile } from "../../src/targets/profiles.js";
 import { runWorkflow } from "../../src/orchestrator/runWorkflow.js";
 
 describe("runWorkflow", () => {
-  it("runs valid records through adapters and writes audit artifacts", async () => {
+  it("runs valid records through target profiles and writes audit artifacts", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-"));
     const result = await runWorkflow({
       runId: "run-orchestrator",
@@ -18,8 +16,8 @@ describe("runWorkflow", () => {
         cleanRecord("demo-001"),
         { ...cleanRecord("demo-missing"), dateOfBirth: "" },
       ],
-      adapters: [new FakeAdapter("success")],
-      agent: new ScriptedAgentDriver(),
+      profiles: [fakeProfile()],
+      targetRunner: new FakeTargetRunner(),
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
@@ -55,8 +53,8 @@ describe("runWorkflow", () => {
       runId: "run-prepare-failed",
       runsDir,
       records: [],
-      adapters: [new ThrowingPrepareAdapter()],
-      agent: new ScriptedAgentDriver(),
+      profiles: [fakeProfile()],
+      targetRunner: new ThrowingPrepareTargetRunner(),
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
@@ -74,14 +72,14 @@ describe("runWorkflow", () => {
     expect(events).toContain("environment_not_ready");
   });
 
-  it("converts adapter runRecord throws into target exceptions", async () => {
+  it("converts target runner runRecord throws into target exceptions", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-run-throw-"));
     const result = await runWorkflow({
       runId: "run-record-throws",
       runsDir,
       records: [cleanRecord("demo-throw")],
-      adapters: [new ThrowingRunRecordAdapter()],
-      agent: new ScriptedAgentDriver(),
+      profiles: [fakeProfile()],
+      targetRunner: new ThrowingRunRecordTargetRunner(),
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
@@ -96,8 +94,8 @@ describe("runWorkflow", () => {
       runId: "run-report",
       runsDir,
       records: [cleanRecord("demo-target-exception"), { ...cleanRecord("demo-validation-exception"), dateOfBirth: "" }],
-      adapters: [new ThrowingRunRecordAdapter()],
-      agent: new ScriptedAgentDriver(),
+      profiles: [fakeProfile()],
+      targetRunner: new ThrowingRunRecordTargetRunner(),
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
@@ -167,8 +165,8 @@ describe("runWorkflow", () => {
       runId: "run-path-unsafe-record",
       runsDir,
       records: [cleanRecord("case/001")],
-      adapters: [new ThrowingRunRecordAdapter()],
-      agent: new ScriptedAgentDriver(),
+      profiles: [fakeProfile()],
+      targetRunner: new ThrowingRunRecordTargetRunner(),
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
@@ -178,14 +176,14 @@ describe("runWorkflow", () => {
     expect(exceptionFiles).toContain("case-001-fake.json");
   });
 
-  it("converts malformed adapter results into target exceptions", async () => {
+  it("converts malformed target runner results into target exceptions", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-malformed-"));
     const result = await runWorkflow({
       runId: "run-malformed",
       runsDir,
       records: [cleanRecord("demo-malformed")],
-      adapters: [new MalformedResultAdapter()],
-      agent: new ScriptedAgentDriver(),
+      profiles: [fakeProfile()],
+      targetRunner: new MalformedResultTargetRunner(),
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
@@ -194,14 +192,14 @@ describe("runWorkflow", () => {
     await expect(readExceptions(runsDir, "run-malformed")).resolves.toContain("ui_state_unexpected");
   });
 
-  it("records skipped adapter result reasons in completion events", async () => {
+  it("records skipped target runner result reasons in completion events", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-skipped-"));
     const result = await runWorkflow({
       runId: "run-skipped",
       runsDir,
       records: [cleanRecord("demo-skipped")],
-      adapters: [new SkippingAdapter()],
-      agent: new ScriptedAgentDriver(),
+      profiles: [fakeProfile()],
+      targetRunner: new SkippingTargetRunner(),
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
@@ -212,53 +210,54 @@ describe("runWorkflow", () => {
     expect(events).toContain("Record did not meet fake target criteria.");
   });
 
-  it("runs records for adapters up to the adapter concurrency limit", async () => {
+  it("runs records for profiles up to the profile concurrency limit", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-concurrent-target-"));
-    const adapter = new ConcurrentAdapter(2);
+    const targetRunner = new ConcurrentTargetRunner();
     const result = await runWorkflow({
       runId: "run-concurrent-target",
       runsDir,
       records: [cleanRecord("demo-001"), cleanRecord("demo-002"), cleanRecord("demo-003")],
-      adapters: [adapter],
-      agent: new ScriptedAgentDriver(),
+      profiles: [fakeProfile({ concurrency: 2 })],
+      targetRunner,
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
     expect(result.status).toBe("completed");
     expect(result.targetCounts.fake).toEqual({ succeeded: 3, exception: 0, skipped: 0 });
-    expect(adapter.maxActive).toBe(2);
+    expect(targetRunner.maxActive).toBe(2);
   });
 
-  it("passes the planned record count when preparing adapters", async () => {
+  it("passes all profiles and the planned record count when preparing the target runner", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-prepare-planned-records-"));
-    const adapter = new PrepareContextAdapter();
+    const targetRunner = new PrepareContextTargetRunner();
+    const profiles = [fakeProfile(), fakeProfile({ name: "openemr", displayName: "OpenEMR" })];
 
     await runWorkflow({
       runId: "run-prepare-planned-records",
       runsDir,
       records: [cleanRecord("demo-001")],
-      adapters: [adapter],
-      agent: new ScriptedAgentDriver(),
+      profiles,
+      targetRunner,
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
-    expect(adapter.prepareContexts).toEqual([{ plannedRecords: 1 }]);
+    expect(targetRunner.prepareContexts).toEqual([{ profiles, plannedRecords: 1 }]);
   });
 
-  it("closes ready adapters after successful runs", async () => {
+  it("closes ready target runners after successful runs", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-close-success-"));
-    const adapter = new CloseTrackingAdapter();
+    const targetRunner = new CloseTrackingTargetRunner();
 
     await runWorkflow({
       runId: "run-close-success",
       runsDir,
       records: [cleanRecord("demo-close")],
-      adapters: [adapter],
-      agent: new ScriptedAgentDriver(),
+      profiles: [fakeProfile()],
+      targetRunner,
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
-    expect(adapter.closed).toBe(true);
+    expect(targetRunner.closed).toBe(true);
   });
 
   it("marks close failures as completed with exceptions without crashing the run", async () => {
@@ -267,8 +266,8 @@ describe("runWorkflow", () => {
       runId: "run-close-failure",
       runsDir,
       records: [cleanRecord("demo-close-failure")],
-      adapters: [new ThrowingCloseAdapter()],
-      agent: new ScriptedAgentDriver(),
+      profiles: [fakeProfile()],
+      targetRunner: new ThrowingCloseTargetRunner(),
       now: () => "2026-04-28T12:00:00.000Z",
     });
 
@@ -282,22 +281,22 @@ describe("runWorkflow", () => {
     expect(events).toContain("ui_state_unexpected");
   });
 
-  it("treats audit failures after prepare as orchestrator failures and still closes ready adapters", async () => {
+  it("treats audit failures after prepare as orchestrator failures and still closes ready target runners", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-audit-failure-"));
-    const adapter = new AuditSabotagePrepareAdapter(runsDir, "run-audit-failure");
+    const targetRunner = new AuditSabotagePrepareTargetRunner(runsDir, "run-audit-failure");
 
     await expect(
       runWorkflow({
         runId: "run-audit-failure",
         runsDir,
         records: [],
-        adapters: [adapter],
-        agent: new ScriptedAgentDriver(),
+        profiles: [fakeProfile()],
+        targetRunner,
         now: () => "2026-04-28T12:00:00.000Z",
       }),
     ).rejects.toThrow();
 
-    expect(adapter.closed).toBe(true);
+    expect(targetRunner.closed).toBe(true);
     const runMetadata = JSON.parse(await readFile(join(runsDir, "run-audit-failure", "run.json"), "utf8"));
     expect(runMetadata.status).toBe("failed");
 
@@ -307,15 +306,15 @@ describe("runWorkflow", () => {
 
   it("writes a failed report when the workflow fails after initial audit artifacts start", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-failed-report-"));
-    const adapter = new AuditSabotagePrepareAdapter(runsDir, "run-failed-report");
+    const targetRunner = new AuditSabotagePrepareTargetRunner(runsDir, "run-failed-report");
 
     await expect(
       runWorkflow({
         runId: "run-failed-report",
         runsDir,
         records: [],
-        adapters: [adapter],
-        agent: new ScriptedAgentDriver(),
+        profiles: [fakeProfile()],
+        targetRunner,
         now: () => "2026-04-28T12:00:00.000Z",
       }),
     ).rejects.toThrow();
@@ -333,103 +332,58 @@ describe("runWorkflow", () => {
     expect(executiveSummary).toContain("| Status | failed |");
     expect(executiveSummary).toContain("|  |  | run | ui_state_unexpected |");
   });
-
-  it("passes the audit run directory to agent decisions so run-relative screenshots can be resolved", async () => {
-    const runsDir = await mkdtemp(join(tmpdir(), "workflow-agent-context-"));
-    const agent = new CapturingAgent();
-
-    await runWorkflow({
-      runId: "run-agent-context",
-      runsDir,
-      records: [cleanRecord("demo-agent-context")],
-      adapters: [new AgentScreenshotAdapter()],
-      agent,
-      now: () => "2026-04-28T12:00:00.000Z",
-    });
-
-    expect(agent.lastScreenshotPath).toBe("screenshots/demo-agent-context/fake/0001-before-entry.png");
-    expect(agent.lastScreenshotRootDir).toBe(join(runsDir, "run-agent-context"));
-  });
-
-  it("validates agent decisions before adapters act on them", async () => {
-    const runsDir = await mkdtemp(join(tmpdir(), "workflow-invalid-agent-"));
-    const adapter = new AgentApprovedSideEffectAdapter();
-    const result = await runWorkflow({
-      runId: "run-invalid-agent",
-      runsDir,
-      records: [cleanRecord("demo-invalid-agent")],
-      adapters: [adapter],
-      agent: new InvalidConfidenceAgent(),
-      now: () => "2026-04-28T12:00:00.000Z",
-    });
-
-    expect(result.status).toBe("completed_with_exceptions");
-    expect(result.targetCounts.fake).toEqual({ succeeded: 0, exception: 1, skipped: 0 });
-    expect(adapter.sideEffectPerformed).toBe(false);
-    await expect(readExceptions(runsDir, "run-invalid-agent")).resolves.toContain("Expected number, received nan");
-  });
 });
 
-class ThrowingPrepareAdapter implements TargetAdapter {
-  readonly name = "fake";
+class FakeTargetRunner {
+  async prepare(_profiles: TargetProfile[], _plannedRecords: number): Promise<void> {}
 
-  async prepare(): Promise<void> {
+  async runRecord(context: AiWebTargetRunContext): Promise<AiWebTargetResult> {
+    await context.audit.writeEvent({
+      recordId: context.record.sourceRecordId,
+      target: context.profile.name,
+      phase: "target",
+      actionType: "inspect",
+      rationale: "Fake target runner inspected the normalized intake record.",
+      result: "inspect complete",
+    });
+    return {
+      status: "succeeded",
+      targetRecordId: `${context.profile.name}-${context.record.sourceRecordId}`,
+    };
+  }
+
+  async close(): Promise<void> {}
+}
+
+class ThrowingPrepareTargetRunner extends FakeTargetRunner {
+  override async prepare(_profiles: TargetProfile[], _plannedRecords: number): Promise<void> {
     throw new Error("Target application is unavailable.");
   }
-
-  async runRecord(_context: TargetRunContext) {
-    return { status: "succeeded" as const };
-  }
-
-  async close(): Promise<void> {}
 }
 
-class ThrowingRunRecordAdapter implements TargetAdapter {
-  readonly name = "fake";
-
-  async prepare(): Promise<void> {}
-
-  async runRecord(_context: TargetRunContext): Promise<TargetAdapterResult> {
+class ThrowingRunRecordTargetRunner extends FakeTargetRunner {
+  override async runRecord(_context: AiWebTargetRunContext): Promise<AiWebTargetResult> {
     throw new Error("Run record failed.");
   }
-
-  async close(): Promise<void> {}
 }
 
-class MalformedResultAdapter implements TargetAdapter {
-  readonly name = "fake";
-
-  async prepare(): Promise<void> {}
-
-  async runRecord(_context: TargetRunContext): Promise<TargetAdapterResult> {
+class MalformedResultTargetRunner extends FakeTargetRunner {
+  override async runRecord(_context: AiWebTargetRunContext): Promise<AiWebTargetResult> {
     return { status: "unknown" } as never;
   }
-
-  async close(): Promise<void> {}
 }
 
-class SkippingAdapter implements TargetAdapter {
-  readonly name = "fake";
-
-  async prepare(): Promise<void> {}
-
-  async runRecord(_context: TargetRunContext): Promise<TargetAdapterResult> {
+class SkippingTargetRunner extends FakeTargetRunner {
+  override async runRecord(_context: AiWebTargetRunContext): Promise<AiWebTargetResult> {
     return { status: "skipped", reason: "Record did not meet fake target criteria." };
   }
-
-  async close(): Promise<void> {}
 }
 
-class ConcurrentAdapter implements TargetAdapter {
-  readonly name = "fake";
+class ConcurrentTargetRunner extends FakeTargetRunner {
   active = 0;
   maxActive = 0;
 
-  constructor(readonly maxConcurrency: number) {}
-
-  async prepare(): Promise<void> {}
-
-  async runRecord(_context: TargetRunContext): Promise<TargetAdapterResult> {
+  override async runRecord(_context: AiWebTargetRunContext): Promise<AiWebTargetResult> {
     this.active += 1;
     this.maxActive = Math.max(this.maxActive, this.active);
     await sleep(20);
@@ -437,145 +391,63 @@ class ConcurrentAdapter implements TargetAdapter {
     return { status: "succeeded" };
   }
 
-  async close(): Promise<void> {}
 }
 
-class PrepareContextAdapter implements TargetAdapter {
-  readonly name = "fake";
-  readonly prepareContexts: Array<TargetPrepareContext | undefined> = [];
+class PrepareContextTargetRunner extends FakeTargetRunner {
+  readonly prepareContexts: Array<{ profiles: TargetProfile[]; plannedRecords: number }> = [];
 
-  async prepare(context?: TargetPrepareContext): Promise<void> {
-    this.prepareContexts.push(context);
+  override async prepare(profiles: TargetProfile[], plannedRecords: number): Promise<void> {
+    this.prepareContexts.push({ profiles, plannedRecords });
   }
-
-  async runRecord(_context: TargetRunContext): Promise<TargetAdapterResult> {
-    return { status: "succeeded" };
-  }
-
-  async close(): Promise<void> {}
 }
 
-class CloseTrackingAdapter implements TargetAdapter {
-  readonly name = "fake";
+class CloseTrackingTargetRunner extends FakeTargetRunner {
   closed = false;
 
-  async prepare(): Promise<void> {}
-
-  async runRecord(_context: TargetRunContext): Promise<TargetAdapterResult> {
-    return { status: "succeeded" };
-  }
-
-  async close(): Promise<void> {
+  override async close(): Promise<void> {
     this.closed = true;
   }
 }
 
-class ThrowingCloseAdapter implements TargetAdapter {
-  readonly name = "fake";
-
-  async prepare(): Promise<void> {}
-
-  async runRecord(_context: TargetRunContext): Promise<TargetAdapterResult> {
-    return { status: "succeeded" };
-  }
-
-  async close(): Promise<void> {
+class ThrowingCloseTargetRunner extends FakeTargetRunner {
+  override async close(): Promise<void> {
     throw new Error("Close failed.");
   }
 }
 
-class AuditSabotagePrepareAdapter implements TargetAdapter {
-  readonly name = "fake";
+class AuditSabotagePrepareTargetRunner extends FakeTargetRunner {
   closed = false;
 
   constructor(
     private readonly runsDir: string,
     private readonly runId: string,
-  ) {}
+  ) {
+    super();
+  }
 
-  async prepare(): Promise<void> {
+  override async prepare(_profiles: TargetProfile[], _plannedRecords: number): Promise<void> {
     const eventsPath = join(this.runsDir, this.runId, "events.jsonl");
     await rm(eventsPath);
     await mkdir(eventsPath);
   }
 
-  async runRecord(_context: TargetRunContext): Promise<TargetAdapterResult> {
-    return { status: "succeeded" };
-  }
-
-  async close(): Promise<void> {
+  override async close(): Promise<void> {
     this.closed = true;
   }
 }
 
-class AgentScreenshotAdapter implements TargetAdapter {
-  readonly name = "fake";
-
-  async prepare(): Promise<void> {}
-
-  async runRecord(context: TargetRunContext): Promise<TargetAdapterResult> {
-    const screenshotPath = await context.audit.writeScreenshot(
-      context.record.sourceRecordId,
-      this.name,
-      "before-entry",
-      Buffer.from("png-data"),
-    );
-    await context.agent.decide({
-      target: this.name,
-      recordId: context.record.sourceRecordId,
-      step: "inspect-screenshot",
-      screenshotPath,
-      allowedActions: [{ id: "continue", description: "Continue after screenshot inspection." }],
-    });
-    return { status: "succeeded" };
-  }
-
-  async close(): Promise<void> {}
-}
-
-class CapturingAgent implements AgentDriver {
-  lastScreenshotPath?: string;
-  lastScreenshotRootDir?: string;
-
-  async decide(input: AgentDecisionInput): Promise<AgentDecision> {
-    this.lastScreenshotPath = input.screenshotPath;
-    this.lastScreenshotRootDir = input.screenshotRootDir;
-    return {
-      actionId: input.allowedActions[0]?.id ?? "stop",
-      confidence: 1,
-      rationale: "Captured agent input.",
-    };
-  }
-}
-
-class AgentApprovedSideEffectAdapter implements TargetAdapter {
-  readonly name = "fake";
-  sideEffectPerformed = false;
-
-  async prepare(): Promise<void> {}
-
-  async runRecord(context: TargetRunContext): Promise<TargetAdapterResult> {
-    await context.agent.decide({
-      target: this.name,
-      recordId: context.record.sourceRecordId,
-      step: "perform-side-effect",
-      allowedActions: [{ id: "perform", description: "Perform the target side effect." }],
-    });
-    this.sideEffectPerformed = true;
-    return { status: "succeeded" };
-  }
-
-  async close(): Promise<void> {}
-}
-
-class InvalidConfidenceAgent implements AgentDriver {
-  async decide(_input: AgentDecisionInput): Promise<AgentDecision> {
-    return {
-      actionId: "perform",
-      confidence: Number.NaN,
-      rationale: "Malformed confidence should be rejected.",
-    };
-  }
+function fakeProfile(overrides: Partial<TargetProfile> = {}): TargetProfile {
+  return {
+    name: "fake",
+    displayName: "Fake Target",
+    baseUrl: "local://dry-run",
+    credentials: { username: "", password: "" },
+    task: "Validate orchestration and audit output without entering an EMR.",
+    successCriteria: ["The normalized record is accepted by the dry-run target."],
+    forbiddenActions: ["Do not use real patient data."],
+    concurrency: 1,
+    ...overrides,
+  };
 }
 
 function cleanRecord(sourceRecordId: string) {

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { runDevAll, type DevAllChildProcess } from "../../src/dev/runAll.js";
 
 describe("runDevAll", () => {
-  it("starts the watcher with interactive field confirmation, desktop app, and viewer npm scripts", async () => {
+  it("starts the watcher, desktop app, and viewer npm scripts", async () => {
     const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
     const running = runDevAll({
       cwd: "/repo",
@@ -18,47 +18,7 @@ describe("runDevAll", () => {
     });
 
     expect(spawned.map(({ command, args }) => [command, ...args])).toEqual([
-      [
-        "npm",
-        "run",
-        "watch:intake",
-        "--",
-        "--openmrs-interactive-field-confirmation",
-        "--openmrs-field-confidence-threshold",
-        "0.9",
-      ],
-      ["npm", "run", "desktop:dev"],
-      ["npm", "run", "viewer"],
-    ]);
-
-    spawned[0]?.child.exit(0);
-    await expect(running).resolves.toBe(0);
-  });
-
-  it("forwards a custom OpenMRS field confidence threshold to the watcher", async () => {
-    const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
-    const running = runDevAll({
-      args: ["--openmrs-field-confidence-threshold", "0.97"],
-      cwd: "/repo",
-      spawnProcess: (command, args) => {
-        const child = new FakeChildProcess();
-        spawned.push({ command, args, child });
-        return child;
-      },
-      stdout: writable(),
-      stderr: writable(),
-    });
-
-    expect(spawned.map(({ command, args }) => [command, ...args])).toEqual([
-      [
-        "npm",
-        "run",
-        "watch:intake",
-        "--",
-        "--openmrs-interactive-field-confirmation",
-        "--openmrs-field-confidence-threshold",
-        "0.97",
-      ],
+      ["npm", "run", "watch:intake"],
       ["npm", "run", "desktop:dev"],
       ["npm", "run", "viewer"],
     ]);
@@ -70,7 +30,7 @@ describe("runDevAll", () => {
   it("forwards a custom agent driver to the watcher", async () => {
     const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
     const running = runDevAll({
-      args: ["--agent", "openai", "--openmrs-field-confidence-threshold", "0.97"],
+      args: ["--agent", "openai"],
       cwd: "/repo",
       spawnProcess: (command, args) => {
         const child = new FakeChildProcess();
@@ -82,17 +42,7 @@ describe("runDevAll", () => {
     });
 
     expect(spawned.map(({ command, args }) => [command, ...args])).toEqual([
-      [
-        "npm",
-        "run",
-        "watch:intake",
-        "--",
-        "--openmrs-interactive-field-confirmation",
-        "--openmrs-field-confidence-threshold",
-        "0.97",
-        "--agent",
-        "openai",
-      ],
+      ["npm", "run", "watch:intake", "--", "--agent", "openai"],
       ["npm", "run", "desktop:dev"],
       ["npm", "run", "viewer"],
     ]);
@@ -119,30 +69,6 @@ describe("runDevAll", () => {
     ).rejects.toThrow("--agent must be either scripted or openai.");
 
     expect(spawned).toEqual([]);
-  });
-
-  it("can start the watcher without interactive OpenMRS field confirmation", async () => {
-    const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
-    const running = runDevAll({
-      args: ["--no-openmrs-interactive-field-confirmation"],
-      cwd: "/repo",
-      spawnProcess: (command, args) => {
-        const child = new FakeChildProcess();
-        spawned.push({ command, args, child });
-        return child;
-      },
-      stdout: writable(),
-      stderr: writable(),
-    });
-
-    expect(spawned.map(({ command, args }) => [command, ...args])).toEqual([
-      ["npm", "run", "watch:intake", "--", "--openmrs-field-confidence-threshold", "0.9"],
-      ["npm", "run", "desktop:dev"],
-      ["npm", "run", "viewer"],
-    ]);
-
-    spawned[0]?.child.exit(0);
-    await expect(running).resolves.toBe(0);
   });
 
   it("stops the remaining dev services when one command fails", async () => {

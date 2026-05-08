@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCli } from "../src/cli.js";
 import { writeIntakeHandoff } from "../src/handoff/intakeHandoff.js";
+import type { AiWebTargetResult, AiWebTargetRunContext } from "../src/targets/aiWebTargetRunner.js";
+import type { TargetProfile } from "../src/targets/profiles.js";
 import type { ViewerServer } from "../src/viewer/server.js";
 
 const tempDirs: string[] = [];
@@ -193,6 +195,51 @@ describe("runCli", () => {
     expect(executiveSummary).toContain("| warning | severity-warning-info |");
     expect(executiveSummary).toContain("| info | severity-warning-info |");
   });
+
+  it.each(["openmrs", "openemr"] as const)(
+    "runs %s through the injected generic target runner path",
+    async (target) => {
+      const runsDir = await mkdtemp(join(tmpdir(), `agentic-ui-cli-${target}-`));
+      tempDirs.push(runsDir);
+      const io = captureIo();
+      const runner = new FakeTargetRunner();
+      const factoryCalls: Array<{ profiles: TargetProfile[]; agent: string }> = [];
+
+      const exitCode = await runCli(
+        [
+          "node",
+          "agentic-ui",
+          "run",
+          "--input",
+          "data/demo/intake-records-normalized.json",
+          "--targets",
+          target,
+          "--runs-dir",
+          runsDir,
+          "--parser",
+          "deterministic",
+        ],
+        io,
+        {
+          buildTargetRunner: ({ profiles, agent }) => {
+            factoryCalls.push({ profiles, agent });
+            return runner;
+          },
+        },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(io.stderrText()).toBe("");
+      expect(factoryCalls).toHaveLength(1);
+      expect(factoryCalls[0]?.profiles.map((profile) => profile.name)).toEqual([target]);
+      expect(factoryCalls[0]?.agent).toBe("scripted");
+      expect(runner.runProfiles).toEqual([target, target, target]);
+      const result = JSON.parse(io.stdoutText()) as {
+        targetCounts: Record<string, { succeeded: number; exception: number; skipped: number }>;
+      };
+      expect(result.targetCounts[target]).toEqual({ succeeded: 3, exception: 0, skipped: 0 });
+    },
+  );
 
   it("returns exit code 1 and prints a concise message for parse errors", async () => {
     const io = captureIo();
@@ -411,6 +458,19 @@ function fakeViewerServer(): ViewerServer {
     close: async () => undefined,
     url: () => "http://127.0.0.1:4173",
   };
+}
+
+class FakeTargetRunner {
+  readonly runProfiles: string[] = [];
+
+  async prepare(_profiles: TargetProfile[], _plannedRecords: number): Promise<void> {}
+
+  async runRecord(context: AiWebTargetRunContext): Promise<AiWebTargetResult> {
+    this.runProfiles.push(context.profile.name);
+    return { status: "succeeded" };
+  }
+
+  async close(): Promise<void> {}
 }
 
 async function readJson(path: string): Promise<unknown> {

@@ -3,8 +3,8 @@
 Pilot for repeatable, audited UI data entry across web and desktop applications.
 
 The workflow takes synthetic intake source documents, uses AI by default to
-extract intake records, validates them deterministically, asks an agent driver to
-approve bounded UI actions, runs one or more target adapters, and writes a
+extract intake records, validates them deterministically, runs selected target
+profiles through a generic web target runner, and writes a
 traceable audit package for each run.
 
 ## Full E2E Commands
@@ -17,26 +17,21 @@ flow.
 Start the watcher, Electron intake app, and run viewer together:
 
 ```sh
-npm run dev:all -- --agent openai --openmrs-field-confidence-threshold 0.99
+npm run dev:all -- --agent openai
 ```
 
 This keeps the handoff watcher, desktop app, and local audit viewer running in
-one terminal with prefixed logs. Its watcher uses interactive OpenMRS field
-confirmation with a `0.99` mapping-confidence threshold. Edited prompt input is
-interpreted through the OpenAI-backed agent before the EMR field is filled. The
-intentionally high threshold is for demo purposes so below-threshold mapping
-review and highlighting are easy to see.
+one terminal with prefixed logs. The watcher forwards `--agent openai` to the
+workflow CLI while target execution uses the generic web target runner.
 
 ### Unattended Full Stack
 
-For unattended E2E runs, disable prompts while keeping the same threshold:
+For unattended E2E runs, start the same services without an agent override:
 
 ```sh
-npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-confidence-threshold 0.99
+npm run dev:all
 ```
 
-When prompts are disabled, below-threshold OpenMRS mappings use the AI-mapped
-value and are flagged in `summary.md`; the local viewer highlights those rows.
 Exception rows in the generated summaries include severity and remediation
 steps; the local viewer color-codes error, warning, and info severities.
 
@@ -115,7 +110,7 @@ exported handoff and continues into OpenMRS.
 - Structured exception handling instead of silent target failures.
 - Audit evidence for every run: screenshots, event logs, normalized input,
   exception JSON, run metadata, a Markdown summary, and structured report JSON.
-- Target adapters for audited EMR entry:
+- Target profiles for audited EMR entry:
   - Web app: OpenMRS through Playwright.
   - Web app: OpenEMR through Playwright.
   - Fake target: deterministic local smoke target for orchestration and audit.
@@ -140,15 +135,15 @@ Use only synthetic data with this repository. The checked-in records under
 
 The workflow is a TypeScript CLI that turns synthetic intake source documents
 into audited UI data-entry runs. It uses OpenAI for optional source parsing and
-agent decisions, deterministic TypeScript validation for safety gates,
+target planning, deterministic TypeScript validation for safety gates,
 Playwright for browser-based EMR automation, Electron for the local intake queue
 and CSV handoff app, and a local read-only run viewer for audit review.
 
 | Layer | Technology | Role |
 | --- | --- | --- |
-| Runtime and CLI | ![Node.js][node-badge] ![TypeScript][typescript-badge] | Runs the CLI, orchestrator, target adapters, and audit writers. |
-| AI parsing and agent decisions | ![OpenAI][openai-badge] | Extracts variable intake documents and optionally approves bounded UI actions. |
-| Validation contract | ![Zod][zod-badge] | Defines schemas for CLI config, records, agent decisions, and target results. |
+| Runtime and CLI | ![Node.js][node-badge] ![TypeScript][typescript-badge] | Runs the CLI, orchestrator, target profiles, target runner, and audit writers. |
+| AI parsing and planning | ![OpenAI][openai-badge] | Extracts variable intake documents and can plan bounded UI actions. |
+| Validation contract | ![Zod][zod-badge] | Defines schemas for CLI config, records, planner actions, and target results. |
 | Web targets | ![Playwright][playwright-badge] ![OpenMRS][openmrs-badge] | Automates synthetic patient entry in browser-based OpenMRS and OpenEMR demo environments. |
 | Desktop intake app | ![Electron][electron-badge] | Reviews seeded or imported synthetic intake records and exports CSV handoff files. |
 | Run viewer | ![Node.js][node-badge] HTTP server | Serves a local read-only browser UI for generated run summaries and linked audit artifacts. |
@@ -171,11 +166,12 @@ flowchart LR
   CLI --> Parser["Deterministic or OpenAI parser"]
   Parser --> Orchestrator["Workflow orchestrator"]
   Orchestrator --> Validation["Deterministic validation"]
-  Orchestrator --> Agent["Scripted or OpenAI UI agent"]
-  Orchestrator --> Targets["Target adapters"]
-  Targets --> OpenMRS["OpenMRS via Playwright"]
-  Targets --> OpenEMR["OpenEMR via Playwright"]
-  Targets --> Fake["Fake target"]
+  Orchestrator --> Profiles["Target profiles"]
+  Profiles --> Runner["Generic web target runner"]
+  Runner --> Planner["AI web planner"]
+  Runner --> OpenMRS["OpenMRS via Playwright"]
+  Runner --> OpenEMR["OpenEMR via Playwright"]
+  Runner --> Fake["Dry-run fake target"]
   CLI --> DesktopApp["Electron intake app"]
   DesktopApp --> Handoff["CSV handoff files"]
   Orchestrator --> Audit["File audit package"]
@@ -204,9 +200,9 @@ flowchart TD
   Validate -->|invalid| PreflightException["Preflight exception<br/>events + exceptions/*.json"]
   Validate -->|valid| Normalized["Normalized record<br/>input/normalized-records.json"]
 
-  Normalized --> TargetLoop["Run each ready target adapter"]
-  TargetLoop --> AgentDecision["Agent decision<br/>scripted or OpenAI"]
-  AgentDecision --> UiAction["Bounded UI action<br/>Fake, OpenMRS, or OpenEMR"]
+  Normalized --> TargetLoop["Run each ready target profile"]
+  TargetLoop --> PlannerAction["Planner action"]
+  PlannerAction --> UiAction["Bounded UI action<br/>Fake, OpenMRS, or OpenEMR"]
   UiAction --> Evidence["Screenshots, events,<br/>field mappings, target evidence"]
   Evidence --> TargetResult{"Target result"}
   TargetResult -->|succeeded or skipped| Counts["Update target counts"]
@@ -224,7 +220,7 @@ The data flow converts source documents into raw intake records, applies
 deterministic validation before target entry, records all successful and
 exceptional paths, and finishes with the audit contract under `runs/<run-id>/`.
 The viewer reads those files after or during a run for local review; it does not
-write records, invoke target adapters, or mutate audit artifacts.
+write records, invoke target runners, or mutate audit artifacts.
 
 ## OpenAI API Touchpoints
 
@@ -305,7 +301,7 @@ Run this command from the repository root to start the handoff watcher, Electron
 intake app, and local audit viewer together:
 
 ```sh
-npm run dev:all -- --agent openai --openmrs-field-confidence-threshold 0.9
+npm run dev:all -- --agent openai
 ```
 
 For debugging, each long-running service can still be launched separately:
@@ -737,7 +733,7 @@ Options:
 
 - `--inbox`: folder containing exported `*.ready.csv` or `*.ready.json` files.
   Defaults to `~/Downloads/agentic-ui-intake`.
-- `--targets`: comma-separated target adapters. Defaults to `openmrs`.
+- `--targets`: comma-separated target profiles. Defaults to `openmrs`.
 - `--runs-dir`, `--agent`, `--synthetic-suffix`, `--openmrs-concurrency`,
   `--openemr-concurrency`, `--openmrs-interactive-field-confirmation`, and
   `--openmrs-field-confidence-threshold`: same meaning as `run`.
@@ -767,21 +763,13 @@ npm run desktop:dev
 Run the full local E2E service stack:
 
 ```sh
-npm run dev:all -- --agent openai --openmrs-field-confidence-threshold 0.9
+npm run dev:all -- --agent openai
 ```
 
-This starts `watch:intake` with interactive OpenMRS field confirmation enabled
-and a `0.9` mapping-confidence threshold, plus the Electron app and viewer. Use
-`--agent openai` when edited prompt input should be interpreted before filling
-the EMR field. Disable those prompts for unattended local runs with:
-
-```sh
-npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-confidence-threshold 0.9
-```
-
-When prompts are disabled, below-threshold OpenMRS mappings still use the
-AI-mapped value and are flagged in `summary.md`; the local viewer highlights
-those rows.
+This starts `watch:intake`, the Electron app, and the viewer. `dev:all` only
+forwards the optional `--agent` flag to the watcher; destination-specific
+OpenMRS field-confirmation flags should be passed to `watch:intake` directly if
+you are working on the legacy static OpenMRS adapter path.
 
 Packaging dry run:
 
@@ -796,13 +784,13 @@ src/domain/        Intake schemas and validation
 src/parsing/       Deterministic loading plus AI source-document parsing
 src/orchestrator/  Workflow coordination and exception handling
 src/audit/         Run metadata, events, summaries, screenshots, exceptions
-src/agent/         Scripted and OpenAI-backed agent drivers
-src/adapters/      Shared target adapter contract and fake adapter
+src/agent/         Legacy scripted and OpenAI-backed agent drivers
+src/adapters/      Legacy target adapter contract and fake adapter
 src/desktop/       Electron intake app and seeded/imported queue service
 src/handoff/       CSV/JSON handoff file writer
 src/watcher/       Separate handoff watcher and workflow launcher
 src/viewer/        Local read-only HTTP viewer for run summaries and artifacts
-src/targets/       OpenMRS and OpenEMR implementations
+src/targets/       Target profiles, generic web runner, and legacy EMR adapters
 tests/             Unit and integration-style coverage
 docs/demo.md       Longer smoke-demo walkthrough
 ```

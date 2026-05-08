@@ -33,8 +33,6 @@ type DevAllOptions = {
 
 type DevAllConfig = {
   agent?: AgentDriver;
-  openMrsInteractiveFieldConfirmation: boolean;
-  openMrsFieldConfidenceThreshold: string;
 };
 
 type AgentDriver = "scripted" | "openai";
@@ -44,9 +42,6 @@ const devAllCommands: DevAllCommand[] = [
     name: "watch",
     script: "watch:intake",
     args: (config) => [
-      ...(config.openMrsInteractiveFieldConfirmation ? ["--openmrs-interactive-field-confirmation"] : []),
-      "--openmrs-field-confidence-threshold",
-      config.openMrsFieldConfidenceThreshold,
       ...(config.agent ? ["--agent", config.agent] : []),
     ],
   },
@@ -118,8 +113,6 @@ export async function runDevAll(options: DevAllOptions = {}): Promise<number> {
 
 function parseDevAllArgs(args: string[]): DevAllConfig {
   let agent: AgentDriver | undefined;
-  let openMrsInteractiveFieldConfirmation = true;
-  let openMrsFieldConfidenceThreshold = "0.9";
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--agent") {
@@ -138,47 +131,15 @@ function parseDevAllArgs(args: string[]): DevAllConfig {
       continue;
     }
 
-    if (arg === "--openmrs-interactive-field-confirmation") {
-      openMrsInteractiveFieldConfirmation = true;
-      continue;
-    }
-    if (arg === "--no-openmrs-interactive-field-confirmation") {
-      openMrsInteractiveFieldConfirmation = false;
-      continue;
-    }
-
-    if (arg === "--openmrs-field-confidence-threshold") {
-      const value = args[index + 1];
-      validateOpenMrsFieldConfidenceThreshold(value);
-      openMrsFieldConfidenceThreshold = value;
-      index += 1;
-      continue;
-    }
-
-    const prefix = "--openmrs-field-confidence-threshold=";
-    if (arg.startsWith(prefix)) {
-      const value = arg.slice(prefix.length);
-      validateOpenMrsFieldConfidenceThreshold(value);
-      openMrsFieldConfidenceThreshold = value;
-      continue;
-    }
-
     throw new Error(`Unknown dev:all option: ${arg}`);
   }
 
-  return { agent, openMrsInteractiveFieldConfirmation, openMrsFieldConfidenceThreshold };
+  return { agent };
 }
 
 function validateAgentDriver(value: string | undefined): asserts value is AgentDriver {
   if (value !== "scripted" && value !== "openai") {
     throw new Error("--agent must be either scripted or openai.");
-  }
-}
-
-function validateOpenMrsFieldConfidenceThreshold(value: string | undefined): asserts value is string {
-  const parsed = value === undefined || value.trim() === "" ? Number.NaN : Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
-    throw new Error("--openmrs-field-confidence-threshold must be a number from 0 through 1.");
   }
 }
 
