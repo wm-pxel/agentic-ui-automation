@@ -72,7 +72,9 @@ export interface AiWebPlanInput {
   record: NormalizedIntakeRecord;
   profile: TargetProfile;
   observation: PageObservation;
-  previousActions: AiWebAction[];
+  completedFields: readonly string[];
+  skippedFields: readonly string[];
+  stepCount: number;
 }
 
 export interface AiWebPlanner {
