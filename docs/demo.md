@@ -159,9 +159,9 @@ Prerequisites:
 - `.env` contains `OPENAI_API_KEY` when using the default OpenAI parser or a
   non-fake target profile.
 
-OpenMRS publishes current demo links at `https://openmrs.org/demo/`. This
-adapter uses the OpenMRS 2 Reference Application because this demo automates
-patient registration and O2 exposes a stable registration wizard.
+OpenMRS publishes current demo links at `https://openmrs.org/demo/`. The
+OpenMRS target profile points at the OpenMRS 2 Reference Application because
+this demo creates synthetic patient-registration audit artifacts.
 
 - Demo page: `https://openmrs.org/demo/`
 - Default app URL: `https://o2.openmrs.org/openmrs`
@@ -190,8 +190,8 @@ entry.
 For local smoke checks that should not call OpenAI, use
 `data/demo/intake-records-normalized.json` and add `--parser deterministic`.
 
-The public demo URL, credentials, and UI can change. If login, navigation,
-selectors, or save behavior drift, the run should stop with auditable
+The public demo URL, credentials, and UI can change. If login, navigation, page
+structure, or save behavior drift, the run should stop with auditable
 environment or UI-state exceptions rather than silently claiming success.
 
 OpenMRS supports patient deletion only when administrator patient deletion is
@@ -201,17 +201,20 @@ instead of trying to reset shared demo state.
 
 ### OpenMRS Success Criteria
 
-For each valid normalized record, the target should:
+For each valid normalized record, the generic AI web target runner uses the
+OpenMRS target profile to:
 
-1. Log in to OpenMRS.
-2. Take a `before-navigation` screenshot.
-3. Open the O2 `Register a patient` app.
-4. Fill the registration wizard with demographics and available contact fields.
-5. Take an `after-fill` screenshot.
-6. Advance to the confirmation step and click `Confirm`.
-7. Treat similar-patient prompts as duplicate exceptions for manual review.
-8. Expand contact info when available, then take an `after-save` proof
-   screenshot from the newly created patient's dashboard.
+1. Open the configured OpenMRS environment.
+2. Observe the current page, visible text, URL, title, and available controls.
+3. Ask the schema-bound AI planner for one bounded browser action at a time.
+4. Execute only supported browser actions: fill, select, click, wait,
+   screenshot, verify, or stop.
+5. Capture ordered `ai-step-*` observations, `ai-field-*` proof images for
+   completed fields, target evidence, events, and field mappings.
+6. Treat possible duplicates, unexpected UI state, and verification failures as
+   auditable target exceptions for manual review.
+7. Mark the record successful only when the planner verifies the configured
+   success criteria for the synthetic patient.
 
 For `data/demo/intake-records.json`, the expected clean OpenMRS target result is:
 
@@ -219,16 +222,15 @@ For `data/demo/intake-records.json`, the expected clean OpenMRS target result is
 - `targetCounts.openmrs.succeeded` is `4`.
 - `targetCounts.openmrs.exception` is `0`.
 - `exceptions/` only contains the intentional validation exceptions.
-- Each valid record has three ordered OpenMRS screenshots:
-  `0001-before-navigation.png`, `0002-after-fill.png`, and a
-  patient-dashboard `0003-after-save.png` with contact info expanded when
-  OpenMRS exposes it.
+- Each valid record has OpenMRS screenshot evidence captured by the generic
+  runner, including ordered `ai-step-*` observations and `ai-field-*` proof
+  images for completed fields when fields are entered.
 - `summary.md` includes an OpenMRS record review with raw intake input,
-  patient-dashboard proof screenshots, per-field mapping confidence, and
-  source-to-OpenMRS comparisons. Optional contact fields that are unavailable in
-  a public demo layout may be reported as failed mappings without failing the
-  target record. Issue tables categorize exceptions by severity and include
-  remediation steps for manual review.
+  runner screenshots, planner rationale/confidence for field actions, and
+  source-to-target comparisons. Optional fields that are unavailable in a public
+  demo layout may be reported as failed mappings without failing the target
+  record. Issue tables categorize exceptions by severity and include remediation
+  steps for manual review.
 
 The public OpenMRS demo keeps submitted patients for a while. If you rerun the
 same input without `--synthetic-suffix`, duplicate patient detection can make
@@ -267,21 +269,17 @@ npm run dev -- run \
 For local smoke checks that should not call OpenAI, use
 `data/demo/intake-records-normalized.json` and add `--parser deterministic`.
 
-For each valid normalized record, the OpenEMR target should:
-
-1. Log in to OpenEMR.
-2. Take a `before-navigation` screenshot.
-3. Open the OpenEMR patient demographics workflow.
-4. Fill available demographic and contact fields.
-5. Take an `after-fill` screenshot.
-6. Save the patient through the OpenEMR UI.
-7. Treat duplicate or validation prompts as target exceptions for manual review.
-8. Take an `after-save` proof screenshot.
+For each valid normalized record, the OpenEMR target profile uses the same
+generic AI web target runner behavior as OpenMRS: observe the page, request one
+schema-bound planner action at a time, execute only bounded browser actions,
+capture ordered `ai-step-*` and `ai-field-*` screenshot evidence, and verify the
+configured success criteria before marking the record successful.
 
 `summary.md` includes an OpenEMR record review with raw intake input, proof
-screenshots, per-field mapping confidence, and source-to-OpenEMR comparisons.
-Optional fields that are unavailable in the public demo layout may be reported
-as failed mappings without changing the shared audit artifact structure.
+screenshots, planner rationale/confidence for field actions, and
+source-to-target comparisons. Optional fields that are unavailable in the public
+demo layout may be reported as failed mappings without changing the shared
+audit artifact structure.
 
 ## Audit Review Commands
 

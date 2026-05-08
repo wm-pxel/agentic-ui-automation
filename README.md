@@ -122,10 +122,12 @@ Use only synthetic data with this repository. The checked-in records under
 
 - Core workflow: implemented and covered by tests.
 - Fake target: deterministic local smoke target for orchestration and audit.
-- OpenMRS web target: adapter and tests are implemented; live smoke requires a
-  reachable synthetic/demo OpenMRS instance and current credentials.
-- OpenEMR web target: adapter and tests are implemented; live smoke requires a
-  reachable synthetic/demo OpenEMR instance and current credentials.
+- OpenMRS web target profile: implemented through the generic AI web target
+  runner; live smoke requires a reachable synthetic/demo OpenMRS instance,
+  current credentials, and `OPENAI_API_KEY`.
+- OpenEMR web target profile: implemented through the generic AI web target
+  runner; live smoke requires a reachable synthetic/demo OpenEMR instance,
+  current credentials, and `OPENAI_API_KEY`.
 - Desktop intake app: Electron shell opens with seeded synthetic records,
   supports optional import, and exports CSV handoff files.
 - Handoff watcher: separate CLI command processes exported files and runs the
@@ -415,9 +417,9 @@ Install Chromium if needed:
 npx playwright install chromium
 ```
 
-OpenMRS publishes current demo links at `https://openmrs.org/demo/`. This
-adapter uses the OpenMRS 2 Reference Application because the workflow is a
-patient registration smoke and O2 exposes a stable registration wizard.
+OpenMRS publishes current demo links at `https://openmrs.org/demo/`. The
+OpenMRS target profile points at the OpenMRS 2 Reference Application because
+the smoke run creates synthetic patient-registration audit artifacts.
 
 - Demo page: `https://openmrs.org/demo/`
 - Default app URL: `https://o2.openmrs.org/openmrs`
@@ -497,16 +499,15 @@ includes lower-confidence examples. A clean OpenMRS target pass therefore means:
 - `targetCounts.openmrs.succeeded` is `4`.
 - `targetCounts.openmrs.exception` is `0`.
 - `exceptions/` only contains the three intentional validation exceptions.
-- Each valid record has `before-navigation`, `after-fill`, and an `after-save`
-  proof screenshot from the patient dashboard with contact info expanded when
-  OpenMRS exposes it.
+- Each valid record has OpenMRS screenshot evidence captured by the generic
+  runner, including ordered `ai-step-*` observations and `ai-field-*` proof
+  images for completed fields when fields are entered.
 - `executive-summary.md` gives a quick run outcome, while `summary.md` includes
-  an OpenMRS record review with raw intake input, patient-dashboard proof
-  screenshots, per-field mapping confidence, and source-to-OpenMRS comparisons.
+  an OpenMRS record review with raw intake input, runner screenshots, planner
+  rationale/confidence for field actions, and source-to-target comparisons.
   Issue sections categorize exceptions by severity and include remediation
-  guidance for manual review.
-  On public demo layouts, optional contact fields that are unavailable may
-  appear as failed mappings without causing a target exception.
+  guidance for manual review. On public demo layouts, optional fields that are
+  unavailable may appear as failed mappings without causing a target exception.
 
 Manual verification:
 
@@ -524,25 +525,27 @@ Manual verification:
    values in `normalized-records.json`. With `--synthetic-suffix auto`, the
    valid demo patients are renamed to values like `Nguyen Run-...`,
    `Lee Run-...`, and `Shah Run-...`.
-3. Confirm the OpenMRS screenshot sequence exists for each valid record:
+3. Confirm OpenMRS screenshot evidence exists for each valid record:
 
    ```sh
    find "runs/$RUN_ID/screenshots" -path "*/openmrs/*.png" | sort
    ```
 
-4. Open each `*-after-save.png` screenshot and confirm it shows the newly
-   created patient's dashboard with the generated synthetic patient name.
+4. Open the latest `ai-step-*` or target proof screenshot for each successful
+   record and confirm it supports the configured success criteria for the
+   generated synthetic patient.
 5. Log in to the same OpenMRS environment used by the run.
 6. Open the patient search or finder screen.
 7. Search for the four generated last names from `normalized-records.json`.
 8. Open each patient record and confirm the demographic and contact fields match
    `normalized-records.json` for the fields present in that demo layout. Use the
-   OpenMRS record review in `summary.md` to see source values, mapping
-   confidence, selectors, and which optional fields were unavailable.
-9. Confirm the audit log includes an `after-save` event for each valid record:
+   OpenMRS record review in `summary.md` to see source values, planner
+   confidence/rationale, selectors, and which optional fields were unavailable.
+9. Confirm the audit log includes successful target completion events for each
+   valid record:
 
    ```sh
-   grep "after-save" "runs/$RUN_ID/events.jsonl"
+   grep '"actionType":"complete"' "runs/$RUN_ID/events.jsonl"
    ```
 
 The public OpenMRS demo keeps data for a while. If you run without
@@ -555,7 +558,7 @@ OpenMRS success run.
 The OpenEMR target drives the configured OpenEMR web UI through Chromium and
 writes the same audit artifact set as the OpenMRS target. Public demo screens
 and credentials can change, so verify the current OpenEMR demo page before
-assuming a selector failure is an adapter defect.
+assuming a target profile or planner failure is a code defect.
 
 - Demo page: `https://www.open-emr.org/demo/`
 - Default app URL: `https://demo.openemr.io/openemr`
@@ -586,13 +589,14 @@ npm run dev -- run \
   --openemr-concurrency 1
 ```
 
-The OpenEMR adapter opens the demographics workflow, fills visible demographic
-and contact fields from the normalized intake record, captures
-`before-navigation`, `after-fill`, and `after-save` screenshots, and records
-OpenEMR field mappings in `summary.md` and `report.json`. Fields that are not
-available in the selected OpenEMR screen are reported as field mapping evidence
-or target exceptions depending on whether they are required for patient
-creation.
+The OpenEMR target profile uses the same generic AI web target runner as
+OpenMRS. For each valid normalized record, the runner observes the page, asks
+the schema-bound AI planner for one bounded action at a time, executes only
+supported browser actions, captures ordered `ai-step-*` observations and
+`ai-field-*` proof images for completed fields, and records target evidence in
+`summary.md` and `report.json`. Fields that are not available in the selected
+OpenEMR screen are reported as field mapping evidence or target exceptions
+depending on whether they are required for patient creation.
 
 ## Audit Artifacts
 
@@ -623,8 +627,8 @@ find "runs/$RUN_ID/screenshots" -type f | sort
 ```
 
 The screenshot tree is nested by record and target. Screenshot filenames are
-prefixed with capture order, such as `0001-before-navigation.png`, so sorted
-directory listings show what the workflow saw in the order it saw it.
+prefixed with capture order, such as `0001-ai-step-1.png`, so sorted directory
+listings show what the workflow saw in the order it saw it.
 
 ## Run Viewer
 
@@ -772,12 +776,11 @@ src/parsing/       Deterministic loading plus AI source-document parsing
 src/orchestrator/  Workflow coordination and exception handling
 src/audit/         Run metadata, events, summaries, screenshots, exceptions
 src/agent/         Legacy scripted and OpenAI-backed agent drivers
-src/adapters/      Legacy target adapter contract and fake adapter
 src/desktop/       Electron intake app and seeded/imported queue service
 src/handoff/       CSV/JSON handoff file writer
 src/watcher/       Separate handoff watcher and workflow launcher
 src/viewer/        Local read-only HTTP viewer for run summaries and artifacts
-src/targets/       Target profiles, generic web runner, and legacy EMR adapters
+src/targets/       Target profiles, generic web runner, planner, and browser actions
 tests/             Unit and integration-style coverage
 docs/demo.md       Longer smoke-demo walkthrough
 ```
