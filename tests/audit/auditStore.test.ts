@@ -242,8 +242,8 @@ describe("FileAuditStore", () => {
     });
   });
 
-  it("preserves OpenMRS field confirmation metadata in reports", async () => {
-    const root = await mkdtemp(join(tmpdir(), "audit-field-confirmation-"));
+  it("preserves OpenMRS AI action and field evidence in reports", async () => {
+    const root = await mkdtemp(join(tmpdir(), "audit-ai-field-evidence-"));
     const store = await FileAuditStore.create({ runsDir: root, runId: "run-test" });
 
     await store.writeFieldMapping({
@@ -263,6 +263,7 @@ describe("FileAuditStore", () => {
       approvalSource: "operator_edited",
       originalProposedValue: "+13125550198",
       finalValue: "+13125550999",
+      fieldScreenshotPath: "screenshots/demo-001/openmrs/ai-field-phone.png",
     });
 
     await store.writeFieldMapping({
@@ -279,6 +280,7 @@ describe("FileAuditStore", () => {
       agentRationale: "The optional address field was not clearly visible.",
       approvalSource: "operator_skipped",
       skipReason: "Operator skipped optional field.",
+      fieldScreenshotPath: "screenshots/demo-001/openmrs/ai-field-address.png",
     });
 
     const report = store.buildReport({
@@ -293,17 +295,24 @@ describe("FileAuditStore", () => {
     expect(report.details.fieldMappings).toContainEqual(
       expect.objectContaining({
         sourceField: "phone",
+        action: "fill",
+        agentConfidence: 0.62,
+        agentRationale: "The visible label could refer to another contact field.",
         approvalSource: "operator_edited",
         originalProposedValue: "+13125550198",
         finalValue: "+13125550999",
+        fieldScreenshotPath: "screenshots/demo-001/openmrs/ai-field-phone.png",
       }),
     );
     expect(report.details.fieldMappings).toContainEqual(
       expect.objectContaining({
         sourceField: "streetAddress",
         status: "skipped",
+        agentConfidence: 0.55,
+        agentRationale: "The optional address field was not clearly visible.",
         approvalSource: "operator_skipped",
         skipReason: "Operator skipped optional field.",
+        fieldScreenshotPath: "screenshots/demo-001/openmrs/ai-field-address.png",
       }),
     );
   });
