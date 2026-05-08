@@ -81,11 +81,12 @@ For the full Electron-to-OpenMRS path, start the handoff watcher, Electron
 intake app, and local audit viewer together:
 
 ```sh
-npm run dev:all -- --agent openai
+npm run dev:all
 ```
 
 The bundled watcher, desktop app, and viewer share one terminal with prefixed
-logs. `dev:all` forwards `--agent openai` to the watcher.
+logs. Non-fake targets use the generic AI web target runner, and `fake` targets
+use the deterministic dry-run path.
 
 For the full desktop E2E, click `New Patient`, review or edit the generated
 synthetic intake fields, add the patient to the queue, keep that created record

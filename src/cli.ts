@@ -32,14 +32,23 @@ export interface CliDependencies {
     port?: number;
     stdout?: CliWritable;
   }) => Promise<ViewerServer>;
-  buildTargetRunner?: (options: { profiles: TargetProfile[]; agent: CliRunConfig["agent"] }) => TargetRunner;
+  buildTargetRunner?: (options: { profiles: TargetProfile[] }) => TargetRunner;
+  buildAiTargetRunner?: () => TargetRunner;
+}
+
+interface ResolvedCliDependencies {
+  startViewerServer: (options: {
+    runsDir: string;
+    port?: number;
+    stdout?: CliWritable;
+  }) => Promise<ViewerServer>;
+  buildTargetRunner: (options: { profiles: TargetProfile[] }) => TargetRunner;
 }
 
 interface RunCommandOptions {
   input: string;
   targets: string;
   runsDir?: string;
-  agent?: CliRunConfig["agent"];
   parser?: CliRunConfig["parser"];
   parserModel?: string;
   syntheticSuffix?: string;
@@ -51,7 +60,6 @@ interface WatchCommandOptions {
   inbox?: string;
   targets: string;
   runsDir?: string;
-  agent?: CliRunConfig["agent"];
   syntheticSuffix?: string;
   openmrsConcurrency?: number;
   openemrConcurrency?: number;
@@ -77,9 +85,10 @@ export async function runCli(
     stdout: io.stdout ?? defaultIo.stdout,
     stderr: io.stderr ?? defaultIo.stderr,
   };
+  const buildAiTargetRunner = dependencies.buildAiTargetRunner ?? buildDefaultAiTargetRunner;
   const program = createProgram(resolvedIo, {
     startViewerServer: dependencies.startViewerServer ?? defaultStartViewerServer,
-    buildTargetRunner: dependencies.buildTargetRunner ?? buildDefaultTargetRunner,
+    buildTargetRunner: dependencies.buildTargetRunner ?? ((options) => buildDefaultTargetRunner(options.profiles, buildAiTargetRunner)),
   });
 
   try {
@@ -97,7 +106,7 @@ export async function runCli(
   }
 }
 
-function createProgram(io: Required<CliIo>, dependencies: Required<CliDependencies>): Command {
+function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencies): Command {
   const program = new Command();
 
   program
@@ -118,7 +127,6 @@ function createProgram(io: Required<CliIo>, dependencies: Required<CliDependenci
     .requiredOption("--input <path>", "Path to the intake source file.")
     .option("--targets <targets>", "Comma-separated target profiles to run.", "fake")
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
-    .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
     .addOption(new Option("--parser <parser>", "Input parser to use.").choices(["openai", "deterministic"]))
     .option("--parser-model <model>", "OpenAI model to use for AI source parsing.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
@@ -134,7 +142,6 @@ function createProgram(io: Required<CliIo>, dependencies: Required<CliDependenci
     .option("--inbox <path>", "Folder to watch for *.ready.csv or *.ready.json intake handoff files.")
     .option("--targets <targets>", "Comma-separated target profiles to run.", "openmrs")
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
-    .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parseOpenMrsPositiveInteger)
     .option("--openemr-concurrency <count>", "Maximum concurrent OpenEMR records.", parseOpenMrsPositiveInteger)
@@ -162,7 +169,7 @@ function createProgram(io: Required<CliIo>, dependencies: Required<CliDependenci
 async function runCommand(
   options: RunCommandOptions,
   stdout: CliWritable,
-  dependencies: Required<CliDependencies>,
+  dependencies: ResolvedCliDependencies,
 ): Promise<void> {
   const config = buildRunConfig({
     ...options,
@@ -176,7 +183,7 @@ async function runCommand(
     sourceInputPath: config.input,
     records,
     profiles,
-    targetRunner: dependencies.buildTargetRunner({ profiles, agent: config.agent }),
+    targetRunner: dependencies.buildTargetRunner({ profiles }),
   });
 
   stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -185,13 +192,12 @@ async function runCommand(
 async function watchCommand(
   options: WatchCommandOptions,
   stdout: CliWritable,
-  dependencies: Required<CliDependencies>,
+  dependencies: ResolvedCliDependencies,
 ): Promise<void> {
   const config = buildRunConfig({
     input: options.inbox ?? defaultIntakeInbox(),
     targets: options.targets,
     runsDir: options.runsDir,
-    agent: options.agent,
     parser: "deterministic",
     syntheticSuffix: options.syntheticSuffix,
     openMrsConcurrency: options.openmrsConcurrency,
@@ -204,7 +210,7 @@ async function watchCommand(
     targets: config.targets,
     syntheticSuffix: config.syntheticSuffix,
     buildProfiles: () => buildTargetProfiles(config),
-    buildTargetRunner: (profiles: TargetProfile[]) => dependencies.buildTargetRunner({ profiles, agent: config.agent }),
+    buildTargetRunner: (profiles: TargetProfile[]) => dependencies.buildTargetRunner({ profiles }),
     onResult: (result: IntakeWatchJobResult) => {
       stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     },
@@ -240,17 +246,78 @@ function resolveSyntheticSuffix(suffix: string | undefined): string | undefined 
   return `run-${timestamp}-${randomUUID().slice(0, 6)}`;
 }
 
-function buildDefaultTargetRunner(options: { profiles: TargetProfile[]; agent: CliRunConfig["agent"] }): TargetRunner {
-  if (options.profiles.every((profile) => profile.name === "fake")) {
+function buildDefaultTargetRunner(profiles: TargetProfile[], buildAiTargetRunner: () => TargetRunner): TargetRunner {
+  const fakeProfiles = profiles.filter((profile) => profile.name === "fake");
+  const aiProfiles = profiles.filter((profile) => profile.name !== "fake");
+
+  if (aiProfiles.length === 0) {
     return new DryRunTargetRunner();
   }
 
+  if (fakeProfiles.length === 0) {
+    return buildAiTargetRunner();
+  }
+
+  return new ProfileDispatchingTargetRunner([
+    { profiles: fakeProfiles, runner: new DryRunTargetRunner() },
+    { profiles: aiProfiles, runner: buildAiTargetRunner() },
+  ]);
+}
+
+function buildDefaultAiTargetRunner(): TargetRunner {
   return new AiWebTargetRunner({
     planner: new OpenAiAiWebPlanner({
       apiKey: process.env.OPENAI_API_KEY,
       model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
     }),
   });
+}
+
+class ProfileDispatchingTargetRunner implements TargetRunner {
+  private readonly routes: Array<{ profileNames: Set<string>; runner: TargetRunner }>;
+
+  constructor(routes: Array<{ profiles: TargetProfile[]; runner: TargetRunner }>) {
+    this.routes = routes.map((route) => ({
+      profileNames: new Set(route.profiles.map((profile) => profile.name)),
+      runner: route.runner,
+    }));
+  }
+
+  async prepare(profiles: TargetProfile[], plannedRecords: number): Promise<void> {
+    for (const route of this.routes) {
+      const routeProfiles = profiles.filter((profile) => route.profileNames.has(profile.name));
+      if (routeProfiles.length > 0) {
+        await route.runner.prepare?.(routeProfiles, plannedRecords);
+      }
+    }
+  }
+
+  async runRecord(context: Parameters<TargetRunner["runRecord"]>[0]): Promise<AiWebTargetResult> {
+    return this.runnerForProfile(context.profile).runRecord(context);
+  }
+
+  async close(): Promise<void> {
+    let firstError: unknown;
+    for (const route of this.routes) {
+      try {
+        await route.runner.close?.();
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+
+    if (firstError !== undefined) {
+      throw firstError;
+    }
+  }
+
+  private runnerForProfile(profile: TargetProfile): TargetRunner {
+    const route = this.routes.find((candidate) => candidate.profileNames.has(profile.name));
+    if (!route) {
+      throw new Error(`No target runner is configured for profile ${profile.name}.`);
+    }
+    return route.runner;
+  }
 }
 
 class DryRunTargetRunner implements TargetRunner {

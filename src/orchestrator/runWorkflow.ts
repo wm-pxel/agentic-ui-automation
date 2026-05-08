@@ -78,6 +78,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
   const targetCounts = initializeTargetCounts(targets);
   const readiness = new Map<TargetName, TargetReadiness>();
   let closedTargetRunner = false;
+  let targetRunnerPrepareAttempted = false;
   let preflightExceptions = 0;
   let environmentExceptions = 0;
   let closeExceptions = 0;
@@ -97,6 +98,7 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
 
     let prepareException: ValidationException | undefined;
     try {
+      targetRunnerPrepareAttempted = Boolean(input.targetRunner.prepare);
       await input.targetRunner.prepare?.(input.profiles, input.records.length);
     } catch (error) {
       prepareException = exceptionFromError("environment_not_ready", error);
@@ -218,11 +220,18 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
 
     await audit.writeInputArtifact("normalized-records.json", `${JSON.stringify(normalizedRecords, null, 2)}\n`);
 
-    closeExceptions += await closeReadyTargetRunner(input.targetRunner, input.profiles, audit, readiness, () => {
-      if (closedTargetRunner) return false;
-      closedTargetRunner = true;
-      return true;
-    });
+    closeExceptions += await closeReadyTargetRunner(
+      input.targetRunner,
+      input.profiles,
+      audit,
+      readiness,
+      targetRunnerPrepareAttempted,
+      () => {
+        if (closedTargetRunner) return false;
+        closedTargetRunner = true;
+        return true;
+      },
+    );
 
     const status: RunStatus = hasExceptions(preflightExceptions, environmentExceptions, closeExceptions, targetCounts)
       ? "completed_with_exceptions"
@@ -262,11 +271,18 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
       targetCounts,
     };
   } catch (error) {
-    closeExceptions += await closeReadyTargetRunner(input.targetRunner, input.profiles, audit, readiness, () => {
-      if (closedTargetRunner) return false;
-      closedTargetRunner = true;
-      return true;
-    });
+    closeExceptions += await closeReadyTargetRunner(
+      input.targetRunner,
+      input.profiles,
+      audit,
+      readiness,
+      targetRunnerPrepareAttempted,
+      () => {
+        if (closedTargetRunner) return false;
+        closedTargetRunner = true;
+        return true;
+      },
+    );
     if (initialMetadataWritten) {
       await writeFailedRunArtifacts({
         audit,
@@ -407,10 +423,12 @@ async function closeReadyTargetRunner(
   profiles: TargetProfile[],
   audit: FileAuditStore,
   readiness: Map<TargetName, TargetReadiness>,
+  closeAfterPrepareAttempt: boolean,
   claimClose: () => boolean,
 ): Promise<number> {
   const readyProfiles = profiles.filter((profile) => readiness.get(profile.name)?.ready);
-  if (!targetRunner.close || readyProfiles.length === 0 || !claimClose()) {
+  const reportProfiles = readyProfiles.length > 0 ? readyProfiles : profiles;
+  if (!targetRunner.close || (readyProfiles.length === 0 && !closeAfterPrepareAttempt) || !claimClose()) {
     return 0;
   }
 
@@ -421,7 +439,7 @@ async function closeReadyTargetRunner(
   } catch (error) {
     closeExceptions += 1;
     const exception = exceptionFromError("ui_state_unexpected", error);
-    for (const profile of readyProfiles) {
+    for (const profile of reportProfiles) {
       await audit.writeException(`${profile.name}-close`, exception).catch(() => undefined);
       await audit
         .writeReportIssue(issueFromException({

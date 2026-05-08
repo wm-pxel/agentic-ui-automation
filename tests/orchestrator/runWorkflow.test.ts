@@ -281,6 +281,27 @@ describe("runWorkflow", () => {
     expect(events).toContain("ui_state_unexpected");
   });
 
+  it("closes the target runner and reports close failures after prepare throws", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "workflow-prepare-close-failure-"));
+    const result = await runWorkflow({
+      runId: "run-prepare-close-failure",
+      runsDir,
+      records: [],
+      profiles: [fakeProfile()],
+      targetRunner: new ThrowingPrepareAndCloseTargetRunner(),
+      now: () => "2026-04-28T12:00:00.000Z",
+    });
+
+    expect(result.status).toBe("completed_with_exceptions");
+    expect(result.environmentExceptions).toBe(1);
+    expect(result.closeExceptions).toBe(1);
+    await expect(readExceptions(runsDir, "run-prepare-close-failure")).resolves.toContain("Close failed.");
+
+    const events = await readFile(join(runsDir, "run-prepare-close-failure", "events.jsonl"), "utf8");
+    expect(events).toContain("prepare");
+    expect(events).toContain("close");
+  });
+
   it("treats audit failures after prepare as orchestrator failures and still closes ready target runners", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-audit-failure-"));
     const targetRunner = new AuditSabotagePrepareTargetRunner(runsDir, "run-audit-failure");
@@ -410,6 +431,12 @@ class CloseTrackingTargetRunner extends FakeTargetRunner {
 }
 
 class ThrowingCloseTargetRunner extends FakeTargetRunner {
+  override async close(): Promise<void> {
+    throw new Error("Close failed.");
+  }
+}
+
+class ThrowingPrepareAndCloseTargetRunner extends ThrowingPrepareTargetRunner {
   override async close(): Promise<void> {
     throw new Error("Close failed.");
   }

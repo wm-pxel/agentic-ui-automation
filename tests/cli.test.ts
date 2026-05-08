@@ -203,7 +203,7 @@ describe("runCli", () => {
       tempDirs.push(runsDir);
       const io = captureIo();
       const runner = new FakeTargetRunner();
-      const factoryCalls: Array<{ profiles: TargetProfile[]; agent: string }> = [];
+      const factoryCalls: Array<{ profiles: TargetProfile[] }> = [];
 
       const exitCode = await runCli(
         [
@@ -221,8 +221,8 @@ describe("runCli", () => {
         ],
         io,
         {
-          buildTargetRunner: ({ profiles, agent }) => {
-            factoryCalls.push({ profiles, agent });
+          buildTargetRunner: ({ profiles }) => {
+            factoryCalls.push({ profiles });
             return runner;
           },
         },
@@ -232,7 +232,6 @@ describe("runCli", () => {
       expect(io.stderrText()).toBe("");
       expect(factoryCalls).toHaveLength(1);
       expect(factoryCalls[0]?.profiles.map((profile) => profile.name)).toEqual([target]);
-      expect(factoryCalls[0]?.agent).toBe("scripted");
       expect(runner.runProfiles).toEqual([target, target, target]);
       const result = JSON.parse(io.stdoutText()) as {
         targetCounts: Record<string, { succeeded: number; exception: number; skipped: number }>;
@@ -240,6 +239,52 @@ describe("runCli", () => {
       expect(result.targetCounts[target]).toEqual({ succeeded: 3, exception: 0, skipped: 0 });
     },
   );
+
+  it("routes fake profiles through dry-run and non-fake profiles through the default AI runner in mixed runs", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "agentic-ui-cli-mixed-"));
+    tempDirs.push(runsDir);
+    const io = captureIo();
+    const aiRunner = new FakeTargetRunner();
+    let aiRunnerBuilds = 0;
+
+    const exitCode = await runCli(
+      [
+        "node",
+        "agentic-ui",
+        "run",
+        "--input",
+        "data/demo/intake-records-normalized.json",
+        "--targets",
+        "fake,openmrs",
+        "--runs-dir",
+        runsDir,
+        "--parser",
+        "deterministic",
+      ],
+      io,
+      {
+        buildAiTargetRunner: () => {
+          aiRunnerBuilds += 1;
+          return aiRunner;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.stderrText()).toBe("");
+    expect(aiRunnerBuilds).toBe(1);
+    expect(aiRunner.runProfiles).toEqual(["openmrs", "openmrs", "openmrs"]);
+
+    const result = JSON.parse(io.stdoutText()) as {
+      runId: string;
+      targetCounts: Record<string, { succeeded: number; exception: number; skipped: number }>;
+    };
+    expect(result.targetCounts.fake).toEqual({ succeeded: 3, exception: 0, skipped: 0 });
+    expect(result.targetCounts.openmrs).toEqual({ succeeded: 3, exception: 0, skipped: 0 });
+    await expect(readFile(join(runsDir, result.runId, "events.jsonl"), "utf8")).resolves.toContain(
+      "dry run accepted",
+    );
+  });
 
   it("returns exit code 1 and prints a concise message for parse errors", async () => {
     const io = captureIo();
@@ -249,6 +294,19 @@ describe("runCli", () => {
     expect(exitCode).toBe(1);
     expect(io.stdoutText()).toBe("");
     expect(io.stderrText()).toBe("error: required option '--input <path>' not specified\n");
+  });
+
+  it.each([
+    ["run", ["run", "--input", "data/demo/intake-records-normalized.json", "--agent", "scripted"]],
+    ["watch", ["watch", "--once", "--agent", "scripted"]],
+  ] as const)("rejects removed --agent option on %s", async (_command, args) => {
+    const io = captureIo();
+
+    const exitCode = await runCli(["node", "agentic-ui", ...args], io);
+
+    expect(exitCode).toBe(1);
+    expect(io.stdoutText()).toBe("");
+    expect(io.stderrText()).toContain("unknown option '--agent'");
   });
 
   it("rejects removed OpenMRS field confirmation options", async () => {

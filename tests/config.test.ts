@@ -62,7 +62,6 @@ describe("buildRunConfig", () => {
       input: "data/demo/intake-records.json",
       targets: ["fake"],
       runsDir: "runs",
-      agent: "scripted",
       parser: "openai",
     });
   });

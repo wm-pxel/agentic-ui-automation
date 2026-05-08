@@ -18,7 +18,6 @@ export type DevAllSpawnProcess = (
 type DevAllCommand = {
   name: string;
   script: string;
-  args?: (config: DevAllConfig) => string[];
 };
 
 type DevAllOptions = {
@@ -31,20 +30,10 @@ type DevAllOptions = {
   registerSignalHandler?: (signal: NodeJS.Signals, handler: () => void) => () => void;
 };
 
-type DevAllConfig = {
-  agent?: AgentDriver;
-};
-
-type AgentDriver = "scripted" | "openai";
+type DevAllConfig = Record<string, never>;
 
 const devAllCommands: DevAllCommand[] = [
-  {
-    name: "watch",
-    script: "watch:intake",
-    args: (config) => [
-      ...(config.agent ? ["--agent", config.agent] : []),
-    ],
-  },
+  { name: "watch", script: "watch:intake" },
   { name: "desktop", script: "desktop:dev" },
   { name: "viewer", script: "viewer" },
 ];
@@ -112,40 +101,16 @@ export async function runDevAll(options: DevAllOptions = {}): Promise<number> {
 }
 
 function parseDevAllArgs(args: string[]): DevAllConfig {
-  let agent: AgentDriver | undefined;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--agent") {
-      const value = args[index + 1];
-      validateAgentDriver(value);
-      agent = value;
-      index += 1;
-      continue;
-    }
-
-    const agentPrefix = "--agent=";
-    if (arg.startsWith(agentPrefix)) {
-      const value = arg.slice(agentPrefix.length);
-      validateAgentDriver(value);
-      agent = value;
-      continue;
-    }
-
+  for (const arg of args) {
     throw new Error(`Unknown dev:all option: ${arg}`);
   }
 
-  return { agent };
-}
-
-function validateAgentDriver(value: string | undefined): asserts value is AgentDriver {
-  if (value !== "scripted" && value !== "openai") {
-    throw new Error("--agent must be either scripted or openai.");
-  }
+  return {};
 }
 
 function npmRunArgs(command: DevAllCommand, config: DevAllConfig): string[] {
-  const args = command.args?.(config) ?? [];
-  return args.length > 0 ? ["run", command.script, "--", ...args] : ["run", command.script];
+  void config;
+  return ["run", command.script];
 }
 
 function spawnDevCommand(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }): DevAllChildProcess {

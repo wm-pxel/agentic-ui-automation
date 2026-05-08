@@ -17,16 +17,16 @@ flow.
 Start the watcher, Electron intake app, and run viewer together:
 
 ```sh
-npm run dev:all -- --agent openai
+npm run dev:all
 ```
 
 This keeps the handoff watcher, desktop app, and local audit viewer running in
-one terminal with prefixed logs. The watcher forwards `--agent openai` to the
-workflow CLI while target execution uses the generic web target runner.
+one terminal with prefixed logs. Target execution uses the generic AI web target
+runner for non-fake profiles and the deterministic dry-run path for `fake`.
 
 ### Unattended Full Stack
 
-For unattended E2E runs, start the same services without an agent override:
+For unattended E2E runs, start the same services:
 
 ```sh
 npm run dev:all
@@ -303,7 +303,7 @@ Run this command from the repository root to start the handoff watcher, Electron
 intake app, and local audit viewer together:
 
 ```sh
-npm run dev:all -- --agent openai
+npm run dev:all
 ```
 
 For debugging, each long-running service can still be launched separately:
@@ -664,7 +664,6 @@ npm run dev -- run \
   --targets fake,openmrs,openemr \
   --runs-dir runs \
   --parser openai \
-  --agent scripted \
   --synthetic-suffix auto \
   --openmrs-concurrency 2 \
   --openemr-concurrency 1
@@ -686,7 +685,6 @@ Options:
   `deterministic` for local fixture/smoke runs that should not call OpenAI.
 - `--parser-model`: OpenAI model for source parsing. Defaults to
   `OPENAI_PARSER_MODEL`, then `OPENAI_MODEL`, then `gpt-5.4-mini`.
-- `--agent`: `scripted` or `openai`. Defaults to `scripted`.
 - `--synthetic-suffix`: appends a suffix to valid synthetic records before
   validation and target entry. Use `auto` for public EMR demo runs so each run
   uses fresh patient names and identifiers.
@@ -728,7 +726,7 @@ Options:
 - `--inbox`: folder containing exported `*.ready.csv` or `*.ready.json` files.
   Defaults to `~/Downloads/agentic-ui-intake`.
 - `--targets`: comma-separated target profiles. Defaults to `openmrs`.
-- `--runs-dir`, `--agent`, `--synthetic-suffix`, `--openmrs-concurrency`, and
+- `--runs-dir`, `--synthetic-suffix`, `--openmrs-concurrency`, and
   `--openemr-concurrency`: same meaning as `run`.
 - `--once`: process currently ready files once and exit.
 
@@ -756,11 +754,10 @@ npm run desktop:dev
 Run the full local E2E service stack:
 
 ```sh
-npm run dev:all -- --agent openai
+npm run dev:all
 ```
 
-This starts `watch:intake`, the Electron app, and the viewer. `dev:all` only
-forwards the optional `--agent` flag to the watcher.
+This starts `watch:intake`, the Electron app, and the viewer with prefixed logs.
 
 Packaging dry run:
 

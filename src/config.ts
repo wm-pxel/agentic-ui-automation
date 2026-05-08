@@ -5,7 +5,6 @@ export const CliRunConfigSchema = z.object({
   input: z.string(),
   targets: z.array(TargetNameSchema).min(1),
   runsDir: z.string().default("runs"),
-  agent: z.enum(["scripted", "openai"]).default("scripted"),
   parser: z.enum(["openai", "deterministic"]).default("openai"),
   parserModel: z.string().optional(),
   syntheticSuffix: z.string().optional(),
@@ -29,7 +28,6 @@ export interface BuildRunConfigOptions {
   input: string;
   targets: string;
   runsDir?: string;
-  agent?: "scripted" | "openai";
   parser?: "openai" | "deterministic";
   parserModel?: string;
   syntheticSuffix?: string;
@@ -52,7 +50,6 @@ export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
     input: options.input,
     targets: parseTargets(options.targets),
     runsDir: options.runsDir ?? process.env.RUNS_DIR,
-    agent: options.agent,
     parser: options.parser,
     parserModel: options.parserModel ?? process.env.OPENAI_PARSER_MODEL ?? process.env.OPENAI_MODEL,
     syntheticSuffix: options.syntheticSuffix,

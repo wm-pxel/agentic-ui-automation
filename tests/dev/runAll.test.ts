@@ -27,36 +27,12 @@ describe("runDevAll", () => {
     await expect(running).resolves.toBe(0);
   });
 
-  it("forwards a custom agent driver to the watcher", async () => {
-    const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
-    const running = runDevAll({
-      args: ["--agent", "openai"],
-      cwd: "/repo",
-      spawnProcess: (command, args) => {
-        const child = new FakeChildProcess();
-        spawned.push({ command, args, child });
-        return child;
-      },
-      stdout: writable(),
-      stderr: writable(),
-    });
-
-    expect(spawned.map(({ command, args }) => [command, ...args])).toEqual([
-      ["npm", "run", "watch:intake", "--", "--agent", "openai"],
-      ["npm", "run", "desktop:dev"],
-      ["npm", "run", "viewer"],
-    ]);
-
-    spawned[0]?.child.exit(0);
-    await expect(running).resolves.toBe(0);
-  });
-
-  it("rejects unsupported agent drivers before starting services", async () => {
+  it("rejects removed agent options before starting services", async () => {
     const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
 
     await expect(
       runDevAll({
-        args: ["--agent", "deterministic"],
+        args: ["--agent", "openai"],
         cwd: "/repo",
         spawnProcess: (command, args) => {
           const child = new FakeChildProcess();
@@ -66,7 +42,7 @@ describe("runDevAll", () => {
         stdout: writable(),
         stderr: writable(),
       }),
-    ).rejects.toThrow("--agent must be either scripted or openai.");
+    ).rejects.toThrow("Unknown dev:all option: --agent");
 
     expect(spawned).toEqual([]);
   });
