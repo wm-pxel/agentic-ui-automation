@@ -43,8 +43,8 @@ export function buildTargetProfiles(config: ProfileConfig): TargetProfile[] {
             password: config.openMrs.password ?? "Admin123",
           },
           task: "Create or register one synthetic patient from the normalized intake record.",
-          successCriteria: DEFAULT_SUCCESS_CRITERIA,
-          forbiddenActions: DEFAULT_FORBIDDEN_ACTIONS,
+          successCriteria: [...DEFAULT_SUCCESS_CRITERIA],
+          forbiddenActions: [...DEFAULT_FORBIDDEN_ACTIONS],
           concurrency: Math.max(1, config.openMrs.concurrency),
         };
       case "openemr":
@@ -57,8 +57,8 @@ export function buildTargetProfiles(config: ProfileConfig): TargetProfile[] {
             password: config.openEmr.password ?? "pass",
           },
           task: "Create or register one synthetic patient from the normalized intake record.",
-          successCriteria: DEFAULT_SUCCESS_CRITERIA,
-          forbiddenActions: DEFAULT_FORBIDDEN_ACTIONS,
+          successCriteria: [...DEFAULT_SUCCESS_CRITERIA],
+          forbiddenActions: [...DEFAULT_FORBIDDEN_ACTIONS],
           concurrency: Math.max(1, config.openEmr.concurrency),
         };
       case "fake":
@@ -69,7 +69,7 @@ export function buildTargetProfiles(config: ProfileConfig): TargetProfile[] {
           credentials: { username: "", password: "" },
           task: "Validate orchestration and audit output without entering an EMR.",
           successCriteria: ["The normalized record is accepted by the dry-run target."],
-          forbiddenActions: DEFAULT_FORBIDDEN_ACTIONS,
+          forbiddenActions: [...DEFAULT_FORBIDDEN_ACTIONS],
           concurrency: 1,
         };
     }
