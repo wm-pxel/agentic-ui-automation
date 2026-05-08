@@ -130,8 +130,16 @@ function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencie
     .addOption(new Option("--parser <parser>", "Input parser to use.").choices(["openai", "deterministic"]))
     .option("--parser-model <model>", "OpenAI model to use for AI source parsing.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
-    .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parseOpenMrsPositiveInteger)
-    .option("--openemr-concurrency <count>", "Maximum concurrent OpenEMR records.", parseOpenMrsPositiveInteger)
+    .option(
+      "--openmrs-concurrency <count>",
+      "Maximum concurrent OpenMRS records.",
+      parsePositiveIntegerOption("--openmrs-concurrency"),
+    )
+    .option(
+      "--openemr-concurrency <count>",
+      "Maximum concurrent OpenEMR records.",
+      parsePositiveIntegerOption("--openemr-concurrency"),
+    )
     .action(async (options: RunCommandOptions) => {
       await runCommand(options, io.stdout, dependencies);
     });
@@ -143,8 +151,16 @@ function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencie
     .option("--targets <targets>", "Comma-separated target profiles to run.", "openmrs")
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
-    .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parseOpenMrsPositiveInteger)
-    .option("--openemr-concurrency <count>", "Maximum concurrent OpenEMR records.", parseOpenMrsPositiveInteger)
+    .option(
+      "--openmrs-concurrency <count>",
+      "Maximum concurrent OpenMRS records.",
+      parsePositiveIntegerOption("--openmrs-concurrency"),
+    )
+    .option(
+      "--openemr-concurrency <count>",
+      "Maximum concurrent OpenEMR records.",
+      parsePositiveIntegerOption("--openemr-concurrency"),
+    )
     .option("--once", "Process currently ready files once and exit.")
     .action(async (options: WatchCommandOptions) => {
       await watchCommand(options, io.stdout, dependencies);
@@ -342,12 +358,14 @@ class DryRunTargetRunner implements TargetRunner {
   async close(): Promise<void> {}
 }
 
-function parseOpenMrsPositiveInteger(value: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error("--openmrs-concurrency must be a positive integer.");
-  }
-  return parsed;
+function parsePositiveIntegerOption(optionName: string): (value: string) => number {
+  return (value) => {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      throw new Error(`${optionName} must be a positive integer.`);
+    }
+    return parsed;
+  };
 }
 
 function parseViewerPort(value: string): number {
