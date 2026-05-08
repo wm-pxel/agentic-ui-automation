@@ -20,7 +20,7 @@ patient-registration audit artifacts.
 
 If the O2 demo is broken, stale, or returns unexpected UI/database errors during
 automation testing, verify the current links and credentials on
-`https://openmrs.org/demo/` before assuming the adapter is broken.
+`https://openmrs.org/demo/` before assuming the profile or runner is broken.
 
 Do not reset shared OpenMRS demo state by deleting patients. Patient deletion is
 gated behind a global admin setting and mutates shared demo configuration. For
