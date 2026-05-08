@@ -85,9 +85,7 @@ npm run dev:all -- --agent openai
 ```
 
 The bundled watcher, desktop app, and viewer share one terminal with prefixed
-logs. `dev:all` forwards `--agent openai` to the watcher; pass
-destination-specific OpenMRS field-confirmation flags to `watch:intake` directly
-when working on the legacy static OpenMRS adapter path.
+logs. `dev:all` forwards `--agent openai` to the watcher.
 
 For the full desktop E2E, click `New Patient`, review or edit the generated
 synthetic intake fields, add the patient to the queue, keep that created record
@@ -158,7 +156,8 @@ Prerequisites:
 - The default OpenMRS demo settings are acceptable, or `OPENMRS_BASE_URL`,
   `OPENMRS_USERNAME`, and `OPENMRS_PASSWORD` are set for another synthetic demo
   OpenMRS environment.
-- `.env` contains `OPENAI_API_KEY` when using the default OpenAI parser.
+- `.env` contains `OPENAI_API_KEY` when using the default OpenAI parser or a
+  non-fake target profile.
 
 OpenMRS publishes current demo links at `https://openmrs.org/demo/`. This
 adapter uses the OpenMRS 2 Reference Application because this demo automates
@@ -213,13 +212,6 @@ For each valid normalized record, the target should:
 7. Treat similar-patient prompts as duplicate exceptions for manual review.
 8. Expand contact info when available, then take an `after-save` proof
    screenshot from the newly created patient's dashboard.
-
-Interactive field confirmation is optional. When
-`--openmrs-interactive-field-confirmation` is set on `run` or `watch`, each
-legacy OpenMRS adapter browser session can pause before writing fields whose
-mapping confidence is below the configured threshold. Confirm, edit, skip
-optional fields, or stop the record from the in-browser prompt. This mode forces
-OpenMRS concurrency to `1` so prompts remain tied to one active record.
 
 For `data/demo/intake-records.json`, the expected clean OpenMRS target result is:
 

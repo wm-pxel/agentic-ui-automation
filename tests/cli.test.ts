@@ -251,7 +251,7 @@ describe("runCli", () => {
     expect(io.stderrText()).toBe("error: required option '--input <path>' not specified\n");
   });
 
-  it("rejects invalid OpenMRS field confidence thresholds", async () => {
+  it("rejects removed OpenMRS field confirmation options", async () => {
     const io = captureIo();
 
     const exitCode = await runCli(
@@ -265,15 +265,47 @@ describe("runCli", () => {
         "fake",
         "--parser",
         "deterministic",
-        "--openmrs-field-confidence-threshold",
-        "1.5",
+        "--openmrs-interactive-field-confirmation",
       ],
       io,
     );
 
     expect(exitCode).toBe(1);
     expect(io.stdoutText()).toBe("");
-    expect(io.stderrText()).toContain("--openmrs-field-confidence-threshold must be a number from 0 through 1.");
+    expect(io.stderrText()).toContain("unknown option '--openmrs-interactive-field-confirmation'");
+  });
+
+  it("requires an OpenAI API key for default non-fake target runs", async () => {
+    const io = captureIo();
+    const originalApiKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+
+    try {
+      const exitCode = await runCli(
+        [
+          "node",
+          "agentic-ui",
+          "run",
+          "--input",
+          "data/demo/intake-records-normalized.json",
+          "--targets",
+          "openmrs",
+          "--parser",
+          "deterministic",
+        ],
+        io,
+      );
+
+      expect(exitCode).toBe(1);
+      expect(io.stdoutText()).toBe("");
+      expect(io.stderrText()).toContain("OPENAI_API_KEY is required when running non-fake targets with the AI web planner.");
+    } finally {
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey;
+      }
+    }
   });
 
   it("starts the viewer command with default runs directory and port", async () => {

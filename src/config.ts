@@ -14,8 +14,6 @@ export const CliRunConfigSchema = z.object({
     username: z.string().optional(),
     password: z.string().optional(),
     concurrency: z.number().int().min(1).default(2),
-    interactiveFieldConfirmation: z.boolean().default(false),
-    fieldConfidenceThreshold: z.number().finite().min(0).max(1).default(0.8),
   }),
   openEmr: z.object({
     baseUrl: z.string().optional(),
@@ -36,8 +34,6 @@ export interface BuildRunConfigOptions {
   parserModel?: string;
   syntheticSuffix?: string;
   openMrsConcurrency?: number;
-  openMrsInteractiveFieldConfirmation?: boolean;
-  openMrsFieldConfidenceThreshold?: number;
   openEmrConcurrency?: number;
 }
 
@@ -49,10 +45,6 @@ export function parseTargets(value: string): TargetName[] {
 }
 
 export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
-  const interactiveFieldConfirmation =
-    options.openMrsInteractiveFieldConfirmation ??
-    booleanFromEnv(process.env.OPENMRS_INTERACTIVE_FIELD_CONFIRMATION) ??
-    false;
   const requestedOpenMrsConcurrency = options.openMrsConcurrency ?? numberFromEnv(process.env.OPENMRS_CONCURRENCY);
   const requestedOpenEmrConcurrency = options.openEmrConcurrency ?? numberFromEnv(process.env.OPENEMR_CONCURRENCY);
 
@@ -68,10 +60,7 @@ export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
       baseUrl: process.env.OPENMRS_BASE_URL ?? "https://o2.openmrs.org/openmrs",
       username: process.env.OPENMRS_USERNAME ?? "admin",
       password: process.env.OPENMRS_PASSWORD ?? "Admin123",
-      concurrency: interactiveFieldConfirmation ? 1 : requestedOpenMrsConcurrency,
-      interactiveFieldConfirmation,
-      fieldConfidenceThreshold:
-        options.openMrsFieldConfidenceThreshold ?? thresholdFromEnv(process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD),
+      concurrency: requestedOpenMrsConcurrency,
     },
     openEmr: {
       baseUrl: process.env.OPENEMR_BASE_URL ?? "https://demo.openemr.io/openemr",
@@ -86,15 +75,4 @@ function numberFromEnv(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function thresholdFromEnv(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  if (value.trim() === "") return Number.NaN;
-  return Number(value);
-}
-
-function booleanFromEnv(value: string | undefined): boolean | undefined {
-  if (!value) return undefined;
-  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }

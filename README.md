@@ -234,11 +234,11 @@ enabled.
    from JSON, CSV, TXT, PDF, or DOCX text-bearing inputs. Use
    `--parser deterministic` with normalized fixtures when a run should not call
    OpenAI.
-2. UI decision agent: `src/agent/openAiUiAgent.ts` calls OpenAI when
-   `--agent openai` is used. This is optional because the default agent is
-   `scripted`. The OpenAI-backed agent chooses from bounded allowed actions and
-   can receive screenshot evidence when a target step needs visual context, such
-   as interpreting edited OpenMRS field-confirmation input.
+2. AI web planner: `src/targets/aiWebPlanner.ts` calls OpenAI for non-fake
+   target profiles. The planner receives the target profile, normalized record,
+   page observation, completed and skipped fields, success criteria, forbidden
+   actions, and step count, then returns one schema-validated bounded browser
+   action.
 
 The Electron intake app also uses the source parser for imported PDF and DOCX
 files because those formats need text extraction before they can enter the
@@ -406,7 +406,8 @@ Prerequisites:
 - The default OpenMRS demo settings are acceptable, or `OPENMRS_BASE_URL`,
   `OPENMRS_USERNAME`, and `OPENMRS_PASSWORD` point to another synthetic/demo
   OpenMRS environment.
-- `.env` contains `OPENAI_API_KEY` when using the default OpenAI parser.
+- `.env` contains `OPENAI_API_KEY` when using the default OpenAI parser or a
+  non-fake target profile.
 
 Install Chromium if needed:
 
@@ -425,16 +426,14 @@ patient registration smoke and O2 exposes a stable registration wizard.
 - Default location: `Registration Desk`
 - Default OpenMRS record concurrency: `2`
 
-The defaults are built into the CLI. Populate `.env` only when overriding them
-or when using the OpenAI parser:
+The defaults are built into the CLI. Populate `.env` only when overriding them,
+using the OpenAI parser, or running a non-fake target profile:
 
 ```dotenv
 OPENMRS_BASE_URL=https://o2.openmrs.org/openmrs
 OPENMRS_USERNAME=admin
 OPENMRS_PASSWORD=Admin123
 OPENMRS_CONCURRENCY=2
-OPENMRS_INTERACTIVE_FIELD_CONFIRMATION=false
-OPENMRS_FIELD_CONFIDENCE_THRESHOLD=0.8
 OPENAI_API_KEY=<your-api-key>
 ```
 
@@ -690,12 +689,6 @@ Options:
   uses fresh patient names and identifiers.
 - `--openmrs-concurrency`: maximum number of OpenMRS records to enter at the
   same time. Defaults to `OPENMRS_CONCURRENCY`, then `2`.
-- `--openmrs-interactive-field-confirmation`: prompts in the active OpenMRS
-  browser before writing fields whose mapping confidence is below the
-  configured threshold. When enabled, OpenMRS concurrency is forced to `1`.
-- `--openmrs-field-confidence-threshold`: minimum OpenMRS field mapping
-  confidence before prompting. Defaults to
-  `OPENMRS_FIELD_CONFIDENCE_THRESHOLD`, then `0.8`.
 - `--openemr-concurrency`: maximum number of OpenEMR records to enter at the
   same time. Defaults to `OPENEMR_CONCURRENCY`, then `1`.
 
@@ -709,8 +702,6 @@ Environment variables:
 - `OPENEMR_USERNAME`
 - `OPENEMR_PASSWORD`
 - `OPENEMR_CONCURRENCY`
-- `OPENMRS_INTERACTIVE_FIELD_CONFIRMATION`
-- `OPENMRS_FIELD_CONFIDENCE_THRESHOLD`
 - `RUNS_DIR`
 - `OPENAI_API_KEY`
 - `OPENAI_PARSER_MODEL`
@@ -734,9 +725,8 @@ Options:
 - `--inbox`: folder containing exported `*.ready.csv` or `*.ready.json` files.
   Defaults to `~/Downloads/agentic-ui-intake`.
 - `--targets`: comma-separated target profiles. Defaults to `openmrs`.
-- `--runs-dir`, `--agent`, `--synthetic-suffix`, `--openmrs-concurrency`,
-  `--openemr-concurrency`, `--openmrs-interactive-field-confirmation`, and
-  `--openmrs-field-confidence-threshold`: same meaning as `run`.
+- `--runs-dir`, `--agent`, `--synthetic-suffix`, `--openmrs-concurrency`, and
+  `--openemr-concurrency`: same meaning as `run`.
 - `--once`: process currently ready files once and exit.
 
 ## Development
@@ -767,9 +757,7 @@ npm run dev:all -- --agent openai
 ```
 
 This starts `watch:intake`, the Electron app, and the viewer. `dev:all` only
-forwards the optional `--agent` flag to the watcher; destination-specific
-OpenMRS field-confirmation flags should be passed to `watch:intake` directly if
-you are working on the legacy static OpenMRS adapter path.
+forwards the optional `--agent` flag to the watcher.
 
 Packaging dry run:
 

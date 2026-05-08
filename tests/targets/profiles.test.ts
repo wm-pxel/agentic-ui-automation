@@ -10,8 +10,6 @@ describe("buildTargetProfiles", () => {
       username: "admin",
       password: "secret",
       concurrency: 1,
-      interactiveFieldConfirmation: false,
-      fieldConfidenceThreshold: 0.8,
     },
     openEmr: {
       baseUrl: "https://openemr.example.test/openemr",

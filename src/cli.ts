@@ -13,7 +13,7 @@ import { runWorkflow, type TargetRunner } from "./orchestrator/runWorkflow.js";
 import { defaultIntakeInbox } from "./handoff/intakeHandoff.js";
 import { processReadyIntakeFiles, watchIntakeInbox, type IntakeWatchJobResult } from "./watcher/intakeWatcher.js";
 import { AiWebTargetRunner, type AiWebTargetResult } from "./targets/aiWebTargetRunner.js";
-import { StaticAiWebPlanner } from "./targets/aiWebPlanner.js";
+import { OpenAiAiWebPlanner } from "./targets/aiWebPlanner.js";
 import { buildTargetProfiles, type TargetProfile } from "./targets/profiles.js";
 import { startViewerServer as defaultStartViewerServer, type ViewerServer } from "./viewer/server.js";
 
@@ -44,8 +44,6 @@ interface RunCommandOptions {
   parserModel?: string;
   syntheticSuffix?: string;
   openmrsConcurrency?: number;
-  openmrsInteractiveFieldConfirmation?: boolean;
-  openmrsFieldConfidenceThreshold?: number;
   openemrConcurrency?: number;
 }
 
@@ -56,8 +54,6 @@ interface WatchCommandOptions {
   agent?: CliRunConfig["agent"];
   syntheticSuffix?: string;
   openmrsConcurrency?: number;
-  openmrsInteractiveFieldConfirmation?: boolean;
-  openmrsFieldConfidenceThreshold?: number;
   openemrConcurrency?: number;
   once?: boolean;
 }
@@ -128,12 +124,6 @@ function createProgram(io: Required<CliIo>, dependencies: Required<CliDependenci
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parseOpenMrsPositiveInteger)
     .option("--openemr-concurrency <count>", "Maximum concurrent OpenEMR records.", parseOpenMrsPositiveInteger)
-    .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
-    .option(
-      "--openmrs-field-confidence-threshold <threshold>",
-      "Minimum OpenMRS field mapping confidence before prompting.",
-      parseConfidenceThreshold,
-    )
     .action(async (options: RunCommandOptions) => {
       await runCommand(options, io.stdout, dependencies);
     });
@@ -148,12 +138,6 @@ function createProgram(io: Required<CliIo>, dependencies: Required<CliDependenci
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parseOpenMrsPositiveInteger)
     .option("--openemr-concurrency <count>", "Maximum concurrent OpenEMR records.", parseOpenMrsPositiveInteger)
-    .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
-    .option(
-      "--openmrs-field-confidence-threshold <threshold>",
-      "Minimum OpenMRS field mapping confidence before prompting.",
-      parseConfidenceThreshold,
-    )
     .option("--once", "Process currently ready files once and exit.")
     .action(async (options: WatchCommandOptions) => {
       await watchCommand(options, io.stdout, dependencies);
@@ -184,8 +168,6 @@ async function runCommand(
     ...options,
     openMrsConcurrency: options.openmrsConcurrency,
     openEmrConcurrency: options.openemrConcurrency,
-    openMrsInteractiveFieldConfirmation: options.openmrsInteractiveFieldConfirmation,
-    openMrsFieldConfidenceThreshold: options.openmrsFieldConfidenceThreshold,
   });
   const records = applySyntheticSuffix(await loadRecords(config), resolveSyntheticSuffix(config.syntheticSuffix));
   const profiles = buildTargetProfiles(config);
@@ -214,8 +196,6 @@ async function watchCommand(
     syntheticSuffix: options.syntheticSuffix,
     openMrsConcurrency: options.openmrsConcurrency,
     openEmrConcurrency: options.openemrConcurrency,
-    openMrsInteractiveFieldConfirmation: options.openmrsInteractiveFieldConfirmation,
-    openMrsFieldConfidenceThreshold: options.openmrsFieldConfidenceThreshold,
   });
   const inbox = options.inbox ?? defaultIntakeInbox();
   const watcherInput = {
@@ -266,7 +246,10 @@ function buildDefaultTargetRunner(options: { profiles: TargetProfile[]; agent: C
   }
 
   return new AiWebTargetRunner({
-    planner: new StaticAiWebPlanner([]),
+    planner: new OpenAiAiWebPlanner({
+      apiKey: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
+    }),
   });
 }
 
@@ -304,14 +287,6 @@ function parseViewerPort(value: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) {
     throw new Error("--port must be a positive integer.");
-  }
-  return parsed;
-}
-
-function parseConfidenceThreshold(value: string): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
-    throw new Error("--openmrs-field-confidence-threshold must be a number from 0 through 1.");
   }
   return parsed;
 }

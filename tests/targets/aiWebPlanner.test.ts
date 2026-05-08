@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { AiWebAction, AiWebPlanInput } from "../../src/targets/aiWebPlanner.js";
-import { StaticAiWebPlanner, validateAiWebPlan } from "../../src/targets/aiWebPlanner.js";
+import type { AiWebAction, AiWebPlanInput, OpenAiAiWebPlannerClient } from "../../src/targets/aiWebPlanner.js";
+import {
+  OPENAI_AI_WEB_PLANNER_API_KEY_REQUIRED_ERROR,
+  OpenAiAiWebPlanner,
+  StaticAiWebPlanner,
+  validateAiWebPlan,
+} from "../../src/targets/aiWebPlanner.js";
 
 const runnerPlanInput = {
   profile: {} as never,
@@ -79,5 +84,160 @@ describe("StaticAiWebPlanner", () => {
       },
       confidence: 1,
     });
+  });
+});
+
+describe("OpenAiAiWebPlanner", () => {
+  it("requires an API key when a client is not injected", () => {
+    expect(() => new OpenAiAiWebPlanner({ model: "gpt-5.4-mini" })).toThrow(
+      OPENAI_AI_WEB_PLANNER_API_KEY_REQUIRED_ERROR,
+    );
+  });
+
+  it("calls the Responses API with target context and validates the structured plan", async () => {
+    const calls: unknown[] = [];
+    const client: OpenAiAiWebPlannerClient = {
+      responses: {
+        create: async (body) => {
+          calls.push(body);
+          return {
+            output_text: JSON.stringify({
+              action: {
+                type: "fill",
+                elementId: "control-1",
+                field: "firstName",
+                value: "Ava",
+                rationale: "The input label matches first name.",
+              },
+              confidence: 0.88,
+            }),
+          };
+        },
+      },
+    };
+    const planner = new OpenAiAiWebPlanner({ model: "gpt-5.4-mini", client });
+
+    const plan = await planner.plan({
+      profile: {
+        name: "openmrs",
+        displayName: "OpenMRS",
+        baseUrl: "https://openmrs.example.test/openmrs",
+        credentials: { username: "admin", password: "secret" },
+        task: "Create one synthetic patient.",
+        successCriteria: ["A saved patient detail page is visible."],
+        forbiddenActions: ["Do not delete patients."],
+        concurrency: 1,
+      },
+      record: {
+        sourceRecordId: "demo-001",
+        firstName: "Ava",
+        lastName: "Nguyen",
+        dateOfBirth: "1987-03-14",
+        sexOrGender: "female",
+        phone: "+13125550198",
+        email: "ava.nguyen@example.test",
+        streetAddress: "1200 West Lake Street",
+        city: "Chicago",
+        state: "IL",
+        zip: "60607",
+        insurancePayer: "Aetna",
+        insuranceMemberId: "AET123456",
+        reasonForVisit: "Annual wellness visit",
+        preferredContactMethod: "phone",
+        sourceFormat: "json",
+        rawSourceExcerpt: "Ava Nguyen intake",
+      },
+      observation: {
+        currentUrl: "https://openmrs.example.test/openmrs/login.htm",
+        title: "Login",
+        visibleText: "Username Password Login",
+        screenshotPath: "screenshots/demo-001/openmrs/0001-ai-step-1.png",
+        controls: [
+          {
+            elementId: "control-1",
+            tag: "input",
+            role: "textbox",
+            label: "Given Name",
+            value: "",
+            visibleText: "Given Name",
+          },
+        ],
+        elementSelectors: new Map([["control-1", "#givenName"]]),
+      },
+      completedFields: ["lastName"],
+      skippedFields: ["insuranceGroupId"],
+      stepCount: 4,
+    });
+
+    expect(plan).toEqual({
+      action: {
+        type: "fill",
+        elementId: "control-1",
+        field: "firstName",
+        value: "Ava",
+        rationale: "The input label matches first name.",
+      },
+      confidence: 0.88,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      model: "gpt-5.4-mini",
+      text: {
+        format: {
+          type: "json_schema",
+          name: "ai_web_plan",
+          strict: true,
+        },
+      },
+      store: false,
+      stream: false,
+    });
+    const call = calls[0] as {
+      input: Array<{ content: Array<{ type: string; text: string }> }>;
+      text: { format: { schema: { properties: Record<string, unknown> } } };
+    };
+    const prompt = JSON.parse(call.input[0]?.content[0]?.text ?? "{}") as Record<string, unknown>;
+    expect(prompt).toMatchObject({
+      targetProfile: {
+        name: "openmrs",
+        displayName: "OpenMRS",
+        task: "Create one synthetic patient.",
+        successCriteria: ["A saved patient detail page is visible."],
+        forbiddenActions: ["Do not delete patients."],
+      },
+      normalizedRecord: {
+        sourceRecordId: "demo-001",
+        firstName: "Ava",
+      },
+      pageObservation: {
+        currentUrl: "https://openmrs.example.test/openmrs/login.htm",
+        title: "Login",
+        visibleText: "Username Password Login",
+        controls: [
+          {
+            elementId: "control-1",
+            label: "Given Name",
+          },
+        ],
+      },
+      completedFields: ["lastName"],
+      skippedFields: ["insuranceGroupId"],
+      stepCount: 4,
+    });
+    expect(call.text.format.schema.properties).toHaveProperty("action");
+    expect(call.text.format.schema.properties).toHaveProperty("confidence");
+  });
+
+  it("rejects malformed model plans", async () => {
+    const planner = new OpenAiAiWebPlanner({
+      model: "gpt-5.4-mini",
+      client: {
+        responses: {
+          create: async () => ({ output_text: JSON.stringify({ action: { type: "javascript" }, confidence: 1 }) }),
+        },
+      },
+    });
+
+    await expect(planner.plan({} as never)).rejects.toThrow();
   });
 });
