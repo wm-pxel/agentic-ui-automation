@@ -20,8 +20,8 @@ same. Only the destination web app adapter changes.
 - Preserve the existing target adapter contract and audit artifact contract.
 - Record OpenEMR screenshots, target evidence, field mappings, exceptions, and
   target counts in the same run artifact structure used by OpenMRS.
-- Position the demo as a concrete contrast with brittle screen-script RPA:
-  the workflow contract stays fixed while one target adapter changes.
+- Position the demo as a concrete destination-flexibility proof: the workflow
+  contract stays fixed while one target adapter changes.
 
 ## Non-Goals
 
@@ -300,6 +300,7 @@ git diff --check
   contract.
 - Both runs write the existing audit artifact set under `runs/<run-id>/`.
 - The local viewer can display both runs without OpenEMR-specific routes.
-- Documentation gives a concise demo script and a defensible RPA comparison.
+- Documentation gives a concise demo script and a defensible
+  destination-flexibility explanation.
 - No real patient data or PHI is introduced anywhere in the repository,
   generated artifacts, logs, screenshots, or demo instructions.

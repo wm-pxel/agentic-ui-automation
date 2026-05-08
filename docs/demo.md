@@ -27,6 +27,43 @@ Expected fake run result:
   `executive-summary.md`, `summary.md`, `report.json`, `events.jsonl`,
   normalized input, and exception JSON files.
 
+## Destination Flexibility Demo
+
+Run OpenMRS first:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run dev -- run \
+  --input data/demo/intake-records.json \
+  --targets openmrs \
+  --runs-dir runs \
+  --synthetic-suffix auto
+```
+
+Then run OpenEMR with the same intake file and the same non-target workflow
+options:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run dev -- run \
+  --input data/demo/intake-records.json \
+  --targets openemr \
+  --runs-dir runs \
+  --synthetic-suffix auto
+```
+
+The parser, validation, normalized input artifact, orchestrator, audit contract,
+and viewer are the same for both commands. The only intentional change is the
+destination web app selected by `--targets`.
+
+Run `npm run viewer` and compare the two runs. The viewer sidebar, each
+`executive-summary.md`, and each `summary.md` identify the destination target so
+the OpenMRS and OpenEMR runs are easy to distinguish.
+
 ## Desktop Intake Export Demo
 
 The Electron intake app opens with `data/demo/intake-seed-records.json`. The
@@ -210,6 +247,54 @@ The public OpenMRS demo keeps submitted patients for a while. If you rerun the
 same input without `--synthetic-suffix`, duplicate patient detection can make
 the run fail correctly. Use `runs/<run-id>/input/normalized-records.json` to see
 the generated names and identifiers to search for during manual validation.
+
+## OpenEMR Smoke Demo
+
+The OpenEMR target drives the public or configured OpenEMR UI through Chromium.
+Public/demo OpenEMR screens can drift, credentials can rotate, and target
+selectors may need updates. If the environment is unavailable or the UI state
+changes, the run should stop that target with an environment or UI-state
+exception and still write audit artifacts for review.
+
+OpenEMR publishes current demo links at `https://www.open-emr.org/demo/`.
+
+- Demo page: `https://www.open-emr.org/demo/`
+- Default app URL: `https://demo.openemr.io/openemr`
+- Default username: `admin`
+- Default password: `pass`
+- Default OpenEMR record concurrency: `1`
+
+```sh
+npx playwright install chromium
+set -a
+. ./.env
+set +a
+npm run dev -- run \
+  --input data/demo/intake-records.json \
+  --targets openemr \
+  --runs-dir runs \
+  --synthetic-suffix auto \
+  --openemr-concurrency 1
+```
+
+For local smoke checks that should not call OpenAI, use
+`data/demo/intake-records-normalized.json` and add `--parser deterministic`.
+
+For each valid normalized record, the OpenEMR target should:
+
+1. Log in to OpenEMR.
+2. Take a `before-navigation` screenshot.
+3. Open the OpenEMR patient demographics workflow.
+4. Fill available demographic and contact fields.
+5. Take an `after-fill` screenshot.
+6. Save the patient through the OpenEMR UI.
+7. Treat duplicate or validation prompts as target exceptions for manual review.
+8. Take an `after-save` proof screenshot.
+
+`summary.md` includes an OpenEMR record review with raw intake input, proof
+screenshots, per-field mapping confidence, and source-to-OpenEMR comparisons.
+Optional fields that are unavailable in the public demo layout may be reported
+as failed mappings without changing the shared audit artifact structure.
 
 ## Audit Review Commands
 

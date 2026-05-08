@@ -1,4 +1,5 @@
 import type { RunStatus, TargetName, TargetTaskStatus } from "../domain/schema.js";
+import { TARGET_ORDER, targetDestinationLabel, targetLabel, targetListLabel, targetWithKey } from "../domain/targets.js";
 import type {
   ReportAiExtraction,
   ReportDetails,
@@ -7,7 +8,6 @@ import type {
   ReportIssue,
 } from "./auditStore.js";
 
-const TARGET_ORDER: TargetName[] = ["openmrs", "fake"];
 const SEVERITY_ORDER = ["error", "warning", "info"] as const;
 
 export interface SummaryInput {
@@ -24,8 +24,11 @@ export interface SummaryInput {
 }
 
 export function renderSummary(input: SummaryInput): string {
+  const targets = orderedTargets(input.targetCounts);
   const lines = [
-    `# Workflow Run ${input.runId}`,
+    `# ${targetListLabel(targets)} Workflow Run ${input.runId}`,
+    "",
+    targetDestinationLabel(targets),
     "",
     `Total source records: ${input.totalRecords}`,
     `Preflight exceptions: ${input.preflightExceptions}`,
@@ -38,16 +41,18 @@ export function renderSummary(input: SummaryInput): string {
   appendArtifacts(lines, input);
 
   lines.push("## Target Counts", "");
-  lines.push("| Target | Succeeded | Exceptions | Skipped |", "| --- | ---: | ---: | ---: |");
+  lines.push("| Target | Key | Succeeded | Exceptions | Skipped |", "| --- | --- | ---: | ---: | ---: |");
 
-  for (const target of TARGET_ORDER) {
+  for (const target of targets) {
     const counts = input.targetCounts[target];
     if (!counts) continue;
-    lines.push(`| ${target} | ${counts.succeeded ?? 0} | ${counts.exception ?? 0} | ${counts.skipped ?? 0} |`);
+    lines.push(
+      `| ${targetLabel(target)} | ${target} | ${counts.succeeded ?? 0} | ${counts.exception ?? 0} | ${counts.skipped ?? 0} |`,
+    );
   }
 
   appendIssues(lines, input.details?.issues ?? []);
-  appendOpenMrsRecordReviews(lines, input.details);
+  appendTargetRecordReviews(lines, input.details);
 
   lines.push("");
   return `${lines.join("\n")}\n`;
@@ -60,11 +65,14 @@ function appendContents(lines: string[], input: SummaryInput): void {
   }
   lines.push("- [Target Counts](#target-counts)", "- [Issues](#issues)");
 
-  const openMrsRecordIds = openMrsReviewRecordIds(input.details);
-  if (openMrsRecordIds.length > 0) {
-    lines.push("- [OpenMRS Record Review](#openmrs-record-review)");
-    for (const recordId of openMrsRecordIds) {
-      lines.push(`  - [Record ${recordId}](#${markdownAnchor(`Record ${recordId}`)})`);
+  for (const target of reviewTargets(input.details)) {
+    const recordIds = reviewRecordIds(input.details, target);
+    if (recordIds.length > 0) {
+      const label = targetLabel(target);
+      lines.push(`- [${label} Record Review](#${markdownAnchor(`${label} Record Review`)})`);
+      for (const recordId of recordIds) {
+        lines.push(`  - [${label} record ${recordId}](#${markdownAnchor(`${label} Record ${recordId}`)})`);
+      }
     }
   }
   lines.push("");
@@ -92,16 +100,12 @@ function appendArtifacts(lines: string[], input: SummaryInput): void {
 }
 
 export function renderExecutiveSummary(input: SummaryInput): string {
+  const targets = orderedTargets(input.targetCounts);
   const issues = input.details?.issues ?? [];
-  const openMrsMappings = input.details?.fieldMappings.filter((mapping) => mapping.target === "openmrs") ?? [];
-  const failedOpenMrsMappings = openMrsMappings.filter((mapping) => mapping.status === "failed");
-  const openMrsEvidenceRecords = new Set(
-    (input.details?.targetEvidence ?? [])
-      .filter((evidence) => evidence.target === "openmrs" && (evidence.fieldScreenshotPath || evidence.screenshotPath))
-      .map((evidence) => evidence.recordId),
-  );
+  const failedMappingsByTarget = groupFailedMappingsByTarget(input.details?.fieldMappings ?? []);
+  const evidenceRecordsByTarget = groupEvidenceRecordsByTarget(input.details?.targetEvidence ?? []);
 
-  const lines = [`# Executive Summary ${input.runId}`, ""];
+  const lines = [`# ${targetListLabel(targets)} Executive Summary ${input.runId}`, ""];
 
   lines.push("## Outcome", "");
   lines.push("| Metric | Value |", "| --- | --- |");
@@ -109,6 +113,7 @@ export function renderExecutiveSummary(input: SummaryInput): string {
     lines.push(`| Status | ${cell(input.status)} |`);
   }
   lines.push(
+    `| ${targets.length === 1 ? "Destination target" : "Destination targets"} | ${cell(targets.map(targetWithKey).join(", "))} |`,
     `| Source records | ${input.totalRecords} |`,
     `| Preflight exceptions | ${input.preflightExceptions} |`,
     `| Environment exceptions | ${input.environmentExceptions} |`,
@@ -117,11 +122,13 @@ export function renderExecutiveSummary(input: SummaryInput): string {
   );
 
   lines.push("## Target Results", "");
-  lines.push("| Target | Succeeded | Exceptions | Skipped |", "| --- | ---: | ---: | ---: |");
-  for (const target of TARGET_ORDER) {
+  lines.push("| Target | Key | Succeeded | Exceptions | Skipped |", "| --- | --- | ---: | ---: | ---: |");
+  for (const target of targets) {
     const counts = input.targetCounts[target];
     if (!counts) continue;
-    lines.push(`| ${target} | ${counts.succeeded ?? 0} | ${counts.exception ?? 0} | ${counts.skipped ?? 0} |`);
+    lines.push(
+      `| ${targetLabel(target)} | ${target} | ${counts.succeeded ?? 0} | ${counts.exception ?? 0} | ${counts.skipped ?? 0} |`,
+    );
   }
   lines.push("");
 
@@ -131,12 +138,17 @@ export function renderExecutiveSummary(input: SummaryInput): string {
   } else {
     lines.push(`- ${issues.length} ${plural(issues.length, "issue")} recorded.`);
   }
-  if (failedOpenMrsMappings.length > 0) {
-    lines.push(`- ${failedOpenMrsMappings.length} OpenMRS field ${plural(failedOpenMrsMappings.length, "mapping")} failed.`);
-  }
-  if (openMrsEvidenceRecords.size > 0) {
+  for (const target of targets) {
+    const failedMappings = failedMappingsByTarget.get(target) ?? [];
+    if (failedMappings.length > 0) {
+      lines.push(
+        `- ${failedMappings.length} ${targetLabel(target)} field ${plural(failedMappings.length, "mapping")} failed.`,
+      );
+    }
+    const evidenceRecords = evidenceRecordsByTarget.get(target);
+    if (!evidenceRecords || evidenceRecords.size === 0) continue;
     lines.push(
-      `- ${openMrsEvidenceRecords.size} OpenMRS ${plural(openMrsEvidenceRecords.size, "record")} ${hasVerb(openMrsEvidenceRecords.size)} screenshot evidence.`,
+      `- ${evidenceRecords.size} ${targetLabel(target)} ${plural(evidenceRecords.size, "record")} ${hasVerb(evidenceRecords.size)} screenshot evidence.`,
     );
   }
   lines.push("");
@@ -229,28 +241,30 @@ function issueSeverity(issue: ReportIssue): "error" | "warning" | "info" {
   return issue.severity ?? "error";
 }
 
-function appendOpenMrsRecordReviews(lines: string[], details: ReportDetails | undefined): void {
+function appendTargetRecordReviews(lines: string[], details: ReportDetails | undefined): void {
   if (!details) return;
-
-  const openMrsMappings = details.fieldMappings.filter((mapping) => mapping.target === "openmrs");
-  const mappingsByRecord = groupByRecord(openMrsMappings);
-  const evidenceByRecord = groupEvidenceByRecord(details.targetEvidence.filter((evidence) => evidence.target === "openmrs"));
-  const issuesByRecord = groupByRecordIssue(details.issues.filter((issue) => issue.target === "openmrs" && issue.recordId));
-  const recordIds = openMrsReviewRecordIds(details);
-
-  if (recordIds.length === 0) return;
 
   const aiByRecord = new Map(details.aiExtractions.map((extraction) => [extraction.recordId, extraction]));
   const inputsByRecord = new Map((details.recordInputs ?? []).map((input) => [input.recordId, input]));
-  lines.push("", "## OpenMRS Record Review", "");
-  for (const recordId of recordIds) {
-    const input = inputsByRecord.get(recordId);
-    const evidence = evidenceByRecord.get(recordId)?.[0];
-    const issue = issuesByRecord.get(recordId)?.[0];
-    const mappings = mappingsByRecord.get(recordId) ?? [];
-    const extraction = aiByRecord.get(recordId);
+  for (const target of reviewTargets(details)) {
+    const targetMappings = details.fieldMappings.filter((mapping) => mapping.target === target);
+    const mappingsByRecord = groupByRecord(targetMappings);
+    const evidenceByRecord = groupEvidenceByRecord(details.targetEvidence.filter((evidence) => evidence.target === target));
+    const issuesByRecord = groupByRecordIssue(details.issues.filter((issue) => issue.target === target && issue.recordId));
+    const recordIds = reviewRecordIds(details, target);
+    const label = targetLabel(target);
 
-    lines.push(`### Record ${recordId}`, "");
+    if (recordIds.length === 0) continue;
+
+    lines.push("", `## ${label} Record Review`, "");
+    for (const recordId of recordIds) {
+      const input = inputsByRecord.get(recordId);
+      const evidence = evidenceByRecord.get(recordId)?.[0];
+      const issue = issuesByRecord.get(recordId)?.[0];
+      const mappings = mappingsByRecord.get(recordId) ?? [];
+      const extraction = aiByRecord.get(recordId);
+
+      lines.push(`### ${label} Record ${recordId}`, "");
     lines.push("#### Intake Input", "");
     if (input) {
       lines.push(`- Source format: ${cell(input.sourceFormat)}`, "", "```json", formatJson(input.rawInput), "```", "");
@@ -262,13 +276,13 @@ function appendOpenMrsRecordReviews(lines: string[], details: ReportDetails | un
       lines.push("#### Screenshots", "");
       if (evidence?.screenshotPath && evidence.fieldScreenshotPath) {
         lines.push(`- Proof screenshot: ${cell(evidence.screenshotPath)}`);
-        lines.push("", `![OpenMRS proof screenshot for ${cell(recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
+        lines.push("", `![${label} proof screenshot for ${cell(recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
       } else if (evidence?.screenshotPath) {
         lines.push(`- Context screenshot: ${cell(evidence.screenshotPath)}`);
-        lines.push("", `![OpenMRS context screenshot for ${cell(recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
+        lines.push("", `![${label} context screenshot for ${cell(recordId)}](${markdownImagePath(evidence.screenshotPath)})`, "");
       } else if (issue?.screenshotPath) {
         lines.push(`- Exception screenshot: ${cell(issue.screenshotPath)}`);
-        lines.push("", `![OpenMRS exception screenshot for ${cell(recordId)}](${markdownImagePath(issue.screenshotPath)})`, "");
+        lines.push("", `![${label} exception screenshot for ${cell(recordId)}](${markdownImagePath(issue.screenshotPath)})`, "");
       }
       if (evidence?.targetRecordId) {
         lines.push(`- Target record: ${cell(evidence.targetRecordId)}`);
@@ -281,11 +295,11 @@ function appendOpenMrsRecordReviews(lines: string[], details: ReportDetails | un
       lines.push("");
     }
 
-    const comparisonRows = openMrsComparisonRows(mappings, extraction, input);
+    const comparisonRows = targetComparisonRows(mappings, extraction, input);
     if (comparisonRows.length > 0) {
-      lines.push("#### Intake to OpenMRS Comparison", "");
-      lines.push("Rows highlighted yellow in the viewer indicate OpenMRS mappings whose confidence is below the configured threshold.", "");
-      lines.push("| Intake Field | Intake Value | Mapping Confidence | Normalized Field | OpenMRS Field | AI-Mapped Value | Final Input Value | Action | Status | Selector or Error |");
+      lines.push(`#### Intake to ${label} Comparison`, "");
+      lines.push(`Rows highlighted yellow in the viewer indicate ${label} mappings whose confidence is below the configured threshold.`, "");
+      lines.push(`| Intake Field | Intake Value | Mapping Confidence | Normalized Field | ${label} Field | AI-Mapped Value | Final Input Value | Action | Status | Selector or Error |`);
       lines.push("| --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |");
       for (const row of comparisonRows) {
         lines.push(
@@ -294,6 +308,7 @@ function appendOpenMrsRecordReviews(lines: string[], details: ReportDetails | un
       }
       lines.push("");
     }
+  }
   }
 }
 
@@ -310,7 +325,7 @@ interface OpenMrsComparisonRow {
   selectorOrError: string;
 }
 
-function openMrsComparisonRows(
+function targetComparisonRows(
   mappings: ReportFieldMapping[],
   extraction: ReportAiExtraction | undefined,
   input: ReportRecordInput | undefined,
@@ -488,16 +503,57 @@ function groupByRecordIssue(issues: ReportIssue[]): Map<string, ReportIssue[]> {
   return groups;
 }
 
-function openMrsReviewRecordIds(details: ReportDetails | undefined): string[] {
+function reviewTargets(details: ReportDetails | undefined): TargetName[] {
   if (!details) return [];
 
-  const openMrsMappings = details.fieldMappings.filter((mapping) => mapping.target === "openmrs");
-  const openMrsIssues = details.issues.filter((issue) => issue.target === "openmrs" && issue.recordId);
-  return orderedUnique([
-    ...details.targetEvidence.filter((evidence) => evidence.target === "openmrs").map((evidence) => evidence.recordId),
-    ...openMrsMappings.map((mapping) => mapping.recordId),
-    ...openMrsIssues.map((issue) => issue.recordId ?? ""),
+  const targets = orderedUnique([
+    ...details.targetEvidence.map((evidence) => evidence.target),
+    ...details.fieldMappings.map((mapping) => mapping.target),
+    ...details.issues.map((issue) => issue.target ?? ""),
   ]);
+  return orderedTargets(Object.fromEntries(targets.map((target) => [target, { succeeded: 0, exception: 0, skipped: 0 }])));
+}
+
+function reviewRecordIds(details: ReportDetails | undefined, target: TargetName): string[] {
+  if (!details) return [];
+
+  const targetMappings = details.fieldMappings.filter((mapping) => mapping.target === target);
+  const targetIssues = details.issues.filter((issue) => issue.target === target && issue.recordId);
+  return orderedUnique([
+    ...details.targetEvidence.filter((evidence) => evidence.target === target).map((evidence) => evidence.recordId),
+    ...targetMappings.map((mapping) => mapping.recordId),
+    ...targetIssues.map((issue) => issue.recordId ?? ""),
+  ]);
+}
+
+function orderedTargets(targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>): TargetName[] {
+  const present = Object.keys(targetCounts) as TargetName[];
+  return [
+    ...TARGET_ORDER.filter((target) => present.includes(target)),
+    ...present.filter((target) => !TARGET_ORDER.includes(target)),
+  ];
+}
+
+function groupFailedMappingsByTarget(mappings: ReportFieldMapping[]): Map<TargetName, ReportFieldMapping[]> {
+  const groups = new Map<TargetName, ReportFieldMapping[]>();
+  for (const mapping of mappings) {
+    if (mapping.status !== "failed") continue;
+    const group = groups.get(mapping.target) ?? [];
+    group.push(mapping);
+    groups.set(mapping.target, group);
+  }
+  return groups;
+}
+
+function groupEvidenceRecordsByTarget(evidenceItems: Array<{ target: TargetName; recordId: string; screenshotPath?: string; fieldScreenshotPath?: string }>): Map<TargetName, Set<string>> {
+  const groups = new Map<TargetName, Set<string>>();
+  for (const evidence of evidenceItems) {
+    if (!evidence.screenshotPath && !evidence.fieldScreenshotPath) continue;
+    const group = groups.get(evidence.target) ?? new Set<string>();
+    group.add(evidence.recordId);
+    groups.set(evidence.target, group);
+  }
+  return groups;
 }
 
 function orderedUnique(values: string[]): string[] {

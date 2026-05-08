@@ -30,14 +30,16 @@ describe("runWorkflow", () => {
     expect(result.targetCounts.fake).toEqual({ succeeded: 1, exception: 0, skipped: 0 });
 
     const summary = await readFile(join(runsDir, "run-orchestrator", "summary.md"), "utf8");
-    expect(summary).toContain("| fake | 1 | 0 | 0 |");
+    expect(summary).toContain("# Fake Target Workflow Run run-orchestrator");
+    expect(summary).toContain("| Fake Target | fake | 1 | 0 | 0 |");
     expect(summary).toContain("Environment exceptions: 0");
     expect(summary).toContain("Close exceptions: 0");
 
     const executiveSummary = await readFile(join(runsDir, "run-orchestrator", "executive-summary.md"), "utf8");
-    expect(executiveSummary).toContain("# Executive Summary run-orchestrator");
+    expect(executiveSummary).toContain("# Fake Target Executive Summary run-orchestrator");
     expect(executiveSummary).toContain("| Status | completed_with_exceptions |");
-    expect(executiveSummary).toContain("| fake | 1 | 0 | 0 |");
+    expect(executiveSummary).toContain("| Destination target | Fake Target (fake) |");
+    expect(executiveSummary).toContain("| Fake Target | fake | 1 | 0 | 0 |");
     expect(executiveSummary).toContain("| Full summary |");
 
     const exceptionDir = join(runsDir, "run-orchestrator", "exceptions");

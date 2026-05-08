@@ -1,5 +1,6 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { extname, isAbsolute, join, posix, relative, resolve } from "node:path";
+import { TARGET_ORDER, targetLabel, targetListLabel } from "../domain/targets.js";
 
 export type MarkdownKind = "summary" | "executive-summary";
 
@@ -19,6 +20,8 @@ export interface ViewerArtifactLink {
 
 export interface ViewerRunSummary {
   runId: string;
+  displayName: string;
+  targetLabel?: string;
   timestamp?: string;
   status?: string;
   totalRecords?: number;
@@ -178,9 +181,14 @@ async function summarizeRun(runsRoot: string, runId: string): Promise<ViewerRunS
   ]);
 
   const reportCounts = objectProperty(report, "counts");
+  const targetCounts = parseTargetCounts(objectProperty(reportCounts, "targetCounts") ?? objectProperty(runMetadata, "targetCounts"));
+  const targets = parseTargetsFromMetadata(runMetadata) ?? orderedTargets(Object.keys(targetCounts));
+  const readableTargetLabel = targets.length > 0 ? targetListLabel(targets) : undefined;
 
   return {
     runId,
+    displayName: [readableTargetLabel, runId].filter(Boolean).join(" - "),
+    targetLabel: readableTargetLabel,
     timestamp: firstString(
       stringProperty(runMetadata, "startedAt"),
       stringProperty(runMetadata, "timestamp"),
@@ -198,11 +206,26 @@ async function summarizeRun(runsRoot: string, runId: string): Promise<ViewerRunS
       numberProperty(runMetadata, "environmentExceptions"),
     ),
     closeExceptions: firstNumber(numberProperty(reportCounts, "closeExceptions"), numberProperty(runMetadata, "closeExceptions")),
-    targetCounts: parseTargetCounts(objectProperty(reportCounts, "targetCounts") ?? objectProperty(runMetadata, "targetCounts")),
+    targetCounts,
     hasExecutiveSummary,
     hasSummary,
     artifacts,
   };
+}
+
+function parseTargetsFromMetadata(metadata: Record<string, unknown> | null | undefined): string[] | undefined {
+  const targets = metadata?.targets;
+  if (!Array.isArray(targets)) return undefined;
+  const parsed = targets.filter((target): target is string => typeof target === "string" && target.length > 0);
+  return parsed.length > 0 ? orderedTargets(parsed) : undefined;
+}
+
+function orderedTargets(targets: string[]): string[] {
+  const knownTargets = TARGET_ORDER as readonly string[];
+  return [
+    ...knownTargets.filter((target) => targets.includes(target)),
+    ...targets.filter((target) => !knownTargets.includes(target)).sort((left, right) => targetLabel(left).localeCompare(targetLabel(right))),
+  ];
 }
 
 async function listKnownArtifacts(runDir: string, runId: string): Promise<ViewerArtifactLink[]> {

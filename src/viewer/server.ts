@@ -481,6 +481,10 @@ function formatCount(value) {
 }
 
 function formatRunTitle(run) {
+  return run.displayName || [run.targetLabel, formatRunTimestamp(run)].filter(Boolean).join(" - ") || formatRunId(run.runId);
+}
+
+function formatRunTimestamp(run) {
   const date = run.timestamp ? new Date(run.timestamp) : null;
   if (!date || Number.isNaN(date.getTime())) return formatRunId(run.runId);
   return new Intl.DateTimeFormat(undefined, {

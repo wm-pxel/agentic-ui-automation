@@ -106,7 +106,7 @@ describe("createViewerServer", () => {
     }
   });
 
-  it("serves client code that formats run titles as dates while preserving raw IDs", async () => {
+  it("serves client code that uses target-aware display names while preserving raw IDs", async () => {
     const runsDir = await makeRunsDir();
     const viewer = createViewerServer({ runsDir });
     await viewer.listen({ port: 0, host: "127.0.0.1" });
@@ -116,8 +116,7 @@ describe("createViewerServer", () => {
       expect(script).toContain('button.innerHTML = \'<strong></strong><span class="run-id"></span><span class="run-meta"></span>\';');
       expect(script).toContain("button.querySelector(\"strong\").textContent = formatRunTitle(run);");
       expect(script).toContain("button.querySelector(\".run-id\").textContent = run.runId;");
-      expect(script).toContain('dateStyle: "medium"');
-      expect(script).toContain('timeStyle: "short"');
+      expect(script).toContain('return run.displayName || [run.targetLabel, formatRunTimestamp(run)].filter(Boolean).join(" - ") || formatRunId(run.runId);');
     } finally {
       await viewer.close();
     }

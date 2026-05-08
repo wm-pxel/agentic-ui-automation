@@ -17,6 +17,12 @@ export const CliRunConfigSchema = z.object({
     interactiveFieldConfirmation: z.boolean().default(false),
     fieldConfidenceThreshold: z.number().finite().min(0).max(1).default(0.8),
   }),
+  openEmr: z.object({
+    baseUrl: z.string().optional(),
+    username: z.string().optional(),
+    password: z.string().optional(),
+    concurrency: z.number().int().min(1).default(1),
+  }),
 });
 
 export type CliRunConfig = z.infer<typeof CliRunConfigSchema>;
@@ -32,6 +38,7 @@ export interface BuildRunConfigOptions {
   openMrsConcurrency?: number;
   openMrsInteractiveFieldConfirmation?: boolean;
   openMrsFieldConfidenceThreshold?: number;
+  openEmrConcurrency?: number;
 }
 
 export function parseTargets(value: string): TargetName[] {
@@ -47,6 +54,7 @@ export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
     booleanFromEnv(process.env.OPENMRS_INTERACTIVE_FIELD_CONFIRMATION) ??
     false;
   const requestedOpenMrsConcurrency = options.openMrsConcurrency ?? numberFromEnv(process.env.OPENMRS_CONCURRENCY);
+  const requestedOpenEmrConcurrency = options.openEmrConcurrency ?? numberFromEnv(process.env.OPENEMR_CONCURRENCY);
 
   return CliRunConfigSchema.parse({
     input: options.input,
@@ -64,6 +72,12 @@ export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
       interactiveFieldConfirmation,
       fieldConfidenceThreshold:
         options.openMrsFieldConfidenceThreshold ?? thresholdFromEnv(process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD),
+    },
+    openEmr: {
+      baseUrl: process.env.OPENEMR_BASE_URL ?? "https://demo.openemr.io/openemr",
+      username: process.env.OPENEMR_USERNAME ?? "admin",
+      password: process.env.OPENEMR_PASSWORD ?? "pass",
+      concurrency: requestedOpenEmrConcurrency,
     },
   });
 }

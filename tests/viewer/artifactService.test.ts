@@ -54,6 +54,8 @@ describe("createArtifactService", () => {
     ]);
     expect(runs[0]).toMatchObject<Partial<ViewerRunSummary>>({
       runId: "run-2026-05-02T10-00-00-000Z-newer",
+      displayName: "OpenMRS - run-2026-05-02T10-00-00-000Z-newer",
+      targetLabel: "OpenMRS",
       status: "completed",
       totalRecords: 1,
       preflightExceptions: 0,
@@ -62,6 +64,8 @@ describe("createArtifactService", () => {
       hasExecutiveSummary: true,
       hasSummary: true,
     });
+    expect(runs[1].displayName).toBe("Fake Target - run-2026-05-01T15-42-33-006Z-older");
+    expect(runs[1].targetLabel).toBe("Fake Target");
     expect(runs[1].targetCounts.fake?.succeeded).toBe(3);
   });
 

@@ -9,6 +9,10 @@ const ENV_KEYS = [
   "OPENMRS_CONCURRENCY",
   "OPENMRS_INTERACTIVE_FIELD_CONFIRMATION",
   "OPENMRS_FIELD_CONFIDENCE_THRESHOLD",
+  "OPENEMR_BASE_URL",
+  "OPENEMR_USERNAME",
+  "OPENEMR_PASSWORD",
+  "OPENEMR_CONCURRENCY",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -32,7 +36,7 @@ afterEach(() => {
 
 describe("parseTargets", () => {
   it("parses comma-separated target names", () => {
-    expect(parseTargets("fake,openmrs")).toEqual(["fake", "openmrs"]);
+    expect(parseTargets("fake,openmrs,openemr")).toEqual(["fake", "openmrs", "openemr"]);
   });
 
   it("trims whitespace around target names", () => {
@@ -113,6 +117,37 @@ describe("buildRunConfig", () => {
       concurrency: 3,
       interactiveFieldConfirmation: false,
       fieldConfidenceThreshold: 0.8,
+    });
+  });
+
+  it("copies OpenEMR defaults and environment variables into the config", () => {
+    const defaultConfig = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openemr",
+    });
+
+    expect(defaultConfig.openEmr).toEqual({
+      baseUrl: "https://demo.openemr.io/openemr",
+      username: "admin",
+      password: "pass",
+      concurrency: 1,
+    });
+
+    process.env.OPENEMR_BASE_URL = "https://openemr.example.test/openemr";
+    process.env.OPENEMR_USERNAME = "operator";
+    process.env.OPENEMR_PASSWORD = "secret";
+    process.env.OPENEMR_CONCURRENCY = "2";
+
+    const envConfig = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openemr",
+    });
+
+    expect(envConfig.openEmr).toEqual({
+      baseUrl: "https://openemr.example.test/openemr",
+      username: "operator",
+      password: "secret",
+      concurrency: 2,
     });
   });
 

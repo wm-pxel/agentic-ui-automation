@@ -495,7 +495,8 @@ describe("FileAuditStore", () => {
       closeExceptions: 1,
     });
 
-    expect(summary).toContain("# Workflow Run run-test");
+    expect(summary).toContain("# OpenMRS + Fake Target Workflow Run run-test");
+    expect(summary).toContain("Destination targets: OpenMRS (openmrs), Fake Target (fake)");
     expect(summary).toContain("## Contents");
     expect(summary).toContain("- [Artifacts](#artifacts)");
     expect(summary).toContain("- [Target Counts](#target-counts)");
@@ -518,7 +519,7 @@ describe("FileAuditStore", () => {
     expect(summary.indexOf("| Screenshots |")).toBeLessThan(summary.indexOf("| Event log |"));
     expect(summary.indexOf("| Event log |")).toBeLessThan(summary.indexOf("| Executive summary |"));
     expect(summary.indexOf("| Executive summary |")).toBeLessThan(summary.indexOf("| Structured report |"));
-    expect(summary).toContain("| openmrs | 1 | 1 | 0 |");
+    expect(summary).toContain("| OpenMRS | openmrs | 1 | 1 | 0 |");
     expect(summary).toContain("Preflight exceptions: 1");
     expect(summary).toContain("Environment exceptions: 2");
     expect(summary).toContain("Close exceptions: 1");
@@ -667,12 +668,12 @@ describe("FileAuditStore", () => {
 
     expect(summary).toContain("## Issues");
     expect(summary).toContain("- [OpenMRS Record Review](#openmrs-record-review)");
-    expect(summary).toContain("  - [Record demo-001](#record-demo-001)");
+    expect(summary).toContain("  - [OpenMRS record demo-001](#openmrs-record-demo-001)");
     expect(summary).toContain("| Severity | Count |");
     expect(summary).toContain("| error | 1 |");
     expect(summary).toContain("| error | demo-001 | openmrs | target | verification_failed | OpenMRS still showed the new-patient form after save. | Review required fields. | screenshots/demo-001/openmrs/after-save.png |");
     expect(summary).toContain("## OpenMRS Record Review");
-    expect(summary).toContain("### Record demo-001");
+    expect(summary).toContain("### OpenMRS Record demo-001");
     expect(summary).toContain("#### Intake Input");
     expect(summary).toContain("\"intake_id\": \"demo-001\"");
     expect(summary).toContain("#### Screenshots");
@@ -749,11 +750,12 @@ describe("FileAuditStore", () => {
       },
     });
 
-    expect(executiveSummary).toContain("# Executive Summary run-test");
+    expect(executiveSummary).toContain("# OpenMRS Executive Summary run-test");
+    expect(executiveSummary).toContain("| Destination target | OpenMRS (openmrs) |");
     expect(executiveSummary).toContain("| Status | completed_with_exceptions |");
     expect(executiveSummary).toContain("| Source records | 2 |");
     expect(executiveSummary).toContain("| Preflight exceptions | 1 |");
-    expect(executiveSummary).toContain("| openmrs | 1 | 1 | 0 |");
+    expect(executiveSummary).toContain("| OpenMRS | openmrs | 1 | 1 | 0 |");
     expect(executiveSummary).toContain("- 1 issue recorded.");
     expect(executiveSummary).toContain("- 1 OpenMRS field mapping failed.");
     expect(executiveSummary).toContain("- 1 OpenMRS record has screenshot evidence.");
@@ -808,7 +810,7 @@ describe("FileAuditStore", () => {
     });
 
     expect(summary).toContain("## OpenMRS Record Review");
-    expect(summary).toContain("### Record demo-001");
+    expect(summary).toContain("### OpenMRS Record demo-001");
     expect(summary).toContain("#### Screenshots");
     expect(summary).not.toContain("- Filled-field screenshot: screenshots/demo-001/openmrs/after-fill.png");
     expect(summary).not.toContain("![OpenMRS filled fields screenshot for demo-001](screenshots/demo-001/openmrs/after-fill.png)");
@@ -922,6 +924,8 @@ describe("FileAuditStore", () => {
       closeExceptions: 0,
     });
 
-    expect(summary.indexOf("| openmrs | 1 | 2 | 0 |")).toBeLessThan(summary.indexOf("| fake | 3 | 0 | 0 |"));
+    expect(summary.indexOf("| OpenMRS | openmrs | 1 | 2 | 0 |")).toBeLessThan(
+      summary.indexOf("| Fake Target | fake | 3 | 0 | 0 |"),
+    );
   });
 });

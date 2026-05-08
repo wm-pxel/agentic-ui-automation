@@ -59,7 +59,9 @@ describe("runCli", () => {
     await expect(readFile(join(runsDir, result.runId, "events.jsonl"), "utf8")).resolves.toContain(
       "workflow run started",
     );
-    await expect(readFile(join(runsDir, result.runId, "summary.md"), "utf8")).resolves.toContain("# Workflow Run");
+    await expect(readFile(join(runsDir, result.runId, "summary.md"), "utf8")).resolves.toContain(
+      "# Fake Target Workflow Run",
+    );
     await expect(readJson(join(runsDir, result.runId, "input", "normalized-records.json"))).resolves.toHaveLength(3);
     await expect(readJson(join(runsDir, result.runId, "exceptions", "demo-invalid-phone.json"))).resolves.toMatchObject({
       code: "invalid_format",

@@ -18,6 +18,7 @@ import { runWorkflow } from "./orchestrator/runWorkflow.js";
 import { defaultIntakeInbox } from "./handoff/intakeHandoff.js";
 import { processReadyIntakeFiles, watchIntakeInbox, type IntakeWatchJobResult } from "./watcher/intakeWatcher.js";
 import { OpenMrsAdapter } from "./targets/openmrs/openMrsAdapter.js";
+import { OpenEmrAdapter } from "./targets/openemr/openEmrAdapter.js";
 import { startViewerServer as defaultStartViewerServer, type ViewerServer } from "./viewer/server.js";
 
 interface CliWritable {
@@ -48,6 +49,7 @@ interface RunCommandOptions {
   openmrsConcurrency?: number;
   openmrsInteractiveFieldConfirmation?: boolean;
   openmrsFieldConfidenceThreshold?: number;
+  openemrConcurrency?: number;
 }
 
 interface WatchCommandOptions {
@@ -59,6 +61,7 @@ interface WatchCommandOptions {
   openmrsConcurrency?: number;
   openmrsInteractiveFieldConfirmation?: boolean;
   openmrsFieldConfidenceThreshold?: number;
+  openemrConcurrency?: number;
   once?: boolean;
 }
 
@@ -126,6 +129,7 @@ function createProgram(io: Required<CliIo>, dependencies: Required<CliDependenci
     .option("--parser-model <model>", "OpenAI model to use for AI source parsing.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parseOpenMrsPositiveInteger)
+    .option("--openemr-concurrency <count>", "Maximum concurrent OpenEMR records.", parseOpenMrsPositiveInteger)
     .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
     .option(
       "--openmrs-field-confidence-threshold <threshold>",
@@ -145,6 +149,7 @@ function createProgram(io: Required<CliIo>, dependencies: Required<CliDependenci
     .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parseOpenMrsPositiveInteger)
+    .option("--openemr-concurrency <count>", "Maximum concurrent OpenEMR records.", parseOpenMrsPositiveInteger)
     .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
     .option(
       "--openmrs-field-confidence-threshold <threshold>",
@@ -176,6 +181,7 @@ async function runCommand(options: RunCommandOptions, stdout: CliWritable): Prom
   const config = buildRunConfig({
     ...options,
     openMrsConcurrency: options.openmrsConcurrency,
+    openEmrConcurrency: options.openemrConcurrency,
     openMrsInteractiveFieldConfirmation: options.openmrsInteractiveFieldConfirmation,
     openMrsFieldConfidenceThreshold: options.openmrsFieldConfidenceThreshold,
   });
@@ -200,6 +206,7 @@ async function watchCommand(options: WatchCommandOptions, stdout: CliWritable): 
     parser: "deterministic",
     syntheticSuffix: options.syntheticSuffix,
     openMrsConcurrency: options.openmrsConcurrency,
+    openEmrConcurrency: options.openemrConcurrency,
     openMrsInteractiveFieldConfirmation: options.openmrsInteractiveFieldConfirmation,
     openMrsFieldConfidenceThreshold: options.openmrsFieldConfidenceThreshold,
   });
@@ -265,6 +272,8 @@ function buildAdapters(config: CliRunConfig): TargetAdapter[] {
         return new FakeAdapter("success");
       case "openmrs":
         return new OpenMrsAdapter(config.openMrs);
+      case "openemr":
+        return new OpenEmrAdapter(config.openEmr);
     }
   });
 }
