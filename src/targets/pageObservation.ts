@@ -128,6 +128,7 @@ export async function createObservationSnapshot({
         const id = htmlElement.id;
         const name = htmlElement.getAttribute("name");
         const testId = htmlElement.getAttribute("data-testid");
+        const className = htmlElement.getAttribute("class");
         const ariaLabel = htmlElement.getAttribute("aria-label");
 
         if (id) {
@@ -138,6 +139,15 @@ export async function createObservationSnapshot({
         }
         if (testId) {
           return `${tag}[data-testid="${cssString(testId)}"]`;
+        }
+        if (className) {
+          const classes = className
+            .split(/\s+/)
+            .map((classPart) => classPart.trim())
+            .filter(Boolean);
+          if (classes.length > 0) {
+            return `${tag}.${classes.map(cssIdent).join(".")}`;
+          }
         }
         if (ariaLabel) {
           return `${tag}[aria-label="${cssString(ariaLabel)}"]`;
