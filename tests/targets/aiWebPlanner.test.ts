@@ -23,6 +23,22 @@ const plannerActionContract = [
 void plannerActionContract;
 
 describe("validateAiWebPlan", () => {
+  it("accepts every bounded action variant", () => {
+    const actions: AiWebAction[] = [
+      { type: "fill", elementId: "control-1", field: "firstName", value: "Ava", rationale: "label match" },
+      { type: "select", elementId: "control-2", field: "sexOrGender", value: "Female", rationale: "label match" },
+      { type: "click", elementId: "control-3", purpose: "save", rationale: "button label" },
+      { type: "wait", reason: "page transition" },
+      { type: "screenshot", label: "post-save-proof" },
+      { type: "verify", criteria: "Synthetic patient detail page is visible.", rationale: "success criteria" },
+      { type: "stop", code: "verification_failed", message: "The patient detail page did not appear." },
+    ];
+
+    for (const action of actions) {
+      expect(validateAiWebPlan({ action, confidence: 1 })).toEqual({ action, confidence: 1 });
+    }
+  });
+
   it("accepts a bounded action with confidence and rationale", () => {
     expect(
       validateAiWebPlan({

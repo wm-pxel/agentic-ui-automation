@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
+import type { AiWebAction } from "../../src/targets/browserActions.js";
 import { executeBrowserAction } from "../../src/targets/browserActions.js";
+
+function assertRunnerLevelActionsAreNotBrowserExecutable() {
+  const runnerLevelAction: AiWebAction = {
+    type: "stop",
+    code: "ui_state_unexpected",
+    message: "Stop before browser execution.",
+  };
+
+  // @ts-expect-error runner-level actions must not be accepted as browser-executable actions.
+  const browserExecutableAction: Parameters<typeof executeBrowserAction>[2] = runnerLevelAction;
+
+  void browserExecutableAction;
+}
+
+void assertRunnerLevelActionsAreNotBrowserExecutable;
 
 describe("executeBrowserAction", () => {
   it("executes fill, select, and click actions by element id", async () => {
@@ -38,6 +54,16 @@ describe("executeBrowserAction", () => {
     await executeBrowserAction(page, new Map(), { type: "wait", reason: "page transition" });
 
     expect(page.actions).toEqual([["wait", 1000]]);
+  });
+
+  it("throws instead of silently swallowing runner-level actions at runtime", async () => {
+    await expect(
+      executeBrowserAction(new FakeActionPage(), new Map(), {
+        type: "stop",
+        code: "ui_state_unexpected",
+        message: "Stop before browser execution.",
+      } as never),
+    ).rejects.toThrow("unsupported browser action: stop");
   });
 });
 

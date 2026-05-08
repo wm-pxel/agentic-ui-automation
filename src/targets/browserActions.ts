@@ -1,13 +1,64 @@
+import { z } from "zod";
+
 const BROWSER_ACTION_TIMEOUT_MS = 5000;
 
-export type AiWebAction =
-  | { type: "fill"; elementId: string; field: string; value: string; rationale: string }
-  | { type: "select"; elementId: string; field: string; value: string; rationale: string }
-  | { type: "click"; elementId: string; purpose: string; rationale: string }
-  | { type: "wait"; reason: string }
-  | { type: "screenshot"; label: string }
-  | { type: "verify"; criteria: string; rationale: string }
-  | { type: "stop"; code: "ui_state_unexpected" | "possible_duplicate" | "verification_failed"; message: string };
+export const AiWebActionSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("fill"),
+      elementId: z.string(),
+      field: z.string(),
+      value: z.string(),
+      rationale: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("select"),
+      elementId: z.string(),
+      field: z.string(),
+      value: z.string(),
+      rationale: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("click"),
+      elementId: z.string(),
+      purpose: z.string(),
+      rationale: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("wait"),
+      reason: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("screenshot"),
+      label: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("verify"),
+      criteria: z.string(),
+      rationale: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("stop"),
+      code: z.enum(["ui_state_unexpected", "possible_duplicate", "verification_failed"]),
+      message: z.string(),
+    })
+    .strict(),
+]);
+
+export type AiWebAction = z.infer<typeof AiWebActionSchema>;
+export type BrowserExecutableAiWebAction = Extract<AiWebAction, { type: "fill" | "select" | "click" | "wait" }>;
 
 interface BrowserActionPage {
   locator(selector: string): BrowserActionLocator;
@@ -23,7 +74,7 @@ interface BrowserActionLocator {
 export async function executeBrowserAction(
   page: BrowserActionPage,
   elementSelectors: Map<string, string>,
-  action: AiWebAction,
+  action: BrowserExecutableAiWebAction,
 ): Promise<void> {
   switch (action.type) {
     case "fill": {
@@ -44,11 +95,9 @@ export async function executeBrowserAction(
     case "wait":
       await page.waitForTimeout?.(1000);
       return;
-    case "screenshot":
-    case "verify":
-    case "stop":
-      return;
   }
+
+  throw new Error(`unsupported browser action: ${(action as AiWebAction).type}`);
 }
 
 function selectorForElement(elementSelectors: Map<string, string>, elementId: string): string {
