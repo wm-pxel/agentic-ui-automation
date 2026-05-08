@@ -1,5 +1,6 @@
 import { chromium } from "@playwright/test";
 import type { FileAuditStore } from "../audit/auditStore.js";
+import type { ReportFieldMapping } from "../audit/auditStore.js";
 import type { NormalizedIntakeRecord, ValidationException } from "../domain/schema.js";
 import type { AiWebPlanner } from "./aiWebPlanner.js";
 import type { AiWebAction, BrowserExecutableAiWebAction } from "./browserActions.js";
@@ -142,7 +143,7 @@ export class AiWebTargetRunner {
         if (action.type === "fill" || action.type === "select") {
           completedFields.push(action.field);
           latestFieldScreenshotPath = latestScreenshotPath;
-          await context.audit.writeFieldMapping({
+          const mapping = {
             recordId: context.record.sourceRecordId,
             target: context.profile.name,
             sourceField: action.field,
@@ -156,7 +157,9 @@ export class AiWebTargetRunner {
             agentRationale: action.rationale,
             approvalSource: "agent",
             finalValue: action.value,
-          });
+            fieldScreenshotPath: latestScreenshotPath,
+          } satisfies ReportFieldMapping & { fieldScreenshotPath?: string };
+          await context.audit.writeFieldMapping(mapping);
         }
       }
 
