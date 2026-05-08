@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AiWebPlanInput } from "../../src/targets/aiWebPlanner.js";
+import type { AiWebAction, AiWebPlanInput } from "../../src/targets/aiWebPlanner.js";
 import { StaticAiWebPlanner, validateAiWebPlan } from "../../src/targets/aiWebPlanner.js";
 
 const runnerPlanInput = {
@@ -12,6 +12,15 @@ const runnerPlanInput = {
 } satisfies AiWebPlanInput;
 
 void runnerPlanInput;
+
+const plannerActionContract = [
+  { type: "wait", reason: "OpenMRS is processing the save request." },
+  { type: "screenshot", label: "post-save-proof" },
+  { type: "verify", criteria: "Synthetic patient detail page is visible.", rationale: "success criteria" },
+  { type: "stop", code: "verification_failed", message: "The patient detail page did not appear." },
+] satisfies AiWebAction[];
+
+void plannerActionContract;
 
 describe("validateAiWebPlan", () => {
   it("accepts a bounded action with confidence and rationale", () => {

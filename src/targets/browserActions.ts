@@ -4,10 +4,10 @@ export type AiWebAction =
   | { type: "fill"; elementId: string; field: string; value: string; rationale: string }
   | { type: "select"; elementId: string; field: string; value: string; rationale: string }
   | { type: "click"; elementId: string; purpose: string; rationale: string }
-  | { type: "wait"; rationale?: string }
-  | { type: "screenshot"; rationale?: string }
-  | { type: "verify"; rationale?: string }
-  | { type: "stop"; rationale?: string };
+  | { type: "wait"; reason: string }
+  | { type: "screenshot"; label: string }
+  | { type: "verify"; criteria: string; rationale: string }
+  | { type: "stop"; code: "ui_state_unexpected" | "possible_duplicate" | "verification_failed"; message: string };
 
 interface BrowserActionPage {
   locator(selector: string): BrowserActionLocator;

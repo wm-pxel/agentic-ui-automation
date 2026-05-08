@@ -31,6 +31,14 @@ describe("executeBrowserAction", () => {
       }),
     ).rejects.toThrow("stale element id");
   });
+
+  it("waits when executing a planner wait action", async () => {
+    const page = new FakeActionPage();
+
+    await executeBrowserAction(page, new Map(), { type: "wait", reason: "page transition" });
+
+    expect(page.actions).toEqual([["wait", 1000]]);
+  });
 });
 
 class FakeActionPage {
@@ -42,5 +50,9 @@ class FakeActionPage {
       selectOption: async (option: { label: string }) => this.actions.push(["select", selector, option.label]),
       click: async () => this.actions.push(["click", selector]),
     };
+  }
+
+  async waitForTimeout(timeoutMs: number) {
+    this.actions.push(["wait", timeoutMs]);
   }
 }
