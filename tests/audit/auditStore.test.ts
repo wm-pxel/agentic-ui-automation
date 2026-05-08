@@ -696,7 +696,7 @@ describe("FileAuditStore", () => {
     expect(summary).not.toContain("Intake Evidence");
     expect(summary).toContain("| sex_at_birth | female | 0.97; user confirmed | Birth Sex | Female | Female | select | succeeded; low confidence: 97% below threshold 99%; operator_confirmed |  |");
     expect(summary).toContain("| province | IL | 0.96 | State | Illinois | Illinois | select | succeeded |  |");
-    expect(summary).toContain("| phone | 3125550198 | 0.99; user edited | Phone Number | +13125550198 |  | fill | succeeded; operator_edited; agent 62%; threshold 80%; proposed +13125550198; final <empty>; AI rationale The visible label could refer to another contact field. |  |");
+    expect(summary).toContain("| phone | 3125550198 | 0.62; user edited | Phone Number | +13125550198 |  | fill | succeeded; low confidence: 62% below threshold 80%; operator_edited; proposed +13125550198; final <empty>; AI rationale The visible label could refer to another contact field. |  |");
     expect(summary).toContain("| streetAddress |  | 0.98; user skipped | Address Line 1 | 1200 West Lake Street |  |  | skipped; operator_skipped; Operator skipped optional field. |  |");
     expect(summary).toContain("| given_name | Ava |  |  |  |  |  | not mapped |  |");
     expect(summary).not.toContain("## AI Source Extraction");
@@ -870,7 +870,6 @@ describe("FileAuditStore", () => {
             sourceField: "phone",
             targetField: "Phone",
             normalizedValue: "+13125550198",
-            mappingConfidence: 0.94,
             selectorCandidates: [],
             action: "fill",
             status: "succeeded",
@@ -886,7 +885,7 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("### OpenEMR Record demo-001");
     expect(summary).toContain("#### Intake to OpenEMR Comparison");
     expect(summary).toContain("| Intake Field | Intake Value | AI Confidence | Target Field | AI-Mapped Value | Final Input Value | Action | Status | Evidence |");
-    expect(summary).toContain("| phone | 3125550198 | 0.94 | Phone | +13125550198 | +13125550198 | fill | succeeded; agent 91%; AI rationale The planner matched the visible demographics phone field. |  |");
+    expect(summary).toContain("| phone | 3125550198 | 0.91 | Phone | +13125550198 | +13125550198 | fill | succeeded; AI rationale The planner matched the visible demographics phone field. |  |");
     expect(summary).not.toContain(["Selector", "or", "Error"].join(" "));
   });
 

@@ -384,8 +384,9 @@ function finalInputValue(mapping: ReportFieldMapping): string {
 }
 
 function mappingConfidenceCell(mapping: ReportFieldMapping): string {
+  const confidence = mapping.agentConfidence ?? mapping.mappingConfidence;
   const parts = [
-    mapping.mappingConfidence === undefined ? undefined : String(mapping.mappingConfidence),
+    confidence === undefined ? undefined : String(confidence),
     mappingUserInputStatus(mapping),
   ].filter((value): value is string => Boolean(value));
   return parts.join("; ");
@@ -413,7 +414,6 @@ function mappingIntervention(mapping: ReportFieldMapping): string {
   const parts = [
     lowConfidenceFlag,
     mapping.approvalSource,
-    mapping.agentConfidence === undefined ? undefined : `agent ${Math.round(mapping.agentConfidence * 100)}%`,
     lowConfidenceFlag || mapping.confidenceThreshold === undefined ? undefined : `threshold ${Math.round(mapping.confidenceThreshold * 100)}%`,
     mapping.originalProposedValue === undefined ? undefined : `proposed ${metadataValue(mapping.originalProposedValue)}`,
     mapping.finalValue === undefined ? undefined : `final ${metadataValue(mapping.finalValue)}`,
@@ -428,9 +428,10 @@ function mappingEvidence(mapping: ReportFieldMapping): string {
 }
 
 function mappingLowConfidenceFlag(mapping: ReportFieldMapping): string | undefined {
-  if (mapping.mappingConfidence === undefined || mapping.confidenceThreshold === undefined) return undefined;
-  if (mapping.mappingConfidence >= mapping.confidenceThreshold) return undefined;
-  return `low confidence: ${Math.round(mapping.mappingConfidence * 100)}% below threshold ${Math.round(mapping.confidenceThreshold * 100)}%`;
+  const confidence = mapping.agentConfidence ?? mapping.mappingConfidence;
+  if (confidence === undefined || mapping.confidenceThreshold === undefined) return undefined;
+  if (confidence >= mapping.confidenceThreshold) return undefined;
+  return `low confidence: ${Math.round(confidence * 100)}% below threshold ${Math.round(mapping.confidenceThreshold * 100)}%`;
 }
 
 function metadataValue(value: string): string {
