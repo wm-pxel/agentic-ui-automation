@@ -95,18 +95,8 @@ export class AiWebTargetRunner {
         });
         const action = plan.action;
 
-        await context.audit.writeEvent({
-          recordId: context.record.sourceRecordId,
-          target: context.profile.name,
-          phase: "target",
-          actionType: `ai-${action.type}`,
-          rationale: rationaleForAction(action),
-          screenshotPath: latestScreenshotPath,
-          result: action.type,
-          exceptionCode: action.type === "stop" ? action.code : undefined,
-        });
-
         if (action.type === "stop") {
+          await writeAiActionEvent(context, action, latestScreenshotPath, "stopped", action.code);
           const exception = exceptionForStop(action, latestScreenshotPath);
           await context.audit.writeTargetEvidence({
             recordId: context.record.sourceRecordId,
@@ -120,6 +110,7 @@ export class AiWebTargetRunner {
         }
 
         if (action.type === "verify") {
+          await writeAiActionEvent(context, action, latestScreenshotPath, "succeeded");
           const targetRecordId = aiTargetRecordId(context);
           await context.audit.writeTargetEvidence({
             recordId: context.record.sourceRecordId,
@@ -135,10 +126,23 @@ export class AiWebTargetRunner {
 
         if (action.type === "screenshot") {
           latestScreenshotPath = await captureScreenshot(context, page, `ai-${action.label}`);
+          await writeAiActionEvent(context, action, latestScreenshotPath, "captured");
           continue;
         }
 
-        await executeBrowserAction(page, observation.elementSelectors, action);
+        try {
+          await executeBrowserAction(page, observation.elementSelectors, action);
+        } catch (error) {
+          const exception = exceptionFromError(error, latestScreenshotPath);
+          await writeAiActionEvent(
+            context,
+            action,
+            latestScreenshotPath,
+            `failed: ${exception.message}`,
+            "ui_state_unexpected",
+          );
+          throw error;
+        }
 
         if (action.type === "fill" || action.type === "select") {
           completedFields.push(action.field);
@@ -160,6 +164,9 @@ export class AiWebTargetRunner {
             fieldScreenshotPath: latestFieldScreenshotPath,
           } satisfies ReportFieldMapping;
           await context.audit.writeFieldMapping(mapping);
+          await writeAiActionEvent(context, action, latestFieldScreenshotPath, "succeeded");
+        } else {
+          await writeAiActionEvent(context, action, latestScreenshotPath, "succeeded");
         }
       }
 
@@ -198,6 +205,25 @@ export class AiWebTargetRunner {
 async function captureScreenshot(context: AiWebTargetRunContext, page: AiWebTargetPage, step: string): Promise<string> {
   const bytes = await page.screenshot({ fullPage: true });
   return context.audit.writeScreenshot(context.record.sourceRecordId, context.profile.name, step, bytes);
+}
+
+async function writeAiActionEvent(
+  context: AiWebTargetRunContext,
+  action: AiWebAction,
+  screenshotPath: string | undefined,
+  result: string,
+  exceptionCode?: ValidationException["code"],
+): Promise<void> {
+  await context.audit.writeEvent({
+    recordId: context.record.sourceRecordId,
+    target: context.profile.name,
+    phase: "target",
+    actionType: `ai-${action.type}`,
+    rationale: rationaleForAction(action),
+    screenshotPath,
+    result,
+    exceptionCode,
+  });
 }
 
 function aiTargetRecordId(context: AiWebTargetRunContext): string {

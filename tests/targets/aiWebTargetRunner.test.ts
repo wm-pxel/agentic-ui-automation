@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -92,8 +92,153 @@ describe("AiWebTargetRunner", () => {
         fieldScreenshotPath: "screenshots/demo-001/openemr/0002-ai-field-firstName.png",
       }),
     );
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({ actionType: "ai-fill", result: "succeeded" }),
+      expect.objectContaining({ actionType: "ai-click", result: "succeeded" }),
+      expect.objectContaining({ actionType: "ai-verify", result: "succeeded" }),
+    ]);
+  });
+
+  it("returns an exception and closes the browser when the planner stops", async () => {
+    const page = new FakeRunnerPage();
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-stop-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "verification_failed",
+            message: "Planner could not verify the target state.",
+          },
+          confidence: 1,
+        },
+      ]),
+      launchBrowser: async () => browser,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({
+      status: "exception",
+      exception: expect.objectContaining({
+        code: "verification_failed",
+        message: "Planner could not verify the target state.",
+        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+      }),
+    });
+    expect(browser.closed).toBe(true);
+    expect(audit.getReportDetails().targetEvidence).toContainEqual(
+      expect.objectContaining({
+        status: "exception",
+        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+      }),
+    );
+  });
+
+  it("records a failed executable action event and closes the browser when a browser action fails", async () => {
+    const page = new FakeRunnerPage();
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-failure-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "click",
+            elementId: "control-99",
+            purpose: "save",
+            rationale: "The planner selected a stale save button.",
+          },
+          confidence: 0.8,
+        },
+      ]),
+      launchBrowser: async () => browser,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({
+      status: "exception",
+      exception: expect.objectContaining({
+        code: "ui_state_unexpected",
+        message: "stale element id: control-99",
+        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+      }),
+    });
+    expect(browser.closed).toBe(true);
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({
+        actionType: "ai-click",
+        result: "failed: stale element id: control-99",
+        exceptionCode: "ui_state_unexpected",
+      }),
+    ]);
+  });
+
+  it("returns a ui_state_unexpected exception and closes the browser when max steps are exhausted", async () => {
+    const page = new FakeRunnerPage();
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-max-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        { action: { type: "wait", reason: "Need more page changes." }, confidence: 0.7 },
+        { action: { type: "wait", reason: "Still waiting." }, confidence: 0.7 },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({
+      status: "exception",
+      exception: expect.objectContaining({
+        code: "ui_state_unexpected",
+        message: "AI web target runner exceeded 2 steps without verification.",
+        screenshotPath: "screenshots/demo-001/openemr/0002-ai-step-2.png",
+      }),
+    });
+    expect(browser.closed).toBe(true);
+    expect(audit.getReportDetails().targetEvidence).toContainEqual(
+      expect.objectContaining({
+        status: "exception",
+        screenshotPath: "screenshots/demo-001/openemr/0002-ai-step-2.png",
+      }),
+    );
   });
 });
+
+async function createAudit(prefix = "ai-web-runner-"): Promise<FileAuditStore> {
+  return FileAuditStore.create({
+    runsDir: await mkdtemp(join(tmpdir(), prefix)),
+    runId: "run-test",
+    now: () => "2026-05-08T12:00:00.000Z",
+  });
+}
+
+async function readEvents(audit: FileAuditStore): Promise<Array<Record<string, unknown>>> {
+  const content = await readFile(join(audit.runDir, "events.jsonl"), "utf8");
+  return content
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
 
 function profile(): TargetProfile {
   return {
