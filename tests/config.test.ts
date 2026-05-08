@@ -88,6 +88,17 @@ describe("buildRunConfig", () => {
     expect(config.runsDir).toBe("runs");
   });
 
+  it("keeps OpenMRS and OpenEMR config available for target profiles", () => {
+    const config = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openmrs,openemr",
+    });
+
+    expect(config.targets).toEqual(["openmrs", "openemr"]);
+    expect(config.openMrs.baseUrl).toBe("https://o2.openmrs.org/openmrs");
+    expect(config.openEmr.baseUrl).toBe("https://demo.openemr.io/openemr");
+  });
+
   it("uses environment defaults when options omit paths", () => {
     process.env.RUNS_DIR = "tmp/runs";
 
