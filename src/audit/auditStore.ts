@@ -53,6 +53,7 @@ export interface ReportFieldMapping {
   approvalSource?: ReportFieldApprovalSource;
   originalProposedValue?: string;
   finalValue?: string;
+  fieldScreenshotPath?: string;
   skipReason?: string;
   errorMessage?: string;
 }

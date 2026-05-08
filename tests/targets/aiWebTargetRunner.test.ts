@@ -89,7 +89,7 @@ describe("AiWebTargetRunner", () => {
         approvalSource: "agent",
         selectedSelector: "#first-name",
         selectorCandidates: ["#first-name"],
-        fieldScreenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+        fieldScreenshotPath: "screenshots/demo-001/openemr/0002-ai-field-firstName.png",
       }),
     );
   });

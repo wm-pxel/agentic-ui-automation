@@ -142,7 +142,7 @@ export class AiWebTargetRunner {
 
         if (action.type === "fill" || action.type === "select") {
           completedFields.push(action.field);
-          latestFieldScreenshotPath = latestScreenshotPath;
+          latestFieldScreenshotPath = await captureScreenshot(context, page, `ai-field-${action.field}`);
           const mapping = {
             recordId: context.record.sourceRecordId,
             target: context.profile.name,
@@ -157,8 +157,8 @@ export class AiWebTargetRunner {
             agentRationale: action.rationale,
             approvalSource: "agent",
             finalValue: action.value,
-            fieldScreenshotPath: latestScreenshotPath,
-          } satisfies ReportFieldMapping & { fieldScreenshotPath?: string };
+            fieldScreenshotPath: latestFieldScreenshotPath,
+          } satisfies ReportFieldMapping;
           await context.audit.writeFieldMapping(mapping);
         }
       }
