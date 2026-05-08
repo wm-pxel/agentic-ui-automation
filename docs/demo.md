@@ -145,11 +145,11 @@ direct CLI runs.
 
 ## OpenMRS Smoke Demo
 
-The OpenMRS smoke run drives the public or configured OpenMRS UI through
-Chromium. Public/demo OpenMRS screens can drift, credentials can rotate, and
-target selectors may need updates. If the environment is unavailable or the UI
-state changes, the run should stop that target with an environment or UI-state
-exception and still write audit artifacts for review.
+The OpenMRS smoke run drives the public or configured OpenMRS UI through the
+same generic AI web target runner used for OpenEMR. Public/demo OpenMRS screens
+can drift and credentials can rotate. If the environment is unavailable or the
+UI state changes, the run should stop that target with an environment or
+UI-state exception and still write audit artifacts for review.
 
 Prerequisites:
 
@@ -227,11 +227,11 @@ For `data/demo/intake-records.json`, the expected clean OpenMRS target result is
   runner, including ordered `ai-step-*` observations and `ai-field-*` proof
   images for completed fields when fields are entered.
 - `summary.md` includes an OpenMRS record review with raw intake input,
-  runner screenshots, planner rationale/confidence for field actions, and
-  source-to-target comparisons. Optional fields that are unavailable in a public
-  demo layout may be reported as failed mappings without failing the target
-  record. Issue tables categorize exceptions by severity and include remediation
-  steps for manual review.
+  runner screenshots, AI action evidence, planner rationale and confidence for
+  field actions, and source-to-target comparisons. Optional fields that are
+  unavailable in a public demo layout may be reported as failed mappings without
+  failing the target record. Issue tables categorize exceptions by severity and
+  include remediation steps for manual review.
 
 The public OpenMRS demo keeps submitted patients for a while. If you rerun the
 same input without `--synthetic-suffix`, duplicate patient detection can make
@@ -240,10 +240,10 @@ the generated names and identifiers to search for during manual validation.
 
 ## OpenEMR Smoke Demo
 
-The OpenEMR target drives the public or configured OpenEMR UI through Chromium.
-Public/demo OpenEMR screens can drift, credentials can rotate, and target
-selectors may need updates. If the environment is unavailable or the UI state
-changes, the run should stop that target with an environment or UI-state
+The OpenEMR target drives the public or configured OpenEMR UI through the same
+generic AI web target runner used for OpenMRS. Public/demo OpenEMR screens can
+drift and credentials can rotate. If the environment is unavailable or the UI
+state changes, the run should stop that target with an environment or UI-state
 exception and still write audit artifacts for review.
 
 OpenEMR publishes current demo links at `https://www.open-emr.org/demo/`.
@@ -274,10 +274,13 @@ For each valid normalized record, the OpenEMR target profile uses the same
 generic AI web target runner behavior as OpenMRS: observe the page, request one
 schema-bound planner action at a time, execute only bounded browser actions,
 capture ordered `ai-step-*` and `ai-field-*` screenshot evidence, and verify the
-configured success criteria before marking the record successful.
+configured success criteria before marking the record successful. The OpenMRS
+and OpenEMR profiles provide URL, credentials, target name, goal, and proof
+criteria; there are no destination-specific UI automation classes.
 
 `summary.md` includes an OpenEMR record review with raw intake input, proof
-screenshots, planner rationale/confidence for field actions, and
+screenshots, AI action evidence, planner rationale and confidence for field
+actions, and
 source-to-target comparisons. Optional fields that are unavailable in the public
 demo layout may be reported as failed mappings without changing the shared
 audit artifact structure.

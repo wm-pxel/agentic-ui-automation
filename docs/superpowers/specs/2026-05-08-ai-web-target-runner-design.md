@@ -2,9 +2,9 @@
 
 ## Summary
 
-Replace destination-specific UI adapters with one generic AI-driven web target
-runner. OpenMRS and OpenEMR become target profiles instead of screen-scripted
-adapters. The workflow still starts from synthetic intake data, validates into
+Replace destination-specific UI automation with one generic AI-driven web target
+runner. OpenMRS and OpenEMR are target profiles instead of screen-scripted
+destination implementations. The workflow still starts from synthetic intake data, validates into
 the normalized patient schema, runs a destination web app, and writes the same
 audit package, but live UI interaction is discovered and planned by AI at
 runtime.
@@ -16,7 +16,7 @@ destination profile changes; the web runner does not.
 
 ## Goals
 
-- Delete destination-specific UI adapters for OpenMRS and OpenEMR.
+- Delete destination-specific UI automation classes for OpenMRS and OpenEMR.
 - Replace selector maps and fixed page-flow scripts with a generic AI web
   operator.
 - Keep target naming clear in viewer sidebar titles, `executive-summary.md`,
@@ -33,7 +33,7 @@ destination profile changes; the web runner does not.
   - `screenshots/`
 - Keep all browser actions bounded, observable, and auditable.
 - Make OpenMRS and OpenEMR differ only by target profile and runtime page
-  observations, not separate adapter code.
+  observations, not separate destination code.
 
 ## Non-Goals
 
@@ -49,15 +49,15 @@ destination profile changes; the web runner does not.
 
 ## Architecture
 
-Remove the current adapter concept as the execution boundary:
+Remove the legacy destination implementation concept as the execution boundary:
 
 ```text
-src/adapters/contract.ts
-src/adapters/fakeAdapter.ts
-src/targets/openmrs/openMrsAdapter.ts
-src/targets/openmrs/selectors.ts
-src/targets/openemr/openEmrAdapter.ts
-src/targets/openemr/selectors.ts
+src/targets/legacy-contract.ts
+src/targets/fake-target.ts
+src/targets/openmrs/legacy-openmrs-target.ts
+src/targets/openmrs/legacy-selectors.ts
+src/targets/openemr/legacy-openemr-target.ts
+src/targets/openemr/legacy-selectors.ts
 ```
 
 Replace it with:
@@ -253,7 +253,7 @@ The CLI still accepts target names so run artifacts and profiles stay clear, but
 
 The fake target should be replaced by a non-EMR dry-run mode or a local profile
 that exercises orchestration and audit without pretending to be a destination
-adapter. The important architectural rule is that no target-specific UI
+implementation. The important architectural rule is that no target-specific UI
 automation class remains.
 
 ## Error Handling
@@ -286,7 +286,7 @@ on live OpenMRS or OpenEMR for unit tests.
 Required tests:
 
 - profile parsing loads OpenMRS and OpenEMR defaults.
-- CLI maps `openmrs` and `openemr` to profiles, not adapters.
+- CLI maps `openmrs` and `openemr` to profiles, not destination-specific UI code.
 - orchestrator runs target profiles through the generic runner.
 - generic runner executes bounded fill/select/click/wait/verify actions.
 - stale element IDs are rejected after a page observation changes.

@@ -394,7 +394,10 @@ npm run dev -- run \
 
 Both runs use the same parser, deterministic validation, normalized record
 schema, orchestrator, audit artifacts, and viewer. The intentional difference is
-`--targets openmrs` versus `--targets openemr`.
+`--targets openmrs` versus `--targets openemr`. OpenMRS and OpenEMR both use
+the same generic AI web target runner; target profiles supply the URL,
+credentials, target name, goal, and proof criteria. There are no
+destination-specific UI automation classes for those EMR screens.
 
 Run `npm run viewer` afterward. The viewer sidebar run names, each
 `executive-summary.md`, and each `summary.md` identify the destination target,
@@ -503,8 +506,9 @@ includes lower-confidence examples. A clean OpenMRS target pass therefore means:
   runner, including ordered `ai-step-*` observations and `ai-field-*` proof
   images for completed fields when fields are entered.
 - `executive-summary.md` gives a quick run outcome, while `summary.md` includes
-  an OpenMRS record review with raw intake input, runner screenshots, planner
-  rationale/confidence for field actions, and source-to-target comparisons.
+  an OpenMRS record review with raw intake input, runner screenshots, AI action
+  evidence, planner rationale and confidence for field actions, and
+  source-to-target comparisons.
   Issue sections categorize exceptions by severity and include remediation
   guidance for manual review. On public demo layouts, optional fields that are
   unavailable may appear as failed mappings without causing a target exception.
@@ -540,7 +544,8 @@ Manual verification:
 8. Open each patient record and confirm the demographic and contact fields match
    `normalized-records.json` for the fields present in that demo layout. Use the
    OpenMRS record review in `summary.md` to see source values, planner
-   confidence/rationale, selectors, and which optional fields were unavailable.
+   rationale and confidence, AI action evidence, and which optional fields were
+   unavailable.
 9. Confirm the audit log includes successful target completion events for each
    valid record:
 
@@ -590,13 +595,17 @@ npm run dev -- run \
 ```
 
 The OpenEMR target profile uses the same generic AI web target runner as
-OpenMRS. For each valid normalized record, the runner observes the page, asks
-the schema-bound AI planner for one bounded action at a time, executes only
+OpenMRS. The profile supplies the OpenEMR URL, credentials, target name, goal,
+and proof criteria; there is no destination-specific UI automation class. For
+each valid normalized record, the runner observes the page, asks the
+schema-bound AI planner for one bounded action at a time, executes only
 supported browser actions, captures ordered `ai-step-*` observations and
 `ai-field-*` proof images for completed fields, and records target evidence in
 `summary.md` and `report.json`. Fields that are not available in the selected
 OpenEMR screen are reported as field mapping evidence or target exceptions
-depending on whether they are required for patient creation.
+depending on whether they are required for patient creation. Live demo sites can
+change, and those failures remain auditable target exceptions rather than silent
+successes.
 
 ## Audit Artifacts
 

@@ -298,12 +298,12 @@ function appendTargetRecordReviews(lines: string[], details: ReportDetails | und
     const comparisonRows = targetComparisonRows(mappings, extraction, input);
     if (comparisonRows.length > 0) {
       lines.push(`#### Intake to ${label} Comparison`, "");
-      lines.push(`Rows highlighted yellow in the viewer indicate ${label} mappings whose confidence is below the configured threshold.`, "");
-      lines.push(`| Intake Field | Intake Value | Mapping Confidence | Normalized Field | ${label} Field | AI-Mapped Value | Final Input Value | Action | Status | Selector or Error |`);
-      lines.push("| --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |");
+      lines.push(`Rows highlighted yellow in the viewer indicate ${label} mappings whose AI confidence is below the configured threshold.`, "");
+      lines.push("| Intake Field | Intake Value | AI Confidence | Target Field | AI-Mapped Value | Final Input Value | Action | Status | Evidence |");
+      lines.push("| --- | --- | ---: | --- | --- | --- | --- | --- | --- |");
       for (const row of comparisonRows) {
         lines.push(
-          `| ${cell(row.sourceLabel)} | ${cell(row.sourceValue)} | ${cell(row.confidence)} | ${cell(row.normalizedField)} | ${cell(row.targetField)} | ${cell(row.aiMappedValue)} | ${cell(row.finalInputValue)} | ${cell(row.action)} | ${cell(row.status)} | ${cell(row.selectorOrError)} |`,
+          `| ${cell(row.sourceLabel)} | ${cell(row.sourceValue)} | ${cell(row.confidence)} | ${cell(row.targetField)} | ${cell(row.aiMappedValue)} | ${cell(row.finalInputValue)} | ${cell(row.action)} | ${cell(row.status)} | ${cell(row.evidence)} |`,
         );
       }
       lines.push("");
@@ -312,28 +312,27 @@ function appendTargetRecordReviews(lines: string[], details: ReportDetails | und
   }
 }
 
-interface OpenMrsComparisonRow {
+interface TargetComparisonRow {
   sourceLabel: string;
   sourceValue: string;
   confidence: string;
-  normalizedField: string;
   targetField: string;
   aiMappedValue: string;
   finalInputValue: string;
   action: string;
   status: string;
-  selectorOrError: string;
+  evidence: string;
 }
 
 function targetComparisonRows(
   mappings: ReportFieldMapping[],
   extraction: ReportAiExtraction | undefined,
   input: ReportRecordInput | undefined,
-): OpenMrsComparisonRow[] {
+): TargetComparisonRow[] {
   const extracted = extractionFieldLookup(extraction);
   const inputValues = recordInputFieldLookup(input);
   const mappedFields = new Set<string>();
-  const rows: OpenMrsComparisonRow[] = [];
+  const rows: TargetComparisonRow[] = [];
 
   for (const mapping of mappings) {
     mappedFields.add(mapping.sourceField);
@@ -347,13 +346,12 @@ function targetComparisonRows(
       sourceLabel: source.sourceLabel,
       sourceValue: source.value,
       confidence: mappingConfidenceCell(mapping),
-      normalizedField: mapping.sourceField,
       targetField: mapping.targetField,
       aiMappedValue: mapping.normalizedValue,
       finalInputValue: finalInputValue(mapping),
       action: mapping.action ?? "",
       status: [mapping.status, mappingIntervention(mapping)].filter(Boolean).join("; "),
-      selectorOrError: mapping.errorMessage ?? mapping.selectedSelector ?? "",
+      evidence: mappingEvidence(mapping),
     });
   }
 
@@ -368,13 +366,12 @@ function targetComparisonRows(
       sourceLabel: field.sourceLabel ?? field.sourceField,
       sourceValue: inputSource?.value ?? field.value,
       confidence: "",
-      normalizedField: field.sourceField,
       targetField: "",
       aiMappedValue: "",
       finalInputValue: "",
       action: "",
       status: "not mapped",
-      selectorOrError: "",
+      evidence: "",
     });
   }
 
@@ -420,10 +417,14 @@ function mappingIntervention(mapping: ReportFieldMapping): string {
     lowConfidenceFlag || mapping.confidenceThreshold === undefined ? undefined : `threshold ${Math.round(mapping.confidenceThreshold * 100)}%`,
     mapping.originalProposedValue === undefined ? undefined : `proposed ${metadataValue(mapping.originalProposedValue)}`,
     mapping.finalValue === undefined ? undefined : `final ${metadataValue(mapping.finalValue)}`,
-    mapping.agentRationale === undefined ? undefined : `rationale ${metadataValue(mapping.agentRationale)}`,
+    mapping.agentRationale === undefined ? undefined : `AI rationale ${metadataValue(mapping.agentRationale)}`,
     mapping.skipReason === undefined ? undefined : metadataValue(mapping.skipReason),
   ].filter((value): value is string => Boolean(value));
   return parts.join("; ");
+}
+
+function mappingEvidence(mapping: ReportFieldMapping): string {
+  return mapping.errorMessage ?? mapping.fieldScreenshotPath ?? "";
 }
 
 function mappingLowConfidenceFlag(mapping: ReportFieldMapping): string | undefined {
