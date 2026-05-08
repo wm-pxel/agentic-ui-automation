@@ -141,6 +141,56 @@ describe("AiWebTargetRunner", () => {
     );
   });
 
+  it("rejects verification when the observed page does not show the synthetic patient", async () => {
+    const page = new FakeRunnerPage({ bodyText: "OpenEMR dashboard Patient Search" });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-verify-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "The dashboard is visible.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({
+      status: "exception",
+      exception: expect.objectContaining({
+        code: "verification_failed",
+        message: "AI verification did not find the synthetic patient name in the observed page.",
+        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+      }),
+    });
+    expect(browser.closed).toBe(true);
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({
+        actionType: "ai-verify",
+        result: "failed: synthetic patient name not visible",
+        exceptionCode: "verification_failed",
+      }),
+    ]);
+    expect(audit.getReportDetails().targetEvidence).toContainEqual(
+      expect.objectContaining({
+        status: "exception",
+        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+        message: "AI verification did not find the synthetic patient name in the observed page.",
+      }),
+    );
+  });
+
   it("records a failed executable action event and closes the browser when a browser action fails", async () => {
     const page = new FakeRunnerPage();
     const browser = new FakeRunnerBrowser(page);
@@ -298,6 +348,8 @@ class FakeRunnerPage {
     fakeElement("button", { class: "save" }, "Save"),
   ]);
 
+  constructor(private readonly options: { bodyText?: string } = {}) {}
+
   url(): string {
     return this.gotoUrls.at(-1) ?? "about:blank";
   }
@@ -308,7 +360,7 @@ class FakeRunnerPage {
 
   locator(selector: string) {
     return {
-      innerText: async () => (selector === "body" ? "First Name Save Ava Nguyen" : ""),
+      innerText: async () => (selector === "body" ? (this.options.bodyText ?? "First Name Save Ava Nguyen") : ""),
       fill: async (value: string) => {
         this.actions.push(["fill", selector, value]);
       },

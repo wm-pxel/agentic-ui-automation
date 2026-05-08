@@ -110,6 +110,30 @@ export class AiWebTargetRunner {
         }
 
         if (action.type === "verify") {
+          if (!syntheticPatientNameVisible(context.record, observation.visibleText)) {
+            const exception = {
+              code: "verification_failed",
+              severity: "error",
+              message: "AI verification did not find the synthetic patient name in the observed page.",
+              screenshotPath: latestScreenshotPath,
+            } satisfies ValidationException & { screenshotPath?: string };
+            await writeAiActionEvent(
+              context,
+              action,
+              latestScreenshotPath,
+              "failed: synthetic patient name not visible",
+              "verification_failed",
+            );
+            await context.audit.writeTargetEvidence({
+              recordId: context.record.sourceRecordId,
+              target: context.profile.name,
+              status: "exception",
+              screenshotPath: latestScreenshotPath,
+              fieldScreenshotPath: latestFieldScreenshotPath,
+              message: exception.message,
+            });
+            return { status: "exception", exception };
+          }
           await writeAiActionEvent(context, action, latestScreenshotPath, "succeeded");
           const targetRecordId = aiTargetRecordId(context);
           await context.audit.writeTargetEvidence({
@@ -228,6 +252,16 @@ async function writeAiActionEvent(
 
 function aiTargetRecordId(context: AiWebTargetRunContext): string {
   return `ai-${context.profile.name}-${context.record.sourceRecordId}`;
+}
+
+function syntheticPatientNameVisible(record: NormalizedIntakeRecord, visibleText: string): boolean {
+  const normalizedText = normalizeForVerification(visibleText);
+  const nameParts = [record.firstName, record.lastName].map(normalizeForVerification).filter(Boolean);
+  return nameParts.length > 0 && nameParts.every((part) => normalizedText.includes(part));
+}
+
+function normalizeForVerification(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function selectorCandidatesForAction(
