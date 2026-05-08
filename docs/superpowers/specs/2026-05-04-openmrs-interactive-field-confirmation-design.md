@@ -67,13 +67,13 @@ testable.
 
 Add OpenMRS configuration for:
 
-- interactive field confirmation enabled or disabled;
-- field confidence threshold, defaulting to `0.8`.
+- legacy browser confirmation prompt enabled or disabled;
+- legacy confidence cutoff, defaulting to `0.8`.
 
 The CLI exposes these through explicit options:
 
 - `--openmrs-interactive-field-confirmation`
-- `--openmrs-field-confidence-threshold <number>`
+- `--openmrs-confirmation-threshold <number>`
 
 Matching environment variables are:
 
@@ -83,7 +83,7 @@ Matching environment variables are:
 Boolean parsing accepts `1`, `true`, `yes`, and `on` as enabled values.
 Threshold values must be finite numbers from `0` through `1`, inclusive.
 
-When interactive field confirmation is enabled, the effective OpenMRS
+When legacy browser confirmation prompt is enabled, the effective OpenMRS
 concurrency is `1`, regardless of `OPENMRS_CONCURRENCY` or
 `--openmrs-concurrency`. This is represented in configuration behavior and
 documentation. Non-interactive runs keep the current OpenMRS concurrency
@@ -188,7 +188,7 @@ field-entry phase.
 
 ## Testing
 
-Add focused tests around the OpenMRS adapter and configuration:
+Add focused tests around the legacy OpenMRS implementation and configuration:
 
 - high-confidence per-field agent approval fills normally without prompting;
 - low-confidence required field prompts and fills the operator-confirmed value;

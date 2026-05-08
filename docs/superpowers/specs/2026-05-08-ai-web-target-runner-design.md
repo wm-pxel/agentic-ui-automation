@@ -70,7 +70,7 @@ src/targets/browserActions.ts
 src/targets/pageObservation.ts
 ```
 
-The orchestrator no longer receives `TargetAdapter[]`. It receives
+The orchestrator no longer receives legacy target contract objects. It receives
 `TargetProfile[]` plus a generic target runner. A profile is data, not code that
 knows a UI flow.
 
@@ -304,11 +304,11 @@ public demo EMR sites can change or be unavailable.
 ## Migration Plan
 
 1. Add target profiles and the generic AI web runner behind tests.
-2. Update orchestrator inputs from `TargetAdapter[]` to `TargetProfile[]` plus
+2. Update orchestrator inputs from legacy target contract objects to `TargetProfile[]` plus
    runner dependency.
 3. Update CLI target construction to return profiles.
-4. Replace fake adapter tests with runner/profile tests.
-5. Delete destination-specific adapter and selector files.
+4. Replace fake target tests with runner/profile tests.
+5. Delete destination-specific implementation and selector files.
 6. Update docs and demo instructions.
 7. Run the two-command OpenMRS/OpenEMR smoke and compare artifacts in the
    viewer.

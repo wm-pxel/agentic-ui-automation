@@ -4,7 +4,7 @@
 
 **Goal:** Replace destination-specific UI adapters with one generic AI-driven web target runner plus thin OpenMRS/OpenEMR target profiles.
 
-**Architecture:** The orchestrator will run validated records through `TargetProfile` data and a single `AiWebTargetRunner`, instead of destination-specific `TargetAdapter` classes. The runner observes the live page, asks an AI planner for bounded actions, executes only allowlisted browser actions, and writes the same audit artifacts and target-aware summaries.
+**Architecture:** The orchestrator will run validated records through `TargetProfile` data and a single `AiWebTargetRunner`, instead of destination-specific target implementations. The runner observes the live page, asks an AI planner for bounded actions, executes only allowlisted browser actions, and writes the same audit artifacts and target-aware summaries.
 
 **Tech Stack:** TypeScript, Node.js, Commander, Zod, Playwright, OpenAI Responses API, Vitest, local file-based audit artifacts.
 
@@ -943,7 +943,7 @@ Expected: failures show `runWorkflow` still expects adapters.
 Change `RunWorkflowInput` from:
 
 ```ts
-adapters: TargetAdapter[];
+legacyTargets: LegacyTargetContract[];
 agent: AgentDriver;
 ```
 
@@ -1002,23 +1002,23 @@ Expected: selected orchestration and CLI tests pass.
 - Delete: `tests/targets/openEmrAdapter.test.ts`
 - Update imports in all affected tests/source files.
 
-- [ ] **Step 1: Search adapter references**
+- [ ] **Step 1: Search legacy implementation references**
 
 Run:
 
 ```sh
-rg -n "TargetAdapter|FakeAdapter|OpenMrsAdapter|OpenEmrAdapter|openMrsFieldMappings|openEmrFieldMappings|src/adapters|targets/openmrs|targets/openemr" src tests
+rg -n "LegacyTargetContract|legacy fake target|OpenMrsAdapter|OpenEmrAdapter|openMrsFieldMappings|openEmrFieldMappings|src/adapters|targets/openmrs|targets/openemr" src tests
 ```
 
 Expected before deletion: references still exist.
 
-- [ ] **Step 2: Delete adapter files**
+- [ ] **Step 2: Delete legacy implementation files**
 
 Use `apply_patch` delete hunks for the six source files and two target adapter test files.
 
 - [ ] **Step 3: Remove remaining imports and replace tests**
 
-Replace adapter-specific tests with:
+Replace legacy implementation tests with:
 
 ```sh
 npm test tests/targets/profiles.test.ts tests/targets/aiWebTargetRunner.test.ts tests/targets/aiWebPlanner.test.ts
@@ -1027,12 +1027,12 @@ npm test tests/targets/profiles.test.ts tests/targets/aiWebTargetRunner.test.ts 
 Expected: target behavior coverage now lives around profiles, bounded actions,
 planner validation, and generic runner execution.
 
-- [ ] **Step 4: Verify no adapter references remain**
+- [ ] **Step 4: Verify no legacy implementation references remain**
 
 Run:
 
 ```sh
-rg -n "TargetAdapter|FakeAdapter|OpenMrsAdapter|OpenEmrAdapter|openMrsFieldMappings|openEmrFieldMappings|src/adapters|targets/openmrs|targets/openemr" src tests
+rg -n "LegacyTargetContract|legacy fake target|OpenMrsAdapter|OpenEmrAdapter|openMrsFieldMappings|openEmrFieldMappings|src/adapters|targets/openmrs|targets/openemr" src tests
 ```
 
 Expected: no matches.

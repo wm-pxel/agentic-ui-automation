@@ -4,7 +4,7 @@
 
 **Goal:** Add OpenEMR as a second real EMR UI target and make run summaries/viewer labels clearly show which destination target ran.
 
-**Architecture:** Keep the existing parser, validation, orchestrator, audit store, and viewer artifact contract intact. Add OpenEMR behind the existing `TargetAdapter` interface, extend target schemas/configuration, and derive readable target labels from run metadata/counts for summary headings and viewer sidebar titles.
+**Architecture:** Keep the existing parser, validation, orchestrator, audit store, and viewer artifact contract intact. Add OpenEMR behind the legacy target interface, extend target schemas/configuration, and derive readable target labels from run metadata/counts for summary headings and viewer sidebar titles.
 
 **Tech Stack:** TypeScript, Node.js, Commander, Zod, Playwright, Vitest, local Markdown/audit viewer.
 
@@ -104,7 +104,7 @@ Run:
 npm test tests/targets/openEmrAdapter.test.ts
 ```
 
-Expected: tests fail because the OpenEMR adapter files do not exist.
+Expected: tests fail because the OpenEMR legacy implementation files do not exist.
 
 - [ ] **Step 3: Implement the adapter**
 

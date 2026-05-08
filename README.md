@@ -459,9 +459,9 @@ entry.
 For local smoke checks that should not call OpenAI, use
 `data/demo/intake-records-normalized.json` and add `--parser deterministic`.
 
-Public demo credentials and screens can change. If login, navigation, selectors,
-or save behavior drift, the run should finish with auditable environment or
-UI-state exceptions rather than silently claiming success.
+Public demo credentials and screens can change. If login, navigation, page
+structure, or save behavior drift, the run should finish with auditable
+environment or UI-state exceptions rather than silently claiming success.
 
 OpenMRS can expose patient deletion when `Admin` -> `Config` -> `Features` ->
 `Allow Administrators to Delete Patients` is enabled. The current public demo has
@@ -469,25 +469,24 @@ that setting off, and enabling it would mutate shared demo configuration. The
 smoke run therefore uses `--synthetic-suffix auto` to create fresh synthetic
 patient names and identifiers instead of deleting prior demo patients.
 
-### What The OpenMRS Target Does
+### What The OpenMRS Target Profile Does
 
-For each normalized valid source record, the OpenMRS adapter is expected to:
+For each normalized valid source record, the generic AI web target runner uses
+the OpenMRS target profile to:
 
-1. Log in to the configured OpenMRS environment.
-1. Capture a `before-navigation` screenshot.
-1. Open the O2 `Register a patient` app.
-1. When interactive field confirmation is enabled, prompt the operator in the
-   OpenMRS browser before writing values whose field mapping confidence is below
-   the configured threshold.
-1. Fill the registration wizard with demographics and available contact fields.
-1. Capture an `after-fill` screenshot.
-1. Advance to the confirmation step and click `Confirm`.
-1. Treat similar-patient prompts as duplicate exceptions for manual review.
-1. Wait for the newly created patient's dashboard.
-1. Expand `Show Contact Info` when available so address and phone are visible.
-1. Capture an `after-save` proof screenshot from that dashboard.
-1. Treat the record as successful only if the dashboard shows the synthetic
-    patient name and patient-detail context.
+1. Open the configured OpenMRS environment.
+1. Observe the current page, visible text, URL, title, and available controls.
+1. Ask the AI web planner for one schema-validated bounded browser action at a
+   time, using the target profile, normalized record, completed and skipped
+   fields, success criteria, forbidden actions, and step count.
+1. Execute only supported browser actions: fill, select, click, wait,
+   screenshot, verify, or stop.
+1. Capture screenshots, field mappings, target evidence, and events as the run
+   progresses.
+1. Treat possible duplicates, unexpected UI state, and verification failures as
+   auditable target exceptions for manual review.
+1. Treat the record as successful only when the planner verifies the configured
+   success criteria for the synthetic patient.
 
 For the checked-in demo file, four records are valid and three records are
 intentionally invalid and stop in preflight validation. One valid record is

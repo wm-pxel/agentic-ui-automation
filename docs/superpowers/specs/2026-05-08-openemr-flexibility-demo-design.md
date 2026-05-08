@@ -68,7 +68,7 @@ both commands. The only intentional difference is the target web app.
 
 ### Recommended: Add A Real OpenEMR Target Adapter
 
-Add `openemr` as another `TargetAdapter`, parallel to `openmrs`. This keeps the
+Add `openemr` as another target implementation, parallel to `openmrs`. This keeps the
 existing architecture honest: the orchestration and audit layers do not know
 which EMR screen flow is running beyond the target name.
 
@@ -101,14 +101,14 @@ src/targets/openemr/
   selectors.ts
 ```
 
-The new adapter implements the existing contract:
+The new target implementation follows the existing contract:
 
 ```ts
-interface TargetAdapter {
+interface LegacyTargetContract {
   readonly name: TargetName;
   readonly maxConcurrency?: number;
   prepare(context?: TargetPrepareContext): Promise<void>;
-  runRecord(context: TargetRunContext): Promise<TargetAdapterResult>;
+  runRecord(context: TargetRunContext): Promise<LegacyTargetResult>;
   close(): Promise<void>;
 }
 ```
