@@ -60,28 +60,37 @@ export async function createObservationSnapshot({
             rect.height > 0
           );
         })
-        .map((element) => {
-          const htmlElement = element as HTMLElement;
-          const formElement = element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
-          const tag = element.tagName.toLowerCase();
-          const label = controlLabel(element);
-          const role = htmlElement.getAttribute("role") || inferredRole(element);
-          const text = normalizedText(htmlElement.innerText || htmlElement.textContent || "");
+        .flatMap((element) => {
+          try {
+            const htmlElement = element as HTMLElement;
+            const formElement = element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+            const tag = element.tagName.toLowerCase();
+            const label = controlLabel(element);
+            const role = htmlElement.getAttribute("role") || inferredRole(element);
+            const text = normalizedText(htmlElement.innerText || htmlElement.textContent || "");
 
-          return {
-            selector: elementSelector(element),
-            tag,
-            role,
-            label,
-            value: "value" in formElement ? formElement.value : "",
-            visibleText: text || label,
-          };
+            return [
+              {
+                selector: elementSelector(element),
+                tag,
+                role,
+                label,
+                value: "value" in formElement ? formElement.value : "",
+                visibleText: text || label,
+              },
+            ];
+          } catch {
+            return [];
+          }
         });
 
       function controlLabel(element: Element): string {
         const htmlElement = element as HTMLElement;
+        const formElement = element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
         const id = htmlElement.id;
-        const explicitLabel = id ? document.querySelector(`label[for="${cssString(id)}"]`)?.textContent : "";
+        const labels = "labels" in formElement && formElement.labels ? Array.from(formElement.labels) : [];
+        const labelsText = labels.map((labelElement) => labelElement.textContent ?? "").join(" ");
+        const explicitLabel = labelsText || labelForId(id);
         const wrappingLabel = htmlElement.closest("label")?.textContent;
         const ariaLabel = htmlElement.getAttribute("aria-label");
         const title = htmlElement.getAttribute("title");
@@ -89,6 +98,17 @@ export async function createObservationSnapshot({
         const text = htmlElement.innerText || htmlElement.textContent;
 
         return normalizedText(explicitLabel || wrappingLabel || ariaLabel || title || placeholder || text || "");
+      }
+
+      function labelForId(id: string): string {
+        if (!id) {
+          return "";
+        }
+        try {
+          return document.querySelector(`label[for="${cssString(id)}"]`)?.textContent ?? "";
+        } catch {
+          return "";
+        }
       }
 
       function inferredRole(element: Element): string {
@@ -131,14 +151,16 @@ export async function createObservationSnapshot({
         const className = htmlElement.getAttribute("class");
         const ariaLabel = htmlElement.getAttribute("aria-label");
 
+        const candidates: string[] = [];
+
         if (id) {
-          return `#${cssIdent(id)}`;
+          candidates.push(`#${cssIdent(id)}`);
         }
         if (name) {
-          return `${tag}[name="${cssString(name)}"]`;
+          candidates.push(`${tag}[name="${cssString(name)}"]`);
         }
         if (testId) {
-          return `${tag}[data-testid="${cssString(testId)}"]`;
+          candidates.push(`${tag}[data-testid="${cssString(testId)}"]`);
         }
         if (className) {
           const classes = className
@@ -146,14 +168,28 @@ export async function createObservationSnapshot({
             .map((classPart) => classPart.trim())
             .filter(Boolean);
           if (classes.length > 0) {
-            return `${tag}.${classes.map(cssIdent).join(".")}`;
+            candidates.push(`${tag}.${classes.map(cssIdent).join(".")}`);
           }
         }
         if (ariaLabel) {
-          return `${tag}[aria-label="${cssString(ariaLabel)}"]`;
+          candidates.push(`${tag}[aria-label="${cssString(ariaLabel)}"]`);
         }
 
+        for (const candidate of candidates) {
+          if (uniquelySelects(candidate, element)) {
+            return candidate;
+          }
+        }
         return selectorPath(element);
+      }
+
+      function uniquelySelects(selector: string, element: Element): boolean {
+        try {
+          const matches = document.querySelectorAll(selector);
+          return matches.length === 1 && matches[0] === element;
+        } catch {
+          return false;
+        }
       }
 
       function selectorPath(element: Element): string {
@@ -174,15 +210,42 @@ export async function createObservationSnapshot({
           current = parent;
         }
 
+        segments.unshift("body");
         return segments.join(" > ");
       }
 
       function cssIdent(value: string): string {
-        return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+        return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(value) : cssString(value);
       }
 
       function cssString(value: string): string {
-        return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        return Array.from(value)
+          .map((character) => {
+            const codePoint = character.codePointAt(0) ?? 0;
+            if (character === "\\") {
+              return "\\\\";
+            }
+            if (character === '"') {
+              return '\\"';
+            }
+            if (character === "\n") {
+              return "\\a ";
+            }
+            if (character === "\r") {
+              return "\\d ";
+            }
+            if (character === "\t") {
+              return "\\9 ";
+            }
+            if (character === "\f") {
+              return "\\c ";
+            }
+            if (codePoint < 0x20 || codePoint === 0x7f) {
+              return `\\${codePoint.toString(16)} `;
+            }
+            return character;
+          })
+          .join("");
       }
 
       function normalizedText(value: string): string {
