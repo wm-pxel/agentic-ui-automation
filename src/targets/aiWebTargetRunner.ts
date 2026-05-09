@@ -341,7 +341,7 @@ function forbiddenOperationForAction(
   }
 
   const control = observation.controls.find((item) => item.elementId === action.elementId);
-  const visibleDescription = [control?.label, control?.visibleText, action.purpose, action.rationale].filter(Boolean).join(" ");
+  const visibleDescription = [control?.label, control?.visibleText, action.purpose].filter(Boolean).join(" ");
   const normalized = normalizeForVerification(visibleDescription);
   if (!normalized) {
     return undefined;
@@ -360,7 +360,7 @@ function forbiddenTermsForProfile(profile: TargetProfile): string[] {
     "purge",
     "deactivate",
     "void",
-    "admin",
+    "admin settings",
     "settings",
     "export",
     "patient lists",
@@ -368,7 +368,7 @@ function forbiddenTermsForProfile(profile: TargetProfile): string[] {
     "real patient data",
   ];
   for (const candidate of candidates) {
-    if (profileText.includes(candidate) || ["delete", "remove", "purge", "admin", "settings", "export"].includes(candidate)) {
+    if (profileText.includes(candidate) || ["delete", "remove", "purge", "settings", "export"].includes(candidate)) {
       terms.add(candidate);
     }
   }

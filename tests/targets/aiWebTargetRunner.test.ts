@@ -150,6 +150,56 @@ describe("AiWebTargetRunner", () => {
     ]);
   });
 
+  it("allows ordinary login clicks even when the rationale mentions admin credentials", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Login Ava Nguyen saved",
+      title: "Patient Details",
+      elements: [
+        fakeElement("label", { for: "username" }, "Username"),
+        fakeElement("input", { id: "username", value: "" }),
+        fakeElement("button", { class: "login" }, "Login"),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-login-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "click",
+            elementId: "control-2",
+            purpose: "login",
+            rationale: "Log in with the provided admin credentials.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen is visible on the patient details page.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openemr-demo-001" });
+    expect(page.actions).toEqual([["click", "button.login"]]);
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({ actionType: "ai-click", result: "succeeded" }),
+      expect.objectContaining({ actionType: "ai-verify", result: "succeeded" }),
+    ]);
+  });
+
   it("rejects verification on an unsaved patient form even when the patient name is visible", async () => {
     const page = new FakeRunnerPage({
       bodyText: "New Patient First Name Ava Last Name Nguyen Save",
