@@ -99,6 +99,103 @@ describe("AiWebTargetRunner", () => {
     ]);
   });
 
+  it("blocks forbidden destructive clicks before browser execution", async () => {
+    const page = new FakeRunnerPage({
+      elements: [
+        fakeElement("label", { for: "first-name" }, "First Name"),
+        fakeElement("input", { id: "first-name", value: "" }),
+        fakeElement("button", { class: "delete" }, "Delete Patient"),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-forbidden-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "click",
+            elementId: "control-2",
+            purpose: "delete patient",
+            rationale: "The delete button is visible.",
+          },
+          confidence: 0.8,
+        },
+      ]),
+      launchBrowser: async () => browser,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({
+      status: "exception",
+      exception: expect.objectContaining({
+        code: "ui_state_unexpected",
+        message: "AI action matched a forbidden target operation: Delete Patient.",
+        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+      }),
+    });
+    expect(page.actions).toEqual([]);
+    expect(browser.closed).toBe(true);
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({
+        actionType: "ai-click",
+        result: "failed: forbidden target operation",
+        exceptionCode: "ui_state_unexpected",
+      }),
+    ]);
+  });
+
+  it("rejects verification on an unsaved patient form even when the patient name is visible", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "New Patient First Name Ava Last Name Nguyen Save",
+      title: "New Patient",
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-unsaved-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen is visible on the form.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({
+      status: "exception",
+      exception: expect.objectContaining({
+        code: "verification_failed",
+        message: "AI verification did not find a saved patient state in the observed page.",
+        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+      }),
+    });
+    expect(browser.closed).toBe(true);
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({
+        actionType: "ai-verify",
+        result: "failed: saved patient state not visible",
+        exceptionCode: "verification_failed",
+      }),
+    ]);
+  });
+
   it("returns an exception and closes the browser when the planner stops", async () => {
     const page = new FakeRunnerPage();
     const browser = new FakeRunnerBrowser(page);
@@ -342,25 +439,41 @@ class FakeRunnerBrowser {
 class FakeRunnerPage {
   readonly actions: unknown[] = [];
   readonly gotoUrls: string[] = [];
-  readonly document = new FakeDocument([
-    fakeElement("label", { for: "first-name" }, "First Name"),
-    fakeElement("input", { id: "first-name", value: "" }),
-    fakeElement("button", { class: "save" }, "Save"),
-  ]);
+  readonly document: FakeDocument;
 
-  constructor(private readonly options: { bodyText?: string } = {}) {}
+  constructor(
+    private readonly options: {
+      bodyText?: string;
+      title?: string;
+      elements?: FakeElement[];
+    } = {},
+  ) {
+    this.document = new FakeDocument(
+      options.elements ?? [
+        fakeElement("label", { for: "first-name" }, "First Name"),
+        fakeElement("input", { id: "first-name", value: "" }),
+        fakeElement("button", { class: "save" }, "Save"),
+      ],
+    );
+  }
 
   url(): string {
     return this.gotoUrls.at(-1) ?? "about:blank";
   }
 
   async title(): Promise<string> {
-    return "New Patient";
+    return this.options.title ?? (this.actions.some((action) => Array.isArray(action) && action[0] === "click") ? "Patient Details" : "New Patient");
   }
 
   locator(selector: string) {
     return {
-      innerText: async () => (selector === "body" ? (this.options.bodyText ?? "First Name Save Ava Nguyen") : ""),
+      innerText: async () =>
+        selector === "body"
+          ? (this.options.bodyText ??
+            (this.actions.some((action) => Array.isArray(action) && action[0] === "click")
+              ? "Patient Details Ava Nguyen saved"
+              : "First Name Save"))
+          : "",
       fill: async (value: string) => {
         this.actions.push(["fill", selector, value]);
       },

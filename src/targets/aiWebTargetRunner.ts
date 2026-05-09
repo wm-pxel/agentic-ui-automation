@@ -110,18 +110,14 @@ export class AiWebTargetRunner {
         }
 
         if (action.type === "verify") {
-          if (!syntheticPatientNameVisible(context.record, observation.visibleText)) {
-            const exception = {
-              code: "verification_failed",
-              severity: "error",
-              message: "AI verification did not find the synthetic patient name in the observed page.",
-              screenshotPath: latestScreenshotPath,
-            } satisfies ValidationException & { screenshotPath?: string };
+          const verificationFailure = verificationFailureMessage(context.record, observation);
+          if (verificationFailure) {
+            const exception = verificationException(verificationFailure, latestScreenshotPath);
             await writeAiActionEvent(
               context,
               action,
               latestScreenshotPath,
-              "failed: synthetic patient name not visible",
+              verificationFailure.eventResult,
               "verification_failed",
             );
             await context.audit.writeTargetEvidence({
@@ -152,6 +148,32 @@ export class AiWebTargetRunner {
           latestScreenshotPath = await captureScreenshot(context, page, `ai-${action.label}`);
           await writeAiActionEvent(context, action, latestScreenshotPath, "captured");
           continue;
+        }
+
+        const forbiddenOperation = forbiddenOperationForAction(action, observation, context.profile);
+        if (forbiddenOperation) {
+          const exception = {
+            code: "ui_state_unexpected",
+            severity: "error",
+            message: `AI action matched a forbidden target operation: ${forbiddenOperation}.`,
+            screenshotPath: latestScreenshotPath,
+          } satisfies ValidationException & { screenshotPath?: string };
+          await writeAiActionEvent(
+            context,
+            action,
+            latestScreenshotPath,
+            "failed: forbidden target operation",
+            "ui_state_unexpected",
+          );
+          await context.audit.writeTargetEvidence({
+            recordId: context.record.sourceRecordId,
+            target: context.profile.name,
+            status: "exception",
+            screenshotPath: latestScreenshotPath,
+            fieldScreenshotPath: latestFieldScreenshotPath,
+            message: exception.message,
+          });
+          return { status: "exception", exception };
         }
 
         try {
@@ -254,10 +276,103 @@ function aiTargetRecordId(context: AiWebTargetRunContext): string {
   return `ai-${context.profile.name}-${context.record.sourceRecordId}`;
 }
 
+function verificationFailureMessage(
+  record: NormalizedIntakeRecord,
+  observation: { currentUrl: string; title: string; visibleText: string },
+): { message: string; eventResult: string } | undefined {
+  if (!syntheticPatientNameVisible(record, observation.visibleText)) {
+    return {
+      message: "AI verification did not find the synthetic patient name in the observed page.",
+      eventResult: "failed: synthetic patient name not visible",
+    };
+  }
+
+  if (!savedPatientStateVisible(observation)) {
+    return {
+      message: "AI verification did not find a saved patient state in the observed page.",
+      eventResult: "failed: saved patient state not visible",
+    };
+  }
+
+  return undefined;
+}
+
+function verificationException(
+  failure: { message: string },
+  screenshotPath: string | undefined,
+): ValidationException & { screenshotPath?: string } {
+  return {
+    code: "verification_failed",
+    severity: "error",
+    message: failure.message,
+    screenshotPath,
+  };
+}
+
 function syntheticPatientNameVisible(record: NormalizedIntakeRecord, visibleText: string): boolean {
   const normalizedText = normalizeForVerification(visibleText);
   const nameParts = [record.firstName, record.lastName].map(normalizeForVerification).filter(Boolean);
   return nameParts.length > 0 && nameParts.every((part) => normalizedText.includes(part));
+}
+
+function savedPatientStateVisible(observation: { currentUrl: string; title: string; visibleText: string }): boolean {
+  const stateText = normalizeForVerification(`${observation.currentUrl} ${observation.title} ${observation.visibleText}`);
+  const savedStateTerms = [
+    "patient details",
+    "patient detail",
+    "patient dashboard",
+    "patient summary",
+    "patient profile",
+    "created",
+    "registered",
+    "saved",
+    "success",
+  ];
+  return savedStateTerms.some((term) => stateText.includes(term));
+}
+
+function forbiddenOperationForAction(
+  action: BrowserExecutableAiWebAction,
+  observation: { controls: Array<{ elementId: string; label: string; visibleText: string; role: string }> },
+  profile: TargetProfile,
+): string | undefined {
+  if (action.type !== "click") {
+    return undefined;
+  }
+
+  const control = observation.controls.find((item) => item.elementId === action.elementId);
+  const visibleDescription = [control?.label, control?.visibleText, action.purpose, action.rationale].filter(Boolean).join(" ");
+  const normalized = normalizeForVerification(visibleDescription);
+  if (!normalized) {
+    return undefined;
+  }
+
+  const forbiddenTerms = forbiddenTermsForProfile(profile);
+  return forbiddenTerms.some((term) => normalized.includes(term)) ? (control?.visibleText || control?.label || action.purpose) : undefined;
+}
+
+function forbiddenTermsForProfile(profile: TargetProfile): string[] {
+  const profileText = profile.forbiddenActions.map(normalizeForVerification).join(" ");
+  const terms = new Set<string>();
+  const candidates = [
+    "delete",
+    "remove",
+    "purge",
+    "deactivate",
+    "void",
+    "admin",
+    "settings",
+    "export",
+    "patient lists",
+    "unrelated records",
+    "real patient data",
+  ];
+  for (const candidate of candidates) {
+    if (profileText.includes(candidate) || ["delete", "remove", "purge", "admin", "settings", "export"].includes(candidate)) {
+      terms.add(candidate);
+    }
+  }
+  return [...terms];
 }
 
 function normalizeForVerification(value: string): string {
