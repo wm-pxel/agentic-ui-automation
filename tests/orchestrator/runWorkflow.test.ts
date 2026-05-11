@@ -251,7 +251,7 @@ describe("runWorkflow", () => {
   it("passes all profiles and the planned record count when preparing the target runner", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-prepare-planned-records-"));
     const targetRunner = new PrepareContextTargetRunner();
-    const profiles = [fakeProfile(), fakeProfile({ name: "openemr", displayName: "OpenEMR" })];
+    const profiles = [fakeProfile(), fakeProfile({ name: "openkairo", displayName: "OpenKairo" })];
 
     await runWorkflow({
       runId: "run-prepare-planned-records",

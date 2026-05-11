@@ -44,8 +44,8 @@ npm run dev -- run \
 ```
 
 Then run OpenKairo with the same intake file and the same non-target workflow
-options. OpenKairo is the recommended second live-demo target because the public
-OpenEMR demo has been too brittle for repeatable patient creation.
+options. OpenKairo is the recommended second live-demo target for demonstrating
+destination flexibility.
 
 ```sh
 set -a
@@ -223,16 +223,19 @@ OpenMRS target profile to:
 1. Open the configured OpenMRS environment.
 2. Observe the current page, visible text, URL, title, and available controls.
 3. Ask the schema-bound AI planner for one bounded browser action at a time.
-4. Provide the planner a coverage list for every normalized intake field so it
+4. Leave destination-specific UI labels, dialog names, field sequences, and
+   button choices out of the OpenMRS and OpenKairo profiles; the planner infers
+   those from each fresh page observation.
+5. Provide the planner a coverage list for every normalized intake field so it
    can semantically match visible destination controls before advancing or
    saving, even when destination labels differ from source field names.
-5. Execute only supported browser actions: fill, select, click, wait,
+6. Execute only supported browser actions: fill, select, click, wait,
    screenshot, verify, or stop.
-6. Capture ordered `ai-step-*` observations, `ai-field-*` proof images for
+7. Capture ordered `ai-step-*` observations, `ai-field-*` proof images for
    completed fields, target evidence, events, and field mappings.
-7. Treat possible duplicates, unexpected UI state, and verification failures as
+8. Treat possible duplicates, unexpected UI state, and verification failures as
    auditable target exceptions for manual review.
-8. Mark the record successful only when the planner verifies the configured
+9. Mark the record successful only when the planner verifies the configured
    success criteria for the synthetic patient.
 
 For `data/demo/intake-records-normalized.json`, the expected clean OpenMRS
@@ -261,8 +264,7 @@ the generated names and identifiers to search for during manual validation.
 
 The OpenKairo target drives the public or configured OpenKairo UI through the
 same generic AI web target runner used for OpenMRS. It is the recommended
-second live-demo target when the public OpenEMR demo is not stable enough for
-repeatable patient creation.
+second live-demo target for demonstrating destination flexibility.
 
 OpenKairo publishes the current demo link and credentials at
 `https://www.openkairo.com/`.
@@ -295,7 +297,8 @@ schema-bound planner action at a time, execute only bounded browser actions,
 capture ordered `ai-step-*` and `ai-field-*` screenshot evidence, and verify the
 configured success criteria before marking the record successful. The OpenMRS
 and OpenKairo profiles provide URL, credentials, target name, goal, and proof
-criteria; there are no destination-specific UI automation classes.
+criteria, without UI label, dialog, or field-sequence hints; there are no
+destination-specific UI automation classes.
 
 `summary.md` includes an OpenKairo record review with raw intake input, proof
 screenshots, AI action evidence, planner rationale and confidence for field

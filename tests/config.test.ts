@@ -7,10 +7,6 @@ const ENV_KEYS = [
   "OPENMRS_USERNAME",
   "OPENMRS_PASSWORD",
   "OPENMRS_CONCURRENCY",
-  "OPENEMR_BASE_URL",
-  "OPENEMR_USERNAME",
-  "OPENEMR_PASSWORD",
-  "OPENEMR_CONCURRENCY",
   "OPENKAIRO_BASE_URL",
   "OPENKAIRO_USERNAME",
   "OPENKAIRO_PASSWORD",
@@ -38,7 +34,7 @@ afterEach(() => {
 
 describe("parseTargets", () => {
   it("parses comma-separated target names", () => {
-    expect(parseTargets("fake,openmrs,openemr,openkairo")).toEqual(["fake", "openmrs", "openemr", "openkairo"]);
+    expect(parseTargets("fake,openmrs,openkairo")).toEqual(["fake", "openmrs", "openkairo"]);
   });
 
   it("trims whitespace around target names", () => {
@@ -109,15 +105,14 @@ describe("buildRunConfig", () => {
     expect(config.runsDir).toBe("runs");
   });
 
-  it("keeps OpenMRS, OpenEMR, and OpenKairo config available for target profiles", () => {
+  it("keeps OpenMRS and OpenKairo config available for target profiles", () => {
     const config = buildRunConfig({
       input: "data/demo/intake-records.json",
-      targets: "openmrs,openemr,openkairo",
+      targets: "openmrs,openkairo",
     });
 
-    expect(config.targets).toEqual(["openmrs", "openemr", "openkairo"]);
+    expect(config.targets).toEqual(["openmrs", "openkairo"]);
     expect(config.openMrs.baseUrl).toBe("https://o2.openmrs.org/openmrs/login.htm");
-    expect(config.openEmr.baseUrl).toBe("https://demo.openemr.io/openemr");
     expect(config.openKairo.baseUrl).toBe("https://ehr-app-five.vercel.app");
   });
 
@@ -148,37 +143,6 @@ describe("buildRunConfig", () => {
       username: "admin",
       password: "secret",
       concurrency: 3,
-    });
-  });
-
-  it("copies OpenEMR defaults and environment variables into the config", () => {
-    const defaultConfig = buildRunConfig({
-      input: "data/demo/intake-records.json",
-      targets: "openemr",
-    });
-
-    expect(defaultConfig.openEmr).toEqual({
-      baseUrl: "https://demo.openemr.io/openemr",
-      username: "admin",
-      password: "pass",
-      concurrency: 1,
-    });
-
-    process.env.OPENEMR_BASE_URL = "https://openemr.example.test/openemr";
-    process.env.OPENEMR_USERNAME = "operator";
-    process.env.OPENEMR_PASSWORD = "secret";
-    process.env.OPENEMR_CONCURRENCY = "2";
-
-    const envConfig = buildRunConfig({
-      input: "data/demo/intake-records.json",
-      targets: "openemr",
-    });
-
-    expect(envConfig.openEmr).toEqual({
-      baseUrl: "https://openemr.example.test/openemr",
-      username: "operator",
-      password: "secret",
-      concurrency: 2,
     });
   });
 

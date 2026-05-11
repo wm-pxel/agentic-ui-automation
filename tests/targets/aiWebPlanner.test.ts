@@ -9,9 +9,9 @@ import {
 
 const runnerPlanInput = {
   profile: {
-    name: "openemr",
-    displayName: "OpenEMR",
-    baseUrl: "https://openemr.example.test/openemr",
+    name: "openkairo",
+    displayName: "OpenKairo",
+    baseUrl: "https://openkairo.example.test/openkairo",
     credentials: { username: "admin", password: "pass" },
     task: "Create one synthetic patient.",
     workflowHints: ["If Patient Finder reports no matching records, click Add New Patient."],
@@ -39,10 +39,10 @@ const runnerPlanInput = {
     rawSourceExcerpt: "Ava Nguyen intake",
   },
   observation: {
-    currentUrl: "https://openemr.example.test/openemr",
-    title: "OpenEMR",
+    currentUrl: "https://openkairo.example.test/openkairo",
+    title: "OpenKairo",
     visibleText: "Patient Finder Add New Patient",
-    screenshotPath: "screenshots/demo/openemr/0001-ai-step-1.png",
+    screenshotPath: "screenshots/demo/openkairo/0001-ai-step-1.png",
     controls: [],
     elementSelectors: new Map(),
   },

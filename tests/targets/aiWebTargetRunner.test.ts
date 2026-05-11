@@ -60,7 +60,7 @@ describe("AiWebTargetRunner", () => {
       audit,
     });
 
-    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openemr-demo-001" });
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
     expect(page.gotoUrls).toEqual(["https://example.test/emr"]);
     expect(page.actions).toEqual([
       ["fill", "#first-name", "Ava"],
@@ -72,15 +72,15 @@ describe("AiWebTargetRunner", () => {
     expect(details.targetEvidence).toContainEqual(
       expect.objectContaining({
         recordId: "demo-001",
-        target: "openemr",
+        target: "openkairo",
         status: "succeeded",
-        targetRecordId: "ai-openemr-demo-001",
+        targetRecordId: "ai-openkairo-demo-001",
       }),
     );
     expect(details.fieldMappings).toContainEqual(
       expect.objectContaining({
         recordId: "demo-001",
-        target: "openemr",
+        target: "openkairo",
         sourceField: "firstName",
         targetField: "firstName",
         normalizedValue: "Ava",
@@ -91,13 +91,13 @@ describe("AiWebTargetRunner", () => {
         approvalSource: "agent",
         selectedSelector: "#first-name",
         selectorCandidates: ["#first-name"],
-        fieldScreenshotPath: "screenshots/demo-001/openemr/0002-ai-field-firstName.png",
+        fieldScreenshotPath: "screenshots/demo-001/openkairo/0002-ai-field-firstName.png",
       }),
     );
     expect(details.fieldMappings).toContainEqual(
       expect.objectContaining({
         recordId: "demo-001",
-        target: "openemr",
+        target: "openkairo",
         sourceField: "lastName",
         targetField: "",
         normalizedValue: "Nguyen",
@@ -294,6 +294,102 @@ describe("AiWebTargetRunner", () => {
         action: "select",
         status: "succeeded",
         selectedSelector: "#registration-desk",
+      }),
+    );
+  });
+
+  it("executes credential fills without reporting them as intake field mappings", async () => {
+    const page = new FakeRunnerPage({
+      bodyTextAfterClick: "Patient Record MRN-M0XPCLB0 New Encounter Ava Nguyen DOB Mar 14 1987 Gender Female",
+      elements: [
+        fakeElement("label", { for: "email" }, "Email"),
+        fakeElement("input", { id: "email", value: "" }),
+        fakeElement("label", { for: "password" }, "Password"),
+        fakeElement("input", { id: "password", value: "", type: "password" }),
+        fakeElement("button", { class: "login" }, "Sign in"),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-credentials-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "fill",
+            elementId: "control-1",
+            field: "email",
+            value: "reception@demo.com",
+            rationale: "Fill the visible login email credential field.",
+          },
+          confidence: 0.99,
+        },
+        {
+          action: {
+            type: "fill",
+            elementId: "control-2",
+            field: "password",
+            value: "Demo123!",
+            rationale: "Fill the visible login password credential field.",
+          },
+          confidence: 0.99,
+        },
+        {
+          action: {
+            type: "click",
+            elementId: "control-3",
+            purpose: "sign in",
+            rationale: "Sign in before patient registration.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient record.",
+            rationale: "Ava Nguyen is visible on the patient record page.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 4,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: {
+        ...profile(),
+        name: "openkairo",
+        displayName: "OpenKairo",
+        credentials: { username: "reception@demo.com", password: "Demo123!" },
+      },
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
+    expect(page.actions).toEqual([
+      ["fill", "#email", "reception@demo.com"],
+      ["fill", "#password", "Demo123!"],
+      ["click", "button.login"],
+    ]);
+    expect(audit.getReportDetails().fieldMappings).not.toContainEqual(
+      expect.objectContaining({
+        sourceField: "email",
+        normalizedValue: "reception@demo.com",
+      }),
+    );
+    expect(audit.getReportDetails().fieldMappings).not.toContainEqual(
+      expect.objectContaining({
+        sourceField: "password",
+      }),
+    );
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "email",
+        targetField: "",
+        normalizedValue: "ava.nguyen@example.test",
+        status: "no_matching_destination_field",
       }),
     );
   });
@@ -723,6 +819,185 @@ describe("AiWebTargetRunner", () => {
     expect(page.actions).toEqual([["click", "#next-button"]]);
   });
 
+  it("continues a wizard instead of stopping when only unsupported intake fields remain", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "1 similar patient(s) found Who is the patient related to? Review patient(s)",
+      bodyTextAfterClick: "Patient Details Ava Nguyen Patient ID 100HXG General Actions Show Contact Info",
+      elements: [
+        fakeElement("select", { id: "relationship-type" }, "Select Relationship Type"),
+        fakeElement("input", { id: "person-name", value: "" }),
+        fakeElement("button", { id: "next-button", "aria-label": "Forward Next" }, ""),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs-similar-patient-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message: "The flow is on a relationship step and no remaining intake fields have matching controls.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the saved patient dashboard.",
+            rationale: "Ava Nguyen appears on the patient dashboard.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+    expect(page.actions).toEqual([["click", "#next-button"]]);
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "email",
+        targetField: "",
+        status: "no_matching_destination_field",
+      }),
+    );
+  });
+
+  it("creates a patient instead of stopping when only unsupported fields remain in the new-patient dialog", async () => {
+    const page = new FakeRunnerPage({
+      bodyText:
+        "New Patient First Name Ava Last Name Nguyen Date of Birth 1987 Gender Female Cancel Create Patient",
+      bodyTextAfterClick: "Patient Record MRN-M0XPCLB0 New Encounter Ava Nguyen DOB 1987 Gender Female",
+      elements: [
+        fakeElement("label", { for: "first-name" }, "First Name"),
+        fakeElement("input", { id: "first-name", value: "Ava" }),
+        fakeElement("label", { for: "last-name" }, "Last Name"),
+        fakeElement("input", { id: "last-name", value: "Nguyen" }),
+        fakeElement("select", { id: "year" }, "1987"),
+        fakeElement("select", { id: "gender" }, "Female"),
+        fakeElement("button", { id: "cancel" }, "Cancel"),
+        fakeElement("button", { id: "create-patient" }, "Create Patient"),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openkairo-create-with-extra-fields-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "The visible new-patient dialog only exposes first name, last name, date of birth, and gender controls; no safe observed controls are available for the remaining intake fields before creating the patient.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient record.",
+            rationale: "Ava Nguyen is visible on the patient record page.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openkairo", displayName: "OpenKairo" },
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
+    expect(page.actions).toEqual([["click", "#create-patient"]]);
+  });
+
+  it("skips implausibly low-confidence autonomous field actions instead of overwriting completed fields", async () => {
+    const page = new FakeRunnerPage({
+      bodyTextAfterClick: "Patient Record MRN-M0XPCLB0 New Encounter Ava Nguyen DOB 1987 Gender Female",
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-low-confidence-skip-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "fill",
+            elementId: "control-1",
+            field: "firstName",
+            value: "Ava",
+            rationale: "The first-name textbox matches the intake first name.",
+          },
+          confidence: 0.98,
+        },
+        {
+          action: {
+            type: "fill",
+            elementId: "control-1",
+            field: "phone",
+            value: "+13125550198",
+            rationale: "The same textbox may be a remaining phone field.",
+          },
+          confidence: 0.12,
+        },
+        {
+          action: {
+            type: "click",
+            elementId: "control-2",
+            purpose: "create patient",
+            rationale: "Save the patient after entering supported fields.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient record.",
+            rationale: "Ava Nguyen is visible on the patient record page.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 4,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openkairo", displayName: "OpenKairo", confidenceThreshold: 0.99 },
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
+    expect(page.actions).toEqual([
+      ["fill", "#first-name", "Ava"],
+      ["click", "button.save"],
+    ]);
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "phone",
+        targetField: "",
+        status: "skipped",
+        approvalSource: "agent",
+        skipReason: "AI confidence was too low to safely fill this field without operator input.",
+      }),
+    );
+  });
+
   it("blocks forbidden destructive clicks before browser execution", async () => {
     const page = new FakeRunnerPage({
       elements: [
@@ -761,7 +1036,7 @@ describe("AiWebTargetRunner", () => {
       exception: expect.objectContaining({
         code: "ui_state_unexpected",
         message: "AI action matched a forbidden target operation: Delete Patient.",
-        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+        screenshotPath: "screenshots/demo-001/openkairo/0001-ai-step-1.png",
       }),
     });
     expect(page.actions).toEqual([]);
@@ -817,7 +1092,7 @@ describe("AiWebTargetRunner", () => {
       audit,
     });
 
-    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openemr-demo-001" });
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
     expect(page.actions).toEqual([["click", "button.login"]]);
     expect(await readEvents(audit)).toEqual([
       expect.objectContaining({ actionType: "ai-click", result: "succeeded" }),
@@ -859,7 +1134,7 @@ describe("AiWebTargetRunner", () => {
       exception: expect.objectContaining({
         code: "verification_failed",
         message: "AI verification found an unsaved patient entry form instead of a saved patient state.",
-        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+        screenshotPath: "screenshots/demo-001/openkairo/0001-ai-step-1.png",
       }),
     });
     expect(browser.closed).toBe(true);
@@ -1105,14 +1380,14 @@ describe("AiWebTargetRunner", () => {
       exception: expect.objectContaining({
         code: "verification_failed",
         message: "Planner could not verify the target state.",
-        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+        screenshotPath: "screenshots/demo-001/openkairo/0001-ai-step-1.png",
       }),
     });
     expect(browser.closed).toBe(true);
     expect(audit.getReportDetails().targetEvidence).toContainEqual(
       expect.objectContaining({
         status: "exception",
-        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+        screenshotPath: "screenshots/demo-001/openkairo/0001-ai-step-1.png",
       }),
     );
   });
@@ -1163,7 +1438,7 @@ describe("AiWebTargetRunner", () => {
   });
 
   it("rejects verification when the observed page does not show the synthetic patient", async () => {
-    const page = new FakeRunnerPage({ bodyText: "OpenEMR dashboard Patient Search" });
+    const page = new FakeRunnerPage({ bodyText: "OpenKairo dashboard Patient Search" });
     const browser = new FakeRunnerBrowser(page);
     const audit = await createAudit("ai-web-runner-verify-");
     const runner = new AiWebTargetRunner({
@@ -1193,7 +1468,7 @@ describe("AiWebTargetRunner", () => {
       exception: expect.objectContaining({
         code: "verification_failed",
         message: "AI verification did not find the synthetic patient name in the observed page.",
-        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+        screenshotPath: "screenshots/demo-001/openkairo/0001-ai-step-1.png",
       }),
     });
     expect(browser.closed).toBe(true);
@@ -1207,7 +1482,7 @@ describe("AiWebTargetRunner", () => {
     expect(audit.getReportDetails().targetEvidence).toContainEqual(
       expect.objectContaining({
         status: "exception",
-        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+        screenshotPath: "screenshots/demo-001/openkairo/0001-ai-step-1.png",
         message: "AI verification did not find the synthetic patient name in the observed page.",
       }),
     );
@@ -1257,7 +1532,7 @@ describe("AiWebTargetRunner", () => {
       audit,
     });
 
-    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openemr-demo-001" });
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
     expect(browser.closed).toBe(true);
     expect(await readEvents(audit)).toEqual([
       expect.objectContaining({
@@ -1301,14 +1576,14 @@ describe("AiWebTargetRunner", () => {
       exception: expect.objectContaining({
         code: "ui_state_unexpected",
         message: "AI web target runner exceeded 2 steps without verification.",
-        screenshotPath: "screenshots/demo-001/openemr/0002-ai-step-2.png",
+        screenshotPath: "screenshots/demo-001/openkairo/0002-ai-step-2.png",
       }),
     });
     expect(browser.closed).toBe(true);
     expect(audit.getReportDetails().targetEvidence).toContainEqual(
       expect.objectContaining({
         status: "exception",
-        screenshotPath: "screenshots/demo-001/openemr/0002-ai-step-2.png",
+        screenshotPath: "screenshots/demo-001/openkairo/0002-ai-step-2.png",
       }),
     );
   });
@@ -1333,8 +1608,8 @@ async function readEvents(audit: FileAuditStore): Promise<Array<Record<string, u
 
 function profile(): TargetProfile {
   return {
-    name: "openemr",
-    displayName: "OpenEMR",
+    name: "openkairo",
+    displayName: "OpenKairo",
     baseUrl: "https://example.test/emr",
     credentials: { username: "admin", password: "pass" },
     task: "Create one synthetic patient.",

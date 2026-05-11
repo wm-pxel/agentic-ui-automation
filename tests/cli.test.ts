@@ -196,7 +196,7 @@ describe("runCli", () => {
     expect(executiveSummary).toContain("| info | severity-warning-info |");
   });
 
-  it.each(["openmrs", "openemr"] as const)(
+  it.each(["openmrs", "openkairo"] as const)(
     "runs %s through the injected generic target runner path",
     async (target) => {
       const runsDir = await mkdtemp(join(tmpdir(), `agentic-ui-cli-${target}-`));
@@ -337,31 +337,6 @@ describe("runCli", () => {
     expect(exitCode).toBe(1);
     expect(io.stdoutText()).toBe("");
     expect(io.stderrText()).toContain("unknown option '--openmrs-interactive-field-confirmation'");
-  });
-
-  it("reports the OpenEMR concurrency option name when its value is invalid", async () => {
-    const io = captureIo();
-
-    const exitCode = await runCli(
-      [
-        "node",
-        "agentic-ui",
-        "run",
-        "--input",
-        "data/demo/intake-records-normalized.json",
-        "--targets",
-        "openemr",
-        "--parser",
-        "deterministic",
-        "--openemr-concurrency",
-        "0",
-      ],
-      io,
-    );
-
-    expect(exitCode).toBe(1);
-    expect(io.stdoutText()).toBe("");
-    expect(io.stderrText()).toContain("--openemr-concurrency must be a positive integer.");
   });
 
   it.each([

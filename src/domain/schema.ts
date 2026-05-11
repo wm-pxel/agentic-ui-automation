@@ -13,7 +13,7 @@ const IsoDateSchema = z
     );
   });
 
-export const TargetNameSchema = z.enum(["openmrs", "openemr", "openkairo", "fake"]);
+export const TargetNameSchema = z.enum(["openmrs", "openkairo", "fake"]);
 export type TargetName = z.infer<typeof TargetNameSchema>;
 
 export const SourceFormatSchema = z.enum(["json", "csv", "text"]);

@@ -55,7 +55,6 @@ interface RunCommandOptions {
   confidenceThreshold?: number;
   fieldConfirmation?: CliRunConfig["fieldConfirmation"];
   openmrsConcurrency?: number;
-  openemrConcurrency?: number;
   openkairoConcurrency?: number;
 }
 
@@ -67,7 +66,6 @@ interface WatchCommandOptions {
   confidenceThreshold?: number;
   fieldConfirmation?: CliRunConfig["fieldConfirmation"];
   openmrsConcurrency?: number;
-  openemrConcurrency?: number;
   openkairoConcurrency?: number;
   once?: boolean;
 }
@@ -152,11 +150,6 @@ function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencie
       parsePositiveIntegerOption("--openmrs-concurrency"),
     )
     .option(
-      "--openemr-concurrency <count>",
-      "Maximum concurrent OpenEMR records.",
-      parsePositiveIntegerOption("--openemr-concurrency"),
-    )
-    .option(
       "--openkairo-concurrency <count>",
       "Maximum concurrent OpenKairo records.",
       parsePositiveIntegerOption("--openkairo-concurrency"),
@@ -192,11 +185,6 @@ function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencie
       parsePositiveIntegerOption("--openmrs-concurrency"),
     )
     .option(
-      "--openemr-concurrency <count>",
-      "Maximum concurrent OpenEMR records.",
-      parsePositiveIntegerOption("--openemr-concurrency"),
-    )
-    .option(
       "--openkairo-concurrency <count>",
       "Maximum concurrent OpenKairo records.",
       parsePositiveIntegerOption("--openkairo-concurrency"),
@@ -230,7 +218,6 @@ async function runCommand(
   const config = buildRunConfig({
     ...options,
     openMrsConcurrency: options.openmrsConcurrency,
-    openEmrConcurrency: options.openemrConcurrency,
     openKairoConcurrency: options.openkairoConcurrency,
   });
   const records = applySyntheticSuffix(await loadRecords(config), resolveSyntheticSuffix(config.syntheticSuffix));
@@ -260,7 +247,6 @@ async function watchCommand(
     confidenceThreshold: options.confidenceThreshold,
     fieldConfirmation: options.fieldConfirmation,
     openMrsConcurrency: options.openmrsConcurrency,
-    openEmrConcurrency: options.openemrConcurrency,
     openKairoConcurrency: options.openkairoConcurrency,
   });
   const inbox = options.inbox ?? defaultIntakeInbox();

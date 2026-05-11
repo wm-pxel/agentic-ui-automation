@@ -19,14 +19,14 @@ describe("createObservationSnapshot", () => {
 
     const observation = await createObservationSnapshot({
       page,
-      screenshotPath: "screenshots/demo/openemr/0001-observe.png",
+      screenshotPath: "screenshots/demo/openkairo/0001-observe.png",
     });
 
     expect(page.evaluateCalls).toBe(1);
     expect(observation.currentUrl).toBe("https://example.test/new");
     expect(observation.title).toBe("New Patient");
     expect(observation.visibleText).toBe("Contact First Name Save");
-    expect(observation.screenshotPath).toBe("screenshots/demo/openemr/0001-observe.png");
+    expect(observation.screenshotPath).toBe("screenshots/demo/openkairo/0001-observe.png");
     expect(observation.controls).toEqual([
       { elementId: "control-1", tag: "input", role: "textbox", label: "First Name", value: "Ava", visibleText: "First Name" },
       { elementId: "control-2", tag: "select", role: "combobox", label: "sex", value: "Female", visibleText: "sex" },
@@ -58,7 +58,7 @@ describe("createObservationSnapshot", () => {
 
     const observation = await createObservationSnapshot({
       page,
-      screenshotPath: "screenshots/demo/openemr/repeated.png",
+      screenshotPath: "screenshots/demo/openkairo/repeated.png",
     });
 
     expect(observation.elementSelectors).toEqual(
@@ -117,7 +117,7 @@ describe("createObservationSnapshot", () => {
 
     const observation = await createObservationSnapshot({
       page,
-      screenshotPath: "screenshots/demo/openemr/unusual.png",
+      screenshotPath: "screenshots/demo/openkairo/unusual.png",
     });
 
     expect(observation.controls).toEqual([

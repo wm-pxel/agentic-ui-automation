@@ -580,6 +580,9 @@ the OpenMRS target profile to:
 1. Ask the AI web planner for one schema-validated bounded browser action at a
    time, using the target profile, normalized record, completed and skipped
    fields, success criteria, forbidden actions, and step count.
+1. Leave destination-specific UI labels, dialog names, field sequences, and
+   button choices out of the OpenMRS and OpenKairo profiles; the planner infers
+   those from each fresh page observation.
 1. Provide the planner a coverage list for every normalized intake field so it
    can semantically match visible destination controls before advancing or
    saving, even when destination labels differ from source field names.
@@ -662,8 +665,7 @@ OpenMRS success run.
 
 The OpenKairo target drives the configured OpenKairo web UI through Chromium and
 writes the same audit artifact set as the OpenMRS target. It is the recommended
-second live-demo target when the public OpenEMR demo is not stable enough for
-repeatable patient creation.
+second live-demo target for demonstrating destination flexibility.
 
 - Project/demo page: `https://www.openkairo.com/`
 - Default app URL: `https://ehr-app-five.vercel.app`
@@ -696,7 +698,8 @@ npm run dev -- run \
 
 The OpenKairo target profile uses the same generic AI web target runner as
 OpenMRS. The profile supplies the OpenKairo URL, credentials, target name, goal,
-and proof criteria; there is no destination-specific UI automation class. For
+and proof criteria, without UI label, dialog, or field-sequence hints; there is
+no destination-specific UI automation class. For
 each valid normalized record, the runner observes the page, asks the
 schema-bound AI planner for one bounded action at a time, executes only
 supported browser actions, captures ordered `ai-step-*` observations and
@@ -788,7 +791,7 @@ Options:
 
 - `--input`: required source file. AI parsing supports JSON, CSV, TXT, PDF, and
   DOCX text-bearing inputs.
-- `--targets`: comma-separated targets: `fake`, `openmrs`, `openemr`, `openkairo`.
+- `--targets`: comma-separated targets: `fake`, `openmrs`, `openkairo`.
 - `--runs-dir`: audit output directory. Defaults to `runs`.
 - `--parser`: `openai` or `deterministic`. Defaults to `openai`; use
   `deterministic` for local fixture/smoke runs that should not call OpenAI.
@@ -808,8 +811,6 @@ Options:
   they are interpreted; unclear values are re-prompted instead of being written.
 - `--openmrs-concurrency`: maximum number of OpenMRS records to enter at the
   same time. Defaults to `OPENMRS_CONCURRENCY`, then `1`.
-- `--openemr-concurrency`: maximum number of OpenEMR records to enter at the
-  same time. Defaults to `OPENEMR_CONCURRENCY`, then `1`.
 - `--openkairo-concurrency`: maximum number of OpenKairo records to enter at the
   same time. Defaults to `OPENKAIRO_CONCURRENCY`, then `1`.
 
@@ -819,10 +820,6 @@ Environment variables:
 - `OPENMRS_USERNAME`
 - `OPENMRS_PASSWORD`
 - `OPENMRS_CONCURRENCY`
-- `OPENEMR_BASE_URL`
-- `OPENEMR_USERNAME`
-- `OPENEMR_PASSWORD`
-- `OPENEMR_CONCURRENCY`
 - `OPENKAIRO_BASE_URL`
 - `OPENKAIRO_USERNAME`
 - `OPENKAIRO_PASSWORD`
@@ -849,8 +846,8 @@ Options:
 - `--inbox`: folder containing exported `*.ready.csv` or `*.ready.json` files.
   Defaults to `~/Downloads/agentic-ui-intake`.
 - `--targets`: comma-separated target profiles. Defaults to `openmrs`.
-- `--runs-dir`, `--openmrs-concurrency`, `--openemr-concurrency`, and
-  `--openkairo-concurrency`: same meaning as `run`.
+- `--runs-dir`, `--openmrs-concurrency`, and `--openkairo-concurrency`: same
+  meaning as `run`.
 - `--synthetic-suffix`: appends a suffix to valid synthetic records before
   validation and target entry. Defaults to `auto` for watcher runs.
 - `--once`: process currently ready files once and exit.

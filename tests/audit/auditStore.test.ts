@@ -852,12 +852,12 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("\"given_name\": \"Ava\"");
   });
 
-  it("renders OpenEMR record review when OpenEMR details are present", () => {
+  it("renders OpenKairo record review when OpenKairo details are present", () => {
     const summary = renderSummary({
       runId: "run-test",
       totalRecords: 1,
       targetCounts: {
-        openemr: { succeeded: 1, exception: 0, skipped: 0 },
+        openkairo: { succeeded: 1, exception: 0, skipped: 0 },
       },
       preflightExceptions: 0,
       environmentExceptions: 0,
@@ -873,12 +873,12 @@ describe("FileAuditStore", () => {
         targetEvidence: [
           {
             recordId: "demo-001",
-            target: "openemr",
+            target: "openkairo",
             status: "succeeded",
-            screenshotPath: "screenshots/demo-001/openemr/ai-step-verify.png",
-            fieldScreenshotPath: "screenshots/demo-001/openemr/ai-field-demographics.png",
-            targetRecordId: "openemr-demo-001",
-            message: "submitted OpenEMR patient form",
+            screenshotPath: "screenshots/demo-001/openkairo/ai-step-verify.png",
+            fieldScreenshotPath: "screenshots/demo-001/openkairo/ai-field-demographics.png",
+            targetRecordId: "openkairo-demo-001",
+            message: "submitted OpenKairo patient form",
           },
         ],
         aiExtractions: [],
@@ -886,7 +886,7 @@ describe("FileAuditStore", () => {
         fieldMappings: [
           {
             recordId: "demo-001",
-            target: "openemr",
+            target: "openkairo",
             sourceField: "phone",
             targetField: "Phone",
             normalizedValue: "+13125550198",
@@ -900,10 +900,10 @@ describe("FileAuditStore", () => {
       },
     });
 
-    expect(summary).toContain("- [OpenEMR Record Review](#openemr-record-review)");
-    expect(summary).toContain("## OpenEMR Record Review");
-    expect(summary).toContain("### OpenEMR Record demo-001");
-    expect(summary).toContain("#### Intake to OpenEMR Comparison");
+    expect(summary).toContain("- [OpenKairo Record Review](#openkairo-record-review)");
+    expect(summary).toContain("## OpenKairo Record Review");
+    expect(summary).toContain("### OpenKairo Record demo-001");
+    expect(summary).toContain("#### Intake to OpenKairo Comparison");
     expect(summary).toContain("| Intake Field | Intake Value | AI Confidence | Target Field | AI-Mapped Value | Final Input Value | Action | Status | Evidence |");
     expect(summary).toContain("| phone | 3125550198 | 0.91 | Phone | +13125550198 | +13125550198 | fill | succeeded; AI rationale The planner matched the visible demographics phone field. |  |");
     expect(summary).not.toContain(["Selector", "or", "Error"].join(" "));

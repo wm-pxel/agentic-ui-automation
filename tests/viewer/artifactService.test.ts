@@ -43,7 +43,7 @@ describe("createArtifactService", () => {
         },
       },
     });
-    await writeRun(runsDir, "run-2026-05-03T10-00-00-000Z-openemr", {
+    await writeRun(runsDir, "run-2026-05-03T10-00-00-000Z-openkairo", {
       run: { status: "completed", startedAt: "2026-05-03T10:00:00.000Z" },
       report: {
         status: "completed",
@@ -52,7 +52,7 @@ describe("createArtifactService", () => {
           preflightExceptions: 0,
           environmentExceptions: 0,
           closeExceptions: 0,
-          targetCounts: { openemr: { succeeded: 2, exception: 0, skipped: 0 } },
+          targetCounts: { openkairo: { succeeded: 2, exception: 0, skipped: 0 } },
         },
       },
     });
@@ -62,17 +62,17 @@ describe("createArtifactService", () => {
     const runs = await service.listRuns();
 
     expect(runs.map((run) => run.runId)).toEqual([
-      "run-2026-05-03T10-00-00-000Z-openemr",
+      "run-2026-05-03T10-00-00-000Z-openkairo",
       "run-2026-05-02T10-00-00-000Z-newer",
       "run-2026-05-01T15-42-33-006Z-older",
     ]);
-    const localOpenEmrTime = readableLocalTimestamp("2026-05-03T10:00:00.000Z");
+    const localOpenKairoTime = readableLocalTimestamp("2026-05-03T10:00:00.000Z");
     const localOpenMrsTime = readableLocalTimestamp("2026-05-02T10:00:00.000Z");
     const localFakeTime = readableLocalTimestamp("2026-05-01T15:42:33.006Z");
     expect(runs[0]).toMatchObject<Partial<ViewerRunSummary>>({
-      runId: "run-2026-05-03T10-00-00-000Z-openemr",
-      displayName: `OpenEMR - ${localOpenEmrTime}`,
-      targetLabel: "OpenEMR",
+      runId: "run-2026-05-03T10-00-00-000Z-openkairo",
+      displayName: `OpenKairo - ${localOpenKairoTime}`,
+      targetLabel: "OpenKairo",
       status: "completed",
       totalRecords: 2,
       hasExecutiveSummary: true,

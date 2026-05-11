@@ -11,6 +11,7 @@ import type { TargetProfile } from "./profiles.js";
 
 const DEFAULT_MAX_STEPS = 50;
 const FIELD_CONFIRMATION_TIMEOUT_MS = 5 * 60 * 1000;
+const MIN_AUTONOMOUS_FIELD_CONFIDENCE = 0.5;
 
 export type AiWebTargetResult =
   | {
@@ -162,6 +163,14 @@ export class AiWebTargetRunner {
             continue;
           }
 
+          const continueAction = continueWizardInsteadOfStoppingAction(action, observation);
+          if (continueAction) {
+            await executeBrowserAction(page, observation.elementSelectors, continueAction);
+            await writeAiActionEvent(context, continueAction, latestScreenshotPath, "succeeded");
+            rememberRecentAction(recentActions, continueAction, "succeeded");
+            continue;
+          }
+
           if (shouldWaitInsteadOfStopping(action, observation, stepCount, this.maxSteps)) {
             const waitAction: AiWebAction = { type: "wait", reason: "Observed page has no actionable controls yet." };
             await executeBrowserAction(page, observation.elementSelectors, waitAction);
@@ -271,9 +280,37 @@ export class AiWebTargetRunner {
         let approvalSource: ReportFieldMapping["approvalSource"] = "agent";
         let originalProposedValue: string | undefined;
         let finalValue: string | undefined;
+        let credentialAction = false;
         if (action.type === "fill" || action.type === "select") {
           const selectedSelector = observation.elementSelectors.get(action.elementId);
-          const confirmation = await confirmLowConfidenceFieldIfNeeded({
+          credentialAction = isCredentialFieldAction(context.profile, action);
+          if (!credentialAction && shouldSkipUnsafeAutonomousFieldAction(context.profile, plan.confidence)) {
+            skippedFields.push(action.field);
+            const skipReason = "AI confidence was too low to safely fill this field without operator input.";
+            await context.audit.writeFieldMapping({
+              recordId: context.record.sourceRecordId,
+              target: context.profile.name,
+              sourceField: action.field,
+              targetField: "",
+              normalizedValue: action.value,
+              selectorCandidates: selectorCandidatesForAction(observation.elementSelectors, action),
+              selectedSelector,
+              action: action.type,
+              status: "skipped",
+              agentConfidence: plan.confidence,
+              confidenceThreshold: context.profile.confidenceThreshold,
+              agentRationale: action.rationale,
+              approvalSource: "agent",
+              originalProposedValue: action.value,
+              skipReason,
+              fieldScreenshotPath: latestScreenshotPath,
+            });
+            await writeAiActionEvent(context, action, latestScreenshotPath, `skipped: ${skipReason}`);
+            rememberRecentAction(recentActions, action, `skipped: ${skipReason}`);
+            continue;
+          }
+
+          const confirmation = credentialAction ? { type: "confirm" } satisfies FieldMappingConfirmation : await confirmLowConfidenceFieldIfNeeded({
             dependencies: this.dependencies,
             context,
             page,
@@ -382,6 +419,12 @@ export class AiWebTargetRunner {
         }
 
         if (action.type === "fill" || action.type === "select") {
+          if (credentialAction) {
+            await writeAiActionEvent(context, action, latestScreenshotPath, "succeeded");
+            rememberRecentAction(recentActions, action, "succeeded");
+            continue;
+          }
+
           completedFields.push(action.field);
           latestFieldScreenshotPath = await captureScreenshot(context, page, `ai-field-${action.field}`);
           const mapping = {
@@ -462,6 +505,72 @@ function shouldWaitInsteadOfStopping(
     observation.controls.length <= 3 &&
     /\b(no safe|no observable|only help|only .* controls|not currently available)\b/.test(stopText)
   );
+}
+
+function shouldSkipUnsafeAutonomousFieldAction(profile: TargetProfile, confidence: number): boolean {
+  return (
+    profile.fieldConfirmation !== "prompt-on-low-confidence" &&
+    profile.confidenceThreshold !== undefined &&
+    confidence < profile.confidenceThreshold &&
+    confidence < MIN_AUTONOMOUS_FIELD_CONFIDENCE
+  );
+}
+
+function isCredentialFieldAction(
+  profile: TargetProfile,
+  action: Extract<AiWebAction, { type: "fill" | "select" }>,
+): boolean {
+  const value = action.value.trim();
+  if (!value) {
+    return false;
+  }
+
+  return value === profile.credentials.username || value === profile.credentials.password;
+}
+
+function continueWizardInsteadOfStoppingAction(
+  action: Extract<AiWebAction, { type: "stop" }>,
+  observation: {
+    controls: Array<{ elementId: string; label?: string; visibleText?: string; role?: string }>;
+  },
+): Extract<AiWebAction, { type: "click" }> | undefined {
+  if (action.code !== "ui_state_unexpected") {
+    return undefined;
+  }
+
+  const stopText = normalizeForVerification(action.message);
+  if (!/\b(no safe|no remaining|remaining intake|matching controls|unsupported|no editable)\b/.test(stopText)) {
+    return undefined;
+  }
+
+  const forwardControl = observation.controls.find(
+    (control) => control.role === "button" && controlTextMatches(control, /\b(forward next|next button|continue|proceed|advance)\b/),
+  );
+  if (forwardControl) {
+    return {
+      type: "click",
+      elementId: forwardControl.elementId,
+      purpose: "continue registration wizard",
+      rationale: "The destination has no visible matching field for the remaining intake data, but a forward navigation control can continue the save flow.",
+    };
+  }
+
+  const submitControl = observation.controls.find(
+    (control) =>
+      control.role === "button" &&
+      controlTextMatches(control, /\b(create patient|save patient|save|submit|register patient|register)\b/) &&
+      !controlTextMatches(control, /\b(cancel|close|dismiss|back|previous)\b/),
+  );
+  if (!submitControl) {
+    return undefined;
+  }
+
+  return {
+    type: "click",
+    elementId: submitControl.elementId,
+    purpose: "save patient with supported destination fields",
+    rationale: "The destination has no visible matching field for the remaining intake data, but a save/create control can persist the supported patient fields.",
+  };
 }
 
 function shouldWaitInsteadOfClickingTransientOpenKairoClose(

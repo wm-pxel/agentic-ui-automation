@@ -18,7 +18,7 @@ export interface TargetProfile {
   fieldConfirmation?: "auto" | "prompt-on-low-confidence";
 }
 
-type ProfileConfig = Pick<CliRunConfig, "targets" | "confidenceThreshold" | "openMrs" | "openEmr" | "openKairo"> & {
+type ProfileConfig = Pick<CliRunConfig, "targets" | "confidenceThreshold" | "openMrs" | "openKairo"> & {
   fieldConfirmation?: CliRunConfig["fieldConfirmation"];
 };
 
@@ -35,26 +35,6 @@ const DEFAULT_FORBIDDEN_ACTIONS = [
   "Do not export patient lists or unrelated records.",
 ];
 
-const OPENMRS_WORKFLOW_HINTS = [
-  "If a login session location is required, choose Registration Desk when visible; otherwise choose Outpatient Clinic before confirming the location.",
-  "During login, fill username and password before clicking Log In.",
-  "OpenMRS may show username, password, and a session location on the same login page; complete each visible login field before creating a patient.",
-  "In the registration wizard, use the forward/next control, not the back/previous control, after each completed step.",
-  "The OpenMRS wizard's blank green right-arrow control is the forward/next button and may be labeled forward next button or next-button; do not use the left-arrow previous/back button.",
-  "In OpenMRS, date of birth may be split into day, month, and year fields; fill all visible birthdate parts before clicking any save, register, or confirm control.",
-  "If similar patients are shown but no exact full synthetic name and birthdate match is visible, continue registering the new suffixed demo patient rather than opening an existing record.",
-];
-
-const OPENEMR_WORKFLOW_HINTS = [
-  "If Patient Finder reports no matching records and Add New Patient is visible, click Add New Patient rather than repeating search.",
-];
-
-const OPENKAIRO_WORKFLOW_HINTS = [
-  "If the Better with 150% zoom dialog is visible, dismiss it with Got it before clicking New Patient.",
-  "Create the synthetic patient from the New Patient dialog using first name, last name, date of birth or year, and gender.",
-  "Click Create Patient only after required visible fields are filled.",
-];
-
 export function buildTargetProfiles(config: ProfileConfig): TargetProfile[] {
   return config.targets.map((target) => {
     switch (target) {
@@ -68,27 +48,10 @@ export function buildTargetProfiles(config: ProfileConfig): TargetProfile[] {
             password: config.openMrs.password ?? "Admin123",
           },
           task: "Create or register one synthetic patient from the normalized intake record.",
-          workflowHints: [...OPENMRS_WORKFLOW_HINTS],
+          workflowHints: [],
           successCriteria: [...DEFAULT_SUCCESS_CRITERIA],
           forbiddenActions: [...DEFAULT_FORBIDDEN_ACTIONS],
           concurrency: Math.max(1, config.openMrs.concurrency),
-          confidenceThreshold: config.confidenceThreshold,
-          fieldConfirmation: config.fieldConfirmation,
-        };
-      case "openemr":
-        return {
-          name: "openemr",
-          displayName: "OpenEMR",
-          baseUrl: config.openEmr.baseUrl ?? "https://demo.openemr.io/openemr",
-          credentials: {
-            username: config.openEmr.username ?? "admin",
-            password: config.openEmr.password ?? "pass",
-          },
-          task: "Create or register one synthetic patient from the normalized intake record.",
-          workflowHints: [...OPENEMR_WORKFLOW_HINTS],
-          successCriteria: [...DEFAULT_SUCCESS_CRITERIA],
-          forbiddenActions: [...DEFAULT_FORBIDDEN_ACTIONS],
-          concurrency: Math.max(1, config.openEmr.concurrency),
           confidenceThreshold: config.confidenceThreshold,
           fieldConfirmation: config.fieldConfirmation,
         };
@@ -102,7 +65,7 @@ export function buildTargetProfiles(config: ProfileConfig): TargetProfile[] {
             password: config.openKairo.password ?? "Demo123!",
           },
           task: "Create or register one synthetic patient from the normalized intake record.",
-          workflowHints: [...OPENKAIRO_WORKFLOW_HINTS],
+          workflowHints: [],
           successCriteria: [...DEFAULT_SUCCESS_CRITERIA],
           forbiddenActions: [...DEFAULT_FORBIDDEN_ACTIONS],
           concurrency: Math.max(1, config.openKairo.concurrency),
