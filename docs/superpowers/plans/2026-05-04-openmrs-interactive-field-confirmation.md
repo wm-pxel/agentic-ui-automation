@@ -53,7 +53,7 @@ const ENV_KEYS = [
 Add these tests inside the existing `describe("buildRunConfig", () => { })` block:
 
 ```ts
-  it("defaults OpenMRS interactive field confirmation off with a 0.8 threshold", () => {
+  it("defaults OpenMRS legacy browser confirmation prompt off with a 0.8 threshold", () => {
     const config = buildRunConfig({
       input: "data/demo/intake-records.json",
       targets: "openmrs",
@@ -64,7 +64,7 @@ Add these tests inside the existing `describe("buildRunConfig", () => { })` bloc
     expect(config.openMrs.concurrency).toBe(2);
   });
 
-  it("uses OpenMRS interactive field confirmation environment defaults", () => {
+  it("uses OpenMRS legacy browser confirmation prompt environment defaults", () => {
     process.env.OPENMRS_INTERACTIVE_FIELD_CONFIRMATION = "yes";
     process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD = "0.72";
     process.env.OPENMRS_CONCURRENCY = "4";
@@ -98,7 +98,7 @@ Add these tests inside the existing `describe("buildRunConfig", () => { })` bloc
     expect(config.openMrs.concurrency).toBe(1);
   });
 
-  it("rejects OpenMRS field confidence thresholds outside 0 through 1", () => {
+  it("rejects OpenMRS legacy confidence cutoffs outside 0 through 1", () => {
     expect(() =>
       buildRunConfig({
         input: "data/demo/intake-records.json",
@@ -120,7 +120,7 @@ Add these tests inside the existing `describe("buildRunConfig", () => { })` bloc
 Add this CLI test to `tests/cli.test.ts`:
 
 ```ts
-  it("rejects invalid OpenMRS field confidence thresholds", async () => {
+  it("rejects invalid OpenMRS legacy confidence cutoffs", async () => {
     const io = captureIo();
 
     const exitCode = await runCli(
@@ -134,7 +134,7 @@ Add this CLI test to `tests/cli.test.ts`:
         "fake",
         "--parser",
         "deterministic",
-        "--openmrs-field-confidence-threshold",
+        "--openmrs-confirmation-threshold",
         "1.5",
       ],
       io,
@@ -142,7 +142,7 @@ Add this CLI test to `tests/cli.test.ts`:
 
     expect(exitCode).toBe(1);
     expect(io.stdoutText()).toBe("");
-    expect(io.stderrText()).toContain("--openmrs-field-confidence-threshold must be a number from 0 through 1.");
+    expect(io.stderrText()).toContain("--openmrs-confirmation-threshold must be a number from 0 through 1.");
   });
 ```
 
@@ -228,7 +228,7 @@ Add both options to the `run` command and the `watch` command:
 ```ts
     .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
     .option(
-      "--openmrs-field-confidence-threshold <threshold>",
+      "--openmrs-confirmation-threshold <threshold>",
       "Minimum AI confidence for OpenMRS field entry before prompting.",
       parseConfidenceThreshold,
     )
@@ -247,7 +247,7 @@ Add this parser near `parsePositiveInteger`:
 function parseConfidenceThreshold(value: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
-    throw new Error("--openmrs-field-confidence-threshold must be a number from 0 through 1.");
+    throw new Error("--openmrs-confirmation-threshold must be a number from 0 through 1.");
   }
   return parsed;
 }
@@ -573,7 +573,7 @@ In `tests/targets/openMrsAdapter.test.ts`, add a test after the existing success
   });
 ```
 
-- [ ] **Step 2: Run OpenMRS adapter test to verify failure**
+- [ ] **Step 2: Run legacy OpenMRS implementation test to verify failure**
 
 Run:
 
@@ -1374,7 +1374,7 @@ function isValidationExceptionLike(value: unknown): value is ValidationException
 }
 ```
 
-- [ ] **Step 8: Run OpenMRS adapter tests**
+- [ ] **Step 8: Run legacy OpenMRS implementation tests**
 
 Run:
 
@@ -1412,7 +1412,7 @@ In the CLI options section, add:
 - `--openmrs-interactive-field-confirmation`: prompts in the active OpenMRS
   browser before writing fields whose per-field AI confidence is below the
   configured threshold. When enabled, OpenMRS concurrency is forced to `1`.
-- `--openmrs-field-confidence-threshold`: minimum per-field AI confidence for
+- `--openmrs-confirmation-threshold`: minimum per-field AI confidence for
   OpenMRS field writes before prompting. Defaults to
   `OPENMRS_FIELD_CONFIDENCE_THRESHOLD`, then `0.8`.
 ```
@@ -1422,7 +1422,7 @@ In the CLI options section, add:
 In "What The OpenMRS Target Does", insert this step after opening the registration app:
 
 ```md
-4. When interactive field confirmation is enabled, ask the UI agent to approve
+4. When legacy browser confirmation prompt is enabled, ask the UI agent to approve
    each field write and prompt the operator in the OpenMRS browser before
    writing low-confidence values.
 ```

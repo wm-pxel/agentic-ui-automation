@@ -28,7 +28,12 @@ export interface WriteEventInput {
   exceptionCode?: AuditEvent["exceptionCode"];
 }
 
-export type ReportFieldMappingStatus = "succeeded" | "failed" | "skipped";
+export type ReportFieldMappingStatus =
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "not_visible_yet"
+  | "no_matching_destination_field";
 export type ReportFieldApprovalSource =
   | "agent"
   | "operator_confirmed"
@@ -53,6 +58,7 @@ export interface ReportFieldMapping {
   approvalSource?: ReportFieldApprovalSource;
   originalProposedValue?: string;
   finalValue?: string;
+  fieldScreenshotPath?: string;
   skipReason?: string;
   errorMessage?: string;
 }

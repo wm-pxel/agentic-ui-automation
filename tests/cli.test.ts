@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCli } from "../src/cli.js";
 import { writeIntakeHandoff } from "../src/handoff/intakeHandoff.js";
+import type { AiWebTargetResult, AiWebTargetRunContext } from "../src/targets/aiWebTargetRunner.js";
+import type { TargetProfile } from "../src/targets/profiles.js";
 import type { ViewerServer } from "../src/viewer/server.js";
 
 const tempDirs: string[] = [];
@@ -194,6 +196,102 @@ describe("runCli", () => {
     expect(executiveSummary).toContain("| info | severity-warning-info |");
   });
 
+  it.each(["openmrs", "openkairo"] as const)(
+    "runs %s through the injected generic target runner path",
+    async (target) => {
+      const runsDir = await mkdtemp(join(tmpdir(), `agentic-ui-cli-${target}-`));
+      tempDirs.push(runsDir);
+      const io = captureIo();
+      const runner = new FakeTargetRunner();
+      const factoryCalls: Array<{ profiles: TargetProfile[] }> = [];
+
+      const exitCode = await runCli(
+        [
+          "node",
+          "agentic-ui",
+          "run",
+          "--input",
+          "data/demo/intake-records-normalized.json",
+          "--targets",
+          target,
+          "--runs-dir",
+          runsDir,
+          "--parser",
+          "deterministic",
+          "--confidence-threshold",
+          ".99",
+          "--field-confirmation",
+          "prompt-on-low-confidence",
+        ],
+        io,
+        {
+          buildTargetRunner: ({ profiles }) => {
+            factoryCalls.push({ profiles });
+            return runner;
+          },
+        },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(io.stderrText()).toBe("");
+      expect(factoryCalls).toHaveLength(1);
+      expect(factoryCalls[0]?.profiles.map((profile) => profile.name)).toEqual([target]);
+      expect(factoryCalls[0]?.profiles[0]?.confidenceThreshold).toBe(0.99);
+      expect(factoryCalls[0]?.profiles[0]?.fieldConfirmation).toBe("prompt-on-low-confidence");
+      expect(runner.runProfiles).toEqual([target, target, target]);
+      const result = JSON.parse(io.stdoutText()) as {
+        targetCounts: Record<string, { succeeded: number; exception: number; skipped: number }>;
+      };
+      expect(result.targetCounts[target]).toEqual({ succeeded: 3, exception: 0, skipped: 0 });
+    },
+  );
+
+  it("routes fake profiles through dry-run and non-fake profiles through the default AI runner in mixed runs", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "agentic-ui-cli-mixed-"));
+    tempDirs.push(runsDir);
+    const io = captureIo();
+    const aiRunner = new FakeTargetRunner();
+    let aiRunnerBuilds = 0;
+
+    const exitCode = await runCli(
+      [
+        "node",
+        "agentic-ui",
+        "run",
+        "--input",
+        "data/demo/intake-records-normalized.json",
+        "--targets",
+        "fake,openmrs",
+        "--runs-dir",
+        runsDir,
+        "--parser",
+        "deterministic",
+      ],
+      io,
+      {
+        buildAiTargetRunner: () => {
+          aiRunnerBuilds += 1;
+          return aiRunner;
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.stderrText()).toBe("");
+    expect(aiRunnerBuilds).toBe(1);
+    expect(aiRunner.runProfiles).toEqual(["openmrs", "openmrs", "openmrs"]);
+
+    const result = JSON.parse(io.stdoutText()) as {
+      runId: string;
+      targetCounts: Record<string, { succeeded: number; exception: number; skipped: number }>;
+    };
+    expect(result.targetCounts.fake).toEqual({ succeeded: 3, exception: 0, skipped: 0 });
+    expect(result.targetCounts.openmrs).toEqual({ succeeded: 3, exception: 0, skipped: 0 });
+    await expect(readFile(join(runsDir, result.runId, "events.jsonl"), "utf8")).resolves.toContain(
+      "dry run accepted",
+    );
+  });
+
   it("returns exit code 1 and prints a concise message for parse errors", async () => {
     const io = captureIo();
 
@@ -204,7 +302,20 @@ describe("runCli", () => {
     expect(io.stderrText()).toBe("error: required option '--input <path>' not specified\n");
   });
 
-  it("rejects invalid OpenMRS field confidence thresholds", async () => {
+  it.each([
+    ["run", ["run", "--input", "data/demo/intake-records-normalized.json", "--agent", "scripted"]],
+    ["watch", ["watch", "--once", "--agent", "scripted"]],
+  ] as const)("rejects removed --agent option on %s", async (_command, args) => {
+    const io = captureIo();
+
+    const exitCode = await runCli(["node", "agentic-ui", ...args], io);
+
+    expect(exitCode).toBe(1);
+    expect(io.stdoutText()).toBe("");
+    expect(io.stderrText()).toContain("unknown option '--agent'");
+  });
+
+  it("rejects removed OpenMRS field confirmation options", async () => {
     const io = captureIo();
 
     const exitCode = await runCli(
@@ -218,15 +329,73 @@ describe("runCli", () => {
         "fake",
         "--parser",
         "deterministic",
-        "--openmrs-field-confidence-threshold",
-        "1.5",
+        "--openmrs-interactive-field-confirmation",
       ],
       io,
     );
 
     expect(exitCode).toBe(1);
     expect(io.stdoutText()).toBe("");
-    expect(io.stderrText()).toContain("--openmrs-field-confidence-threshold must be a number from 0 through 1.");
+    expect(io.stderrText()).toContain("unknown option '--openmrs-interactive-field-confirmation'");
+  });
+
+  it.each([
+    ["run", ["run", "--input", "data/demo/intake-records-normalized.json", "--confidence-threshold", "1.1"]],
+    ["watch", ["watch", "--once", "--confidence-threshold", "-0.1"]],
+  ] as const)("rejects invalid confidence threshold values on %s", async (_command, args) => {
+    const io = captureIo();
+
+    const exitCode = await runCli(["node", "agentic-ui", ...args], io);
+
+    expect(exitCode).toBe(1);
+    expect(io.stdoutText()).toBe("");
+    expect(io.stderrText()).toContain("--confidence-threshold must be a number from 0 through 1.");
+  });
+
+  it.each([
+    ["run", ["run", "--input", "data/demo/intake-records-normalized.json", "--field-confirmation", "always"]],
+    ["watch", ["watch", "--once", "--field-confirmation", "always"]],
+  ] as const)("rejects invalid field confirmation modes on %s", async (_command, args) => {
+    const io = captureIo();
+
+    const exitCode = await runCli(["node", "agentic-ui", ...args], io);
+
+    expect(exitCode).toBe(1);
+    expect(io.stdoutText()).toBe("");
+    expect(io.stderrText()).toContain("Allowed choices are auto, prompt-on-low-confidence.");
+  });
+
+  it("requires an OpenAI API key for default non-fake target runs", async () => {
+    const io = captureIo();
+    const originalApiKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+
+    try {
+      const exitCode = await runCli(
+        [
+          "node",
+          "agentic-ui",
+          "run",
+          "--input",
+          "data/demo/intake-records-normalized.json",
+          "--targets",
+          "openmrs",
+          "--parser",
+          "deterministic",
+        ],
+        io,
+      );
+
+      expect(exitCode).toBe(1);
+      expect(io.stdoutText()).toBe("");
+      expect(io.stderrText()).toContain("OPENAI_API_KEY is required when running non-fake targets with the AI web planner.");
+    } finally {
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey;
+      }
+    }
   });
 
   it("starts the viewer command with default runs directory and port", async () => {
@@ -265,16 +434,31 @@ describe("runCli", () => {
     expect(io.stderrText()).toBe("");
   });
 
+  it("allows port zero so the viewer can use an available ephemeral port", async () => {
+    const io = captureIo();
+    const calls: Array<{ runsDir: string; port?: number }> = [];
+    const exitCode = await runCli(["node", "agentic-ui", "viewer", "--port", "0"], io, {
+      startViewerServer: async (options) => {
+        calls.push({ runsDir: options.runsDir, port: options.port });
+        return fakeViewerServer();
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(calls).toEqual([{ runsDir: "runs", port: 0 }]);
+    expect(io.stderrText()).toBe("");
+  });
+
   it("rejects invalid viewer ports", async () => {
     const io = captureIo();
 
-    const exitCode = await runCli(["node", "agentic-ui", "viewer", "--port", "0"], io, {
+    const exitCode = await runCli(["node", "agentic-ui", "viewer", "--port", "-1"], io, {
       startViewerServer: async () => fakeViewerServer(),
     });
 
     expect(exitCode).toBe(1);
     expect(io.stdoutText()).toBe("");
-    expect(io.stderrText()).toContain("--port must be a positive integer.");
+    expect(io.stderrText()).toContain("--port must be zero or a positive integer.");
   });
 
   it("processes ready intake exports with the watch command in once mode", async () => {
@@ -336,6 +520,66 @@ describe("runCli", () => {
         },
       },
     });
+  });
+
+  it("defaults watch runs to an automatic synthetic suffix", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentic-ui-cli-watch-suffix-"));
+    tempDirs.push(root);
+    const inbox = join(root, "inbox");
+    const runsDir = join(root, "runs");
+    await writeIntakeHandoff({
+      inbox,
+      records: [
+        {
+          sourceRecordId: "cli-watch-suffix-001",
+          firstName: "Ava",
+          lastName: "Nguyen",
+          dateOfBirth: "1987-03-14",
+          sexOrGender: "female",
+          phone: "312-555-0198",
+          email: "ava.nguyen@example.test",
+          streetAddress: "1200 West Lake Street",
+          city: "Chicago",
+          state: "IL",
+          zip: "60607",
+          insurancePayer: "Aetna",
+          insuranceMemberId: "AET123456",
+          reasonForVisit: "Annual wellness visit",
+          preferredContactMethod: "phone",
+          sourceFormat: "json",
+          rawSourceExcerpt: "cli-watch-suffix-001",
+        },
+      ],
+    });
+    const io = captureIo();
+
+    const exitCode = await runCli(
+      [
+        "node",
+        "agentic-ui",
+        "watch",
+        "--once",
+        "--inbox",
+        inbox,
+        "--targets",
+        "fake",
+        "--runs-dir",
+        runsDir,
+      ],
+      io,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.stderrText()).toBe("");
+    const result = JSON.parse(io.stdoutText()) as { status: string; run?: { runId: string } };
+    expect(result.status).toBe("processed");
+    const normalized = (await readJson(
+      join(runsDir, result.run?.runId ?? "", "input", "normalized-records.json"),
+    )) as Array<{ sourceRecordId: string; lastName: string; email: string; insuranceMemberId: string }>;
+    expect(normalized[0]?.sourceRecordId).toMatch(/^cli-watch-suffix-001-run-\d{14}-[a-f0-9]{5}$/);
+    expect(normalized[0]?.lastName).toMatch(/^Nguyen Run-\d{14}-[a-f0-9]{5}$/);
+    expect(normalized[0]?.email).toMatch(/^ava\.nguyen\+run-\d{14}-[a-f0-9]{5}@example\.test$/);
+    expect(normalized[0]?.insuranceMemberId).toMatch(/^AET123456-RUN-\d{14}-[A-F0-9]{5}-1$/);
   });
 
   it("defaults to AI parsing and fails clearly without an OpenAI API key", async () => {
@@ -411,6 +655,19 @@ function fakeViewerServer(): ViewerServer {
     close: async () => undefined,
     url: () => "http://127.0.0.1:4173",
   };
+}
+
+class FakeTargetRunner {
+  readonly runProfiles: string[] = [];
+
+  async prepare(_profiles: TargetProfile[], _plannedRecords: number): Promise<void> {}
+
+  async runRecord(context: AiWebTargetRunContext): Promise<AiWebTargetResult> {
+    this.runProfiles.push(context.profile.name);
+    return { status: "succeeded" };
+  }
+
+  async close(): Promise<void> {}
 }
 
 async function readJson(path: string): Promise<unknown> {

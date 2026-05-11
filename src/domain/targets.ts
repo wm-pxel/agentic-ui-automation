@@ -1,10 +1,10 @@
 import type { TargetName } from "./schema.js";
 
-export const TARGET_ORDER: TargetName[] = ["openmrs", "openemr", "fake"];
+export const TARGET_ORDER: TargetName[] = ["openmrs", "openkairo", "fake"];
 
 const TARGET_LABELS: Record<TargetName, string> = {
   openmrs: "OpenMRS",
-  openemr: "OpenEMR",
+  openkairo: "OpenKairo",
   fake: "Fake Target",
 };
 

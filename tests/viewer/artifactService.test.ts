@@ -43,18 +43,44 @@ describe("createArtifactService", () => {
         },
       },
     });
+    await writeRun(runsDir, "run-2026-05-03T10-00-00-000Z-openkairo", {
+      run: { status: "completed", startedAt: "2026-05-03T10:00:00.000Z" },
+      report: {
+        status: "completed",
+        totalRecords: 2,
+        counts: {
+          preflightExceptions: 0,
+          environmentExceptions: 0,
+          closeExceptions: 0,
+          targetCounts: { openkairo: { succeeded: 2, exception: 0, skipped: 0 } },
+        },
+      },
+    });
     await writeFile(join(runsDir, "not-a-directory.txt"), "ignore me");
 
     const service = createArtifactService({ runsDir });
     const runs = await service.listRuns();
 
     expect(runs.map((run) => run.runId)).toEqual([
+      "run-2026-05-03T10-00-00-000Z-openkairo",
       "run-2026-05-02T10-00-00-000Z-newer",
       "run-2026-05-01T15-42-33-006Z-older",
     ]);
+    const localOpenKairoTime = readableLocalTimestamp("2026-05-03T10:00:00.000Z");
+    const localOpenMrsTime = readableLocalTimestamp("2026-05-02T10:00:00.000Z");
+    const localFakeTime = readableLocalTimestamp("2026-05-01T15:42:33.006Z");
     expect(runs[0]).toMatchObject<Partial<ViewerRunSummary>>({
+      runId: "run-2026-05-03T10-00-00-000Z-openkairo",
+      displayName: `OpenKairo - ${localOpenKairoTime}`,
+      targetLabel: "OpenKairo",
+      status: "completed",
+      totalRecords: 2,
+      hasExecutiveSummary: true,
+      hasSummary: true,
+    });
+    expect(runs[1]).toMatchObject<Partial<ViewerRunSummary>>({
       runId: "run-2026-05-02T10-00-00-000Z-newer",
-      displayName: "OpenMRS - run-2026-05-02T10-00-00-000Z-newer",
+      displayName: `OpenMRS - ${localOpenMrsTime}`,
       targetLabel: "OpenMRS",
       status: "completed",
       totalRecords: 1,
@@ -64,9 +90,9 @@ describe("createArtifactService", () => {
       hasExecutiveSummary: true,
       hasSummary: true,
     });
-    expect(runs[1].displayName).toBe("Fake Target - run-2026-05-01T15-42-33-006Z-older");
-    expect(runs[1].targetLabel).toBe("Fake Target");
-    expect(runs[1].targetCounts.fake?.succeeded).toBe(3);
+    expect(runs[2].displayName).toBe(`Fake Target - ${localFakeTime}`);
+    expect(runs[2].targetLabel).toBe("Fake Target");
+    expect(runs[2].targetCounts.fake?.succeeded).toBe(3);
   });
 
   it("falls back to folder-derived metadata when JSON is malformed or missing", async () => {
@@ -338,6 +364,17 @@ describe("createArtifactService", () => {
     await expect(service.listArtifactDirectory(runId, "screenshots")).resolves.toBeNull();
   });
 });
+
+function readableLocalTimestamp(timestamp: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(timestamp));
+}
 
 async function makeRunsDir(): Promise<string> {
   const runsDir = await mkdtemp(join(tmpdir(), "agentic-ui-viewer-"));

@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { FileAuditStore } from "../audit/auditStore.js";
 import { renderExecutiveSummary, renderSummary } from "../audit/summary.js";
-import { validateAgentDecision } from "../agent/types.js";
-import type { AgentDriver } from "../agent/types.js";
-import { TargetAdapterResultSchema } from "../adapters/contract.js";
-import type { TargetAdapter, TargetAdapterResult } from "../adapters/contract.js";
 import type {
   RawIntakeRecord,
   NormalizedIntakeRecord,
@@ -13,15 +10,29 @@ import type {
   TargetTaskStatus,
   ValidationException,
 } from "../domain/schema.js";
+import { ValidationExceptionSchema } from "../domain/schema.js";
 import { validateAndNormalizeRecord } from "../domain/validation.js";
+import type { AiWebTargetResult } from "../targets/aiWebTargetRunner.js";
+import type { TargetProfile } from "../targets/profiles.js";
+
+export interface TargetRunner {
+  prepare?(profiles: TargetProfile[], plannedRecords: number): Promise<void>;
+  runRecord(context: {
+    runId: string;
+    profile: TargetProfile;
+    record: NormalizedIntakeRecord;
+    audit: FileAuditStore;
+  }): Promise<AiWebTargetResult>;
+  close?(): Promise<void>;
+}
 
 export interface RunWorkflowInput {
   runId?: string;
   runsDir: string;
   sourceInputPath?: string;
   records: RawIntakeRecord[];
-  adapters: TargetAdapter[];
-  agent: AgentDriver;
+  profiles: TargetProfile[];
+  targetRunner: TargetRunner;
   now?: () => string;
 }
 
@@ -41,18 +52,33 @@ interface TargetReadiness {
 }
 
 interface TargetRun {
-  adapter: TargetAdapter;
+  profile: TargetProfile;
   record: NormalizedIntakeRecord;
 }
+
+const AiWebTargetResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("succeeded"),
+    targetRecordId: z.string().optional(),
+  }),
+  z.object({
+    status: z.literal("skipped"),
+    reason: z.string(),
+  }),
+  z.object({
+    status: z.literal("exception"),
+    exception: ValidationExceptionSchema.and(z.record(z.unknown())),
+  }),
+]);
 
 export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowResult> {
   const runId = input.runId ?? `run-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
   const audit = await FileAuditStore.create({ runsDir: input.runsDir, runId, now: input.now });
-  const agent = withScreenshotRootDir(input.agent, audit.runDir);
-  const targets = input.adapters.map((adapter) => adapter.name);
+  const targets = input.profiles.map((profile) => profile.name);
   const targetCounts = initializeTargetCounts(targets);
   const readiness = new Map<TargetName, TargetReadiness>();
-  const closedAdapters = new Set<TargetAdapter>();
+  let closedTargetRunner = false;
+  let targetRunnerPrepareAttempted = false;
   let preflightExceptions = 0;
   let environmentExceptions = 0;
   let closeExceptions = 0;
@@ -70,25 +96,26 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
     await audit.writeInputArtifact("normalized-records.json", "[]\n");
     await audit.writeEvent({ phase: "run", actionType: "start", result: "workflow run started" });
 
-    for (const adapter of input.adapters) {
-      let prepareException: ValidationException | undefined;
-      try {
-        await adapter.prepare({ plannedRecords: input.records.length });
-      } catch (error) {
-        prepareException = exceptionFromError("environment_not_ready", error);
-      }
+    let prepareException: ValidationException | undefined;
+    try {
+      targetRunnerPrepareAttempted = Boolean(input.targetRunner.prepare);
+      await input.targetRunner.prepare?.(input.profiles, input.records.length);
+    } catch (error) {
+      prepareException = exceptionFromError("environment_not_ready", error);
+    }
 
+    for (const profile of input.profiles) {
       if (prepareException) {
         environmentExceptions += 1;
-        readiness.set(adapter.name, { ready: false, exception: prepareException });
-        await audit.writeException(`${adapter.name}-prepare`, prepareException);
+        readiness.set(profile.name, { ready: false, exception: prepareException });
+        await audit.writeException(`${profile.name}-prepare`, prepareException);
         await audit.writeReportIssue(issueFromException({
           phase: "environment",
-          target: adapter.name,
+          target: profile.name,
           exception: prepareException,
         }));
         await audit.writeEvent({
-          target: adapter.name,
+          target: profile.name,
           phase: "environment",
           actionType: "prepare",
           result: prepareException.message,
@@ -97,9 +124,9 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
         continue;
       }
 
-      readiness.set(adapter.name, { ready: true });
+      readiness.set(profile.name, { ready: true });
       await audit.writeEvent({
-        target: adapter.name,
+        target: profile.name,
         phase: "environment",
         actionType: "prepare",
         result: "target ready",
@@ -146,30 +173,30 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
 
       normalizedRecords.push(validation.record);
 
-      for (const adapter of input.adapters) {
-        const counts = targetCounts[adapter.name];
+      for (const profile of input.profiles) {
+        const counts = targetCounts[profile.name];
         if (!counts) continue;
 
-        const state = readiness.get(adapter.name);
+        const state = readiness.get(profile.name);
         if (!state?.ready) {
           const exception =
             state?.exception ??
             ({
               code: "environment_not_ready",
               severity: "error",
-              message: `${adapter.name} was not prepared.`,
+              message: `${profile.name} was not prepared.`,
             } satisfies ValidationException);
           counts.exception += 1;
-          await audit.writeException(`${validation.record.sourceRecordId}-${adapter.name}`, exception);
+          await audit.writeException(`${validation.record.sourceRecordId}-${profile.name}`, exception);
           await audit.writeReportIssue(issueFromException({
             phase: "target",
-            target: adapter.name,
+            target: profile.name,
             recordId: validation.record.sourceRecordId,
             exception,
           }));
           await audit.writeEvent({
             recordId: validation.record.sourceRecordId,
-            target: adapter.name,
+            target: profile.name,
             phase: "target",
             actionType: "skip-unavailable-target",
             result: exception.message,
@@ -178,22 +205,33 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
           continue;
         }
 
-        targetRuns.push({ adapter, record: validation.record });
+        targetRuns.push({ profile, record: validation.record });
       }
     }
 
     await runTargetRecords({
       targetRuns,
-      adapters: input.adapters,
+      profiles: input.profiles,
       runId,
       audit,
-      agent,
+      targetRunner: input.targetRunner,
       targetCounts,
     });
 
     await audit.writeInputArtifact("normalized-records.json", `${JSON.stringify(normalizedRecords, null, 2)}\n`);
 
-    closeExceptions += await closeReadyAdapters(input.adapters, audit, readiness, closedAdapters);
+    closeExceptions += await closeReadyTargetRunner(
+      input.targetRunner,
+      input.profiles,
+      audit,
+      readiness,
+      targetRunnerPrepareAttempted,
+      () => {
+        if (closedTargetRunner) return false;
+        closedTargetRunner = true;
+        return true;
+      },
+    );
 
     const status: RunStatus = hasExceptions(preflightExceptions, environmentExceptions, closeExceptions, targetCounts)
       ? "completed_with_exceptions"
@@ -233,7 +271,18 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
       targetCounts,
     };
   } catch (error) {
-    closeExceptions += await closeReadyAdapters(input.adapters, audit, readiness, closedAdapters);
+    closeExceptions += await closeReadyTargetRunner(
+      input.targetRunner,
+      input.profiles,
+      audit,
+      readiness,
+      targetRunnerPrepareAttempted,
+      () => {
+        if (closedTargetRunner) return false;
+        closedTargetRunner = true;
+        return true;
+      },
+    );
     if (initialMetadataWritten) {
       await writeFailedRunArtifacts({
         audit,
@@ -252,18 +301,6 @@ export async function runWorkflow(input: RunWorkflowInput): Promise<RunWorkflowR
   }
 }
 
-function withScreenshotRootDir(agent: AgentDriver, screenshotRootDir: string): AgentDriver {
-  return {
-    decide: async (decisionInput) => {
-      const input = {
-        ...decisionInput,
-        screenshotRootDir: decisionInput.screenshotRootDir ?? screenshotRootDir,
-      };
-      return validateAgentDecision(input, await agent.decide(input));
-    },
-  };
-}
-
 function initializeTargetCounts(targets: TargetName[]): Partial<Record<TargetName, Record<TargetTaskStatus, number>>> {
   const counts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>> = {};
   for (const target of targets) {
@@ -274,54 +311,77 @@ function initializeTargetCounts(targets: TargetName[]): Partial<Record<TargetNam
 
 async function runTargetRecords(input: {
   targetRuns: TargetRun[];
-  adapters: TargetAdapter[];
+  profiles: TargetProfile[];
   runId: string;
   audit: FileAuditStore;
-  agent: AgentDriver;
+  targetRunner: TargetRunner;
   targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>;
 }): Promise<void> {
-  for (const adapter of input.adapters) {
-    const runs = input.targetRuns.filter((run) => run.adapter === adapter);
-    if (runs.length === 0) continue;
-
-    await mapWithConcurrency(runs, adapterConcurrency(adapter), async (run) => {
-      await input.audit.writeEvent({
-        recordId: run.record.sourceRecordId,
-        target: adapter.name,
-        phase: "target",
-        actionType: "start",
-        result: "target record started",
-      });
-      const result = await runAdapterRecord(adapter, {
-        runId: input.runId,
-        record: run.record,
-        audit: input.audit,
-        agent: input.agent,
-      });
-      const counts = input.targetCounts[adapter.name];
-      if (counts) {
-        counts[result.status] += 1;
+  let firstError: unknown;
+  await Promise.all(
+    input.profiles.map(async (profile) => {
+      try {
+        await runTargetProfileRecords(input, profile);
+      } catch (error) {
+        firstError ??= error;
       }
-      await input.audit.writeEvent({
-        recordId: run.record.sourceRecordId,
-        target: adapter.name,
-        phase: "target",
-        actionType: "complete",
-        result: targetCompletionResult(result),
-        exceptionCode: result.status === "exception" ? result.exception.code : undefined,
-      });
-
-      if (result.status === "exception") {
-        await input.audit.writeException(`${run.record.sourceRecordId}-${adapter.name}`, result.exception);
-        await input.audit.writeReportIssue(issueFromException({
-          phase: "target",
-          target: adapter.name,
-          recordId: run.record.sourceRecordId,
-          exception: result.exception,
-        }));
-      }
-    });
+    }),
+  );
+  if (firstError !== undefined) {
+    throw firstError;
   }
+}
+
+async function runTargetProfileRecords(
+  input: {
+    targetRuns: TargetRun[];
+    runId: string;
+    audit: FileAuditStore;
+    targetRunner: TargetRunner;
+    targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>;
+  },
+  profile: TargetProfile,
+): Promise<void> {
+  const runs = input.targetRuns.filter((run) => run.profile === profile);
+  if (runs.length === 0) return;
+
+  await mapWithConcurrency(runs, profileConcurrency(profile), async (run) => {
+    await input.audit.writeEvent({
+      recordId: run.record.sourceRecordId,
+      target: profile.name,
+      phase: "target",
+      actionType: "start",
+      result: "target record started",
+    });
+    const result = await runTargetRunnerRecord(input.targetRunner, {
+      runId: input.runId,
+      profile,
+      record: run.record,
+      audit: input.audit,
+    });
+    const counts = input.targetCounts[profile.name];
+    if (counts) {
+      counts[result.status] += 1;
+    }
+    await input.audit.writeEvent({
+      recordId: run.record.sourceRecordId,
+      target: profile.name,
+      phase: "target",
+      actionType: "complete",
+      result: targetCompletionResult(result),
+      exceptionCode: result.status === "exception" ? result.exception.code : undefined,
+    });
+
+    if (result.status === "exception") {
+      await input.audit.writeException(`${run.record.sourceRecordId}-${profile.name}`, result.exception);
+      await input.audit.writeReportIssue(issueFromException({
+        phase: "target",
+        target: profile.name,
+        recordId: run.record.sourceRecordId,
+        exception: result.exception,
+      }));
+    }
+  });
 }
 
 async function mapWithConcurrency<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
@@ -348,17 +408,17 @@ async function mapWithConcurrency<T>(items: T[], concurrency: number, worker: (i
   }
 }
 
-function adapterConcurrency(adapter: TargetAdapter): number {
-  const value = adapter.maxConcurrency ?? 1;
+function profileConcurrency(profile: TargetProfile): number {
+  const value = profile.concurrency;
   return Number.isInteger(value) && value > 0 ? value : 1;
 }
 
-async function runAdapterRecord(
-  adapter: TargetAdapter,
-  context: Parameters<TargetAdapter["runRecord"]>[0],
-): Promise<TargetAdapterResult> {
+async function runTargetRunnerRecord(
+  targetRunner: TargetRunner,
+  context: Parameters<TargetRunner["runRecord"]>[0],
+): Promise<AiWebTargetResult> {
   try {
-    return TargetAdapterResultSchema.parse(await adapter.runRecord(context));
+    return AiWebTargetResultSchema.parse(await targetRunner.runRecord(context));
   } catch (error) {
     return {
       status: "exception",
@@ -381,36 +441,39 @@ function hasExceptions(
   );
 }
 
-async function closeReadyAdapters(
-  adapters: TargetAdapter[],
+async function closeReadyTargetRunner(
+  targetRunner: TargetRunner,
+  profiles: TargetProfile[],
   audit: FileAuditStore,
   readiness: Map<TargetName, TargetReadiness>,
-  closedAdapters: Set<TargetAdapter>,
+  closeAfterPrepareAttempt: boolean,
+  claimClose: () => boolean,
 ): Promise<number> {
+  const readyProfiles = profiles.filter((profile) => readiness.get(profile.name)?.ready);
+  const reportProfiles = readyProfiles.length > 0 ? readyProfiles : profiles;
+  if (!targetRunner.close || (readyProfiles.length === 0 && !closeAfterPrepareAttempt) || !claimClose()) {
+    return 0;
+  }
+
   let closeExceptions = 0;
 
-  for (const adapter of adapters) {
-    if (!readiness.get(adapter.name)?.ready || closedAdapters.has(adapter)) {
-      continue;
-    }
-
-    closedAdapters.add(adapter);
-    try {
-      await adapter.close();
-    } catch (error) {
-      closeExceptions += 1;
-      const exception = exceptionFromError("ui_state_unexpected", error);
-      await audit.writeException(`${adapter.name}-close`, exception).catch(() => undefined);
+  try {
+    await targetRunner.close();
+  } catch (error) {
+    closeExceptions += 1;
+    const exception = exceptionFromError("ui_state_unexpected", error);
+    for (const profile of reportProfiles) {
+      await audit.writeException(`${profile.name}-close`, exception).catch(() => undefined);
       await audit
         .writeReportIssue(issueFromException({
           phase: "environment",
-          target: adapter.name,
+          target: profile.name,
           exception,
         }))
         .catch(() => undefined);
       await audit
         .writeEvent({
-          target: adapter.name,
+          target: profile.name,
           phase: "environment",
           actionType: "close",
           result: exception.message,
@@ -640,7 +703,7 @@ function isAiExtractionMetadata(value: unknown): value is {
   );
 }
 
-function targetCompletionResult(result: TargetAdapterResult): string {
+function targetCompletionResult(result: AiWebTargetResult): string {
   if (result.status === "skipped") {
     return `skipped: ${result.reason}`;
   }

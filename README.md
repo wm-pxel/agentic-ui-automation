@@ -3,40 +3,103 @@
 Pilot for repeatable, audited UI data entry across web and desktop applications.
 
 The workflow takes synthetic intake source documents, uses AI by default to
-extract intake records, validates them deterministically, asks an agent driver to
-approve bounded UI actions, runs one or more target adapters, and writes a
+extract intake records, validates them deterministically, runs selected target
+profiles through a generic web target runner, and writes a
 traceable audit package for each run.
 
 ## Full E2E Commands
 
-Run these from the repository root when you want the full Electron-to-OpenMRS
-flow.
+Run these from the repository root for the full E2E demo. Each command starts
+the handoff watcher, Electron intake app, and local run viewer. Use
+`--intake-trigger watcher` when the watcher should wait for Electron to export a
+`.ready.csv` or `.ready.json` file into `~/Downloads/agentic-ui-intake`.
+The target commands are otherwise identical except for the destination web app
+in `--targets`.
 
-### Interactive Full Stack
+### OpenMRS Target
 
-Start the watcher, Electron intake app, and run viewer together:
+Uses the official OpenMRS 2 Reference Application demo by default:
+`https://o2.openmrs.org/openmrs/login.htm`.
 
-```sh
-npm run dev:all -- --agent openai --openmrs-field-confidence-threshold 0.99
-```
-
-This keeps the handoff watcher, desktop app, and local audit viewer running in
-one terminal with prefixed logs. Its watcher uses interactive OpenMRS field
-confirmation with a `0.99` mapping-confidence threshold. Edited prompt input is
-interpreted through the OpenAI-backed agent before the EMR field is filled. The
-intentionally high threshold is for demo purposes so below-threshold mapping
-review and highlighting are easy to see.
-
-### Unattended Full Stack
-
-For unattended E2E runs, disable prompts while keeping the same threshold:
+Watcher-triggered handoff:
 
 ```sh
-npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-confidence-threshold 0.99
+set -a
+. ./.env
+set +a
+npm run dev:all -- --targets openmrs --intake-trigger watcher --confidence-threshold .97
 ```
 
-When prompts are disabled, below-threshold OpenMRS mappings use the AI-mapped
-value and are flagged in `summary.md`; the local viewer highlights those rows.
+Operator confirmation for low-confidence fields:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run dev:all -- --targets openmrs --intake-trigger watcher --confidence-threshold .97 --field-confirmation prompt-on-low-confidence
+```
+
+### OpenKairo Target
+
+Watcher-triggered handoff:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run dev:all -- --targets openkairo --intake-trigger watcher --confidence-threshold .97
+```
+
+Operator confirmation for low-confidence fields:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run dev:all -- --targets openkairo --intake-trigger watcher --confidence-threshold .97 --field-confirmation prompt-on-low-confidence
+```
+
+### Both Targets Simultaneously
+
+When multiple targets are listed, the orchestrator starts one bounded worker
+group per target. With the default demo settings, OpenMRS and OpenKairo each run
+one record at a time, but both destination apps are active concurrently.
+
+Watcher-triggered handoff:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run dev:all -- --targets openmrs,openkairo --intake-trigger watcher --confidence-threshold .97
+```
+
+Operator confirmation for low-confidence fields:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run dev:all -- --targets openmrs,openkairo --intake-trigger watcher --confidence-threshold .97 --field-confirmation prompt-on-low-confidence
+```
+
+Click `Export Selected`, or use the Computer Use prompt below, to create the
+handoff file. The watcher applies a unique synthetic suffix by default, so
+repeated demo exports create fresh synthetic patient identifiers. Add
+`--field-confirmation prompt-on-low-confidence` when the destination browser
+should pause before writing any field whose AI planner confidence is below
+`--confidence-threshold`; the prompt lets the operator confirm, edit, skip, or
+stop the field entry. When the operator types a replacement value, the modal
+stays open with a spinner while the runner interprets the value. If the value
+cannot be confidently mapped to the target field, the modal re-prompts with
+feedback.
+
+The viewer starts with the stack at `http://127.0.0.1:4173` by default and
+prints its URL in the `[viewer]` log line. Use `--viewer-port 0` only when you
+want the OS to choose a random available port. Its sidebar run name,
+`executive-summary.md`, and `summary.md` identify the destination target for
+each run.
+
 Exception rows in the generated summaries include severity and remediation
 steps; the local viewer color-codes error, warning, and info severities.
 
@@ -83,8 +146,9 @@ exported handoff and continues into OpenMRS.
 ## Contents
 
 - [Full E2E Commands](#full-e2e-commands)
-  - [Interactive Full Stack](#interactive-full-stack)
-  - [Unattended Full Stack](#unattended-full-stack)
+  - [OpenMRS Target](#openmrs-target)
+  - [OpenKairo Target](#openkairo-target)
+  - [Both Targets Simultaneously](#both-targets-simultaneously)
   - [Severity Demo](#severity-demo)
   - [Individual Services](#individual-services)
   - [Electron Export Via Computer Use](#electron-export-via-computer-use)
@@ -98,7 +162,7 @@ exported handoff and continues into OpenMRS.
 - [Handoff Watcher](#handoff-watcher)
 - [Destination Flexibility Demo](#destination-flexibility-demo)
 - [OpenMRS Smoke](#openmrs-smoke)
-- [OpenEMR Smoke](#openemr-smoke)
+- [OpenKairo Smoke](#openkairo-smoke)
 - [Audit Artifacts](#audit-artifacts)
 - [Run Viewer](#run-viewer)
 - [CLI](#cli)
@@ -115,9 +179,9 @@ exported handoff and continues into OpenMRS.
 - Structured exception handling instead of silent target failures.
 - Audit evidence for every run: screenshots, event logs, normalized input,
   exception JSON, run metadata, a Markdown summary, and structured report JSON.
-- Target adapters for audited EMR entry:
+- Target profiles for audited EMR entry:
   - Web app: OpenMRS through Playwright.
-  - Web app: OpenEMR through Playwright.
+  - Web app: OpenKairo through Playwright.
   - Fake target: deterministic local smoke target for orchestration and audit.
 
 Use only synthetic data with this repository. The checked-in records under
@@ -127,10 +191,12 @@ Use only synthetic data with this repository. The checked-in records under
 
 - Core workflow: implemented and covered by tests.
 - Fake target: deterministic local smoke target for orchestration and audit.
-- OpenMRS web target: adapter and tests are implemented; live smoke requires a
-  reachable synthetic/demo OpenMRS instance and current credentials.
-- OpenEMR web target: adapter and tests are implemented; live smoke requires a
-  reachable synthetic/demo OpenEMR instance and current credentials.
+- OpenMRS web target profile: implemented through the generic AI web target
+  runner; live smoke requires a reachable synthetic/demo OpenMRS instance,
+  current credentials, and `OPENAI_API_KEY`.
+- OpenKairo web target profile: implemented through the generic AI web target
+  runner; live smoke requires the reachable synthetic/demo OpenKairo instance,
+  current credentials, and `OPENAI_API_KEY`.
 - Desktop intake app: Electron shell opens with seeded synthetic records,
   supports optional import, and exports CSV handoff files.
 - Handoff watcher: separate CLI command processes exported files and runs the
@@ -140,16 +206,16 @@ Use only synthetic data with this repository. The checked-in records under
 
 The workflow is a TypeScript CLI that turns synthetic intake source documents
 into audited UI data-entry runs. It uses OpenAI for optional source parsing and
-agent decisions, deterministic TypeScript validation for safety gates,
+target planning, deterministic TypeScript validation for safety gates,
 Playwright for browser-based EMR automation, Electron for the local intake queue
 and CSV handoff app, and a local read-only run viewer for audit review.
 
 | Layer | Technology | Role |
 | --- | --- | --- |
-| Runtime and CLI | ![Node.js][node-badge] ![TypeScript][typescript-badge] | Runs the CLI, orchestrator, target adapters, and audit writers. |
-| AI parsing and agent decisions | ![OpenAI][openai-badge] | Extracts variable intake documents and optionally approves bounded UI actions. |
-| Validation contract | ![Zod][zod-badge] | Defines schemas for CLI config, records, agent decisions, and target results. |
-| Web targets | ![Playwright][playwright-badge] ![OpenMRS][openmrs-badge] | Automates synthetic patient entry in browser-based OpenMRS and OpenEMR demo environments. |
+| Runtime and CLI | ![Node.js][node-badge] ![TypeScript][typescript-badge] | Runs the CLI, orchestrator, target profiles, target runner, and audit writers. |
+| AI parsing and planning | ![OpenAI][openai-badge] | Extracts variable intake documents and can plan bounded UI actions. |
+| Validation contract | ![Zod][zod-badge] | Defines schemas for CLI config, records, planner actions, and target results. |
+| Web targets | ![Playwright][playwright-badge] ![OpenMRS][openmrs-badge] | Automates synthetic patient entry in browser-based OpenMRS and OpenKairo demo environments. |
 | Desktop intake app | ![Electron][electron-badge] | Reviews seeded or imported synthetic intake records and exports CSV handoff files. |
 | Run viewer | ![Node.js][node-badge] HTTP server | Serves a local read-only browser UI for generated run summaries and linked audit artifacts. |
 | Audit and verification | ![JSON][json-badge] ![Markdown][markdown-badge] ![Vitest][vitest-badge] | Writes run artifacts, reports, event logs, screenshots, and test coverage. |
@@ -171,11 +237,12 @@ flowchart LR
   CLI --> Parser["Deterministic or OpenAI parser"]
   Parser --> Orchestrator["Workflow orchestrator"]
   Orchestrator --> Validation["Deterministic validation"]
-  Orchestrator --> Agent["Scripted or OpenAI UI agent"]
-  Orchestrator --> Targets["Target adapters"]
-  Targets --> OpenMRS["OpenMRS via Playwright"]
-  Targets --> OpenEMR["OpenEMR via Playwright"]
-  Targets --> Fake["Fake target"]
+  Orchestrator --> Profiles["Target profiles"]
+  Profiles --> Runner["Generic web target runner"]
+  Runner --> Planner["AI web planner"]
+  Runner --> OpenMRS["OpenMRS via Playwright"]
+  Runner --> OpenKairo["OpenKairo via Playwright"]
+  Runner --> Fake["Dry-run fake target"]
   CLI --> DesktopApp["Electron intake app"]
   DesktopApp --> Handoff["CSV handoff files"]
   Orchestrator --> Audit["File audit package"]
@@ -204,9 +271,9 @@ flowchart TD
   Validate -->|invalid| PreflightException["Preflight exception<br/>events + exceptions/*.json"]
   Validate -->|valid| Normalized["Normalized record<br/>input/normalized-records.json"]
 
-  Normalized --> TargetLoop["Run each ready target adapter"]
-  TargetLoop --> AgentDecision["Agent decision<br/>scripted or OpenAI"]
-  AgentDecision --> UiAction["Bounded UI action<br/>Fake, OpenMRS, or OpenEMR"]
+  Normalized --> TargetLoop["Run each ready target profile"]
+  TargetLoop --> PlannerAction["Planner action"]
+  PlannerAction --> UiAction["Bounded UI action<br/>Fake, OpenMRS, or OpenKairo"]
   UiAction --> Evidence["Screenshots, events,<br/>field mappings, target evidence"]
   Evidence --> TargetResult{"Target result"}
   TargetResult -->|succeeded or skipped| Counts["Update target counts"]
@@ -224,7 +291,7 @@ The data flow converts source documents into raw intake records, applies
 deterministic validation before target entry, records all successful and
 exceptional paths, and finishes with the audit contract under `runs/<run-id>/`.
 The viewer reads those files after or during a run for local review; it does not
-write records, invoke target adapters, or mutate audit artifacts.
+write records, invoke target runners, or mutate audit artifacts.
 
 ## OpenAI API Touchpoints
 
@@ -238,15 +305,38 @@ enabled.
    from JSON, CSV, TXT, PDF, or DOCX text-bearing inputs. Use
    `--parser deterministic` with normalized fixtures when a run should not call
    OpenAI.
-2. UI decision agent: `src/agent/openAiUiAgent.ts` calls OpenAI when
-   `--agent openai` is used. This is optional because the default agent is
-   `scripted`. The OpenAI-backed agent chooses from bounded allowed actions and
-   can receive screenshot evidence when a target step needs visual context, such
-   as interpreting edited OpenMRS field-confirmation input.
+2. AI web planner: `src/targets/aiWebPlanner.ts` calls OpenAI for non-fake
+   target profiles. The planner receives the target profile, normalized record,
+   page observation, completed and skipped fields, success criteria, forbidden
+   actions, and step count, then returns one schema-validated bounded browser
+   action.
+
+The target runner calls the AI web planner once per browser step, not once per
+record. Each loop observes the current page, asks for one bounded action, runs
+that action, captures evidence, and repeats with a fresh observation. As a
+result, each filled or selected field in OpenMRS O2 or OpenKairo normally has
+its own planner call, rationale, confidence score, field mapping, and
+`ai-field-*` screenshot. Clicks, waits, screenshots, and verification attempts
+are also separate planner-driven steps. This is deliberate: the planner sees the
+actual UI state after every action instead of relying on a precomputed script.
+
+The non-fake target loop is:
+
+1. Observe page state: URL, visible text, controls, and screenshot.
+1. Send that observation, normalized record, target profile, completed fields,
+   skipped fields, recent actions, and step count to the AI planner.
+1. Receive exactly one schema-bound action from the planner.
+1. Execute that one action in the browser.
+1. Repeat with a fresh page observation.
 
 The Electron intake app also uses the source parser for imported PDF and DOCX
 files because those formats need text extraction before they can enter the
 normalized queue. JSON, CSV, and TXT imports use deterministic loading.
+
+The workflow does not call OpenAI for deterministic fixture parsing, fake-target
+smoke runs, deterministic validation, audit report generation, Markdown
+rendering, local viewer display, file watching, or Electron queue operations
+other than source parsing for imported text-bearing documents.
 
 ## Quick Start
 
@@ -305,7 +395,7 @@ Run this command from the repository root to start the handoff watcher, Electron
 intake app, and local audit viewer together:
 
 ```sh
-npm run dev:all -- --agent openai --openmrs-field-confidence-threshold 0.9
+npm run dev:all -- --targets openmrs --intake-trigger watcher
 ```
 
 For debugging, each long-running service can still be launched separately:
@@ -325,7 +415,8 @@ Use Computer Use against the existing Electron Intake Queue window to create one
 
 For manual use, click `New Patient`, review or edit the generated synthetic
 intake fields, add the patient to the queue, keep the created record selected,
-and click `Export Selected`. For Computer Use, keep `npm run dev:all` or
+and click `Export Selected`. For Computer Use, keep
+`npm run dev:all -- --targets openmrs --intake-trigger watcher` or
 `npm run desktop:dev` running and leave the Intake Queue window visible. The
 agent should clear the
 default selected seed records, create one synthetic patient through the
@@ -349,14 +440,15 @@ set +a
 npm run dev -- watch \
   --inbox ~/Downloads/agentic-ui-intake \
   --targets openmrs \
-  --runs-dir runs \
-  --synthetic-suffix auto
+  --runs-dir runs
 ```
 
 The watcher accepts `.ready.csv` and `.ready.json` handoff files. It moves files
 through `processing/`, then to `processed/<runId>.csv` or
 `processed/<runId>.json` based on the source format, or to `failed/`, and writes
-the normal audit package under `runs/<run-id>/`.
+the normal audit package under `runs/<run-id>/`. Watcher runs default to
+`--synthetic-suffix auto` so repeated exports create fresh synthetic patient
+identifiers.
 
 For a one-shot local check with the fake target:
 
@@ -366,41 +458,50 @@ npm run dev -- watch --once --inbox ~/Downloads/agentic-ui-intake --targets fake
 
 ## Destination Flexibility Demo
 
-Use the same synthetic source file and change only the destination target. The
-first command runs OpenMRS:
+Use the same synthetic source file, parser, run directory, and synthetic suffix
+strategy. The only command-line difference is the destination target.
+
+OpenMRS target:
 
 ```sh
 set -a
 . ./.env
 set +a
 npm run dev -- run \
-  --input data/demo/intake-records.json \
+  --input data/demo/intake-records-normalized.json \
   --targets openmrs \
   --runs-dir runs \
+  --parser deterministic \
   --synthetic-suffix auto
 ```
 
-The second command runs OpenEMR with the same intake file and the same
-non-target workflow options:
+OpenKairo target:
 
 ```sh
 set -a
 . ./.env
 set +a
 npm run dev -- run \
-  --input data/demo/intake-records.json \
-  --targets openemr \
+  --input data/demo/intake-records-normalized.json \
+  --targets openkairo \
   --runs-dir runs \
+  --parser deterministic \
   --synthetic-suffix auto
 ```
 
-Both runs use the same parser, deterministic validation, normalized record
-schema, orchestrator, audit artifacts, and viewer. The intentional difference is
-`--targets openmrs` versus `--targets openemr`.
+These are the same commands for unattended runs and for interactive demos where
+you watch the browser work. Both runs use the same parser, deterministic
+validation, normalized record schema, orchestrator, audit artifacts, and viewer.
+The intentional difference is `--targets openmrs` versus `--targets openkairo`.
+OpenMRS and OpenKairo both use the same generic AI web target runner; target
+profiles supply the URL, credentials, target name, goal, and proof criteria.
+There are no destination-specific UI automation classes for those EMR screens.
+When both targets are supplied in one command, each target keeps its own
+concurrency limit and the target groups run in parallel.
 
 Run `npm run viewer` afterward. The viewer sidebar run names, each
 `executive-summary.md`, and each `summary.md` identify the destination target,
-for example `OpenMRS` or `OpenEMR`, so the two runs are easy to compare.
+for example `OpenMRS` or `OpenKairo`, so the two runs are easy to compare.
 
 ## OpenMRS Smoke
 
@@ -410,7 +511,8 @@ Prerequisites:
 - The default OpenMRS demo settings are acceptable, or `OPENMRS_BASE_URL`,
   `OPENMRS_USERNAME`, and `OPENMRS_PASSWORD` point to another synthetic/demo
   OpenMRS environment.
-- `.env` contains `OPENAI_API_KEY` when using the default OpenAI parser.
+- `.env` contains `OPENAI_API_KEY` when using the default OpenAI parser or a
+  non-fake target profile.
 
 Install Chromium if needed:
 
@@ -418,55 +520,49 @@ Install Chromium if needed:
 npx playwright install chromium
 ```
 
-OpenMRS publishes current demo links at `https://openmrs.org/demo/`. This
-adapter uses the OpenMRS 2 Reference Application because the workflow is a
-patient registration smoke and O2 exposes a stable registration wizard.
+OpenMRS publishes current demo links at `https://openmrs.org/demo/`. The
+OpenMRS target profile points at the OpenMRS 2 Reference Application demo
+because the current OpenMRS 3 public demo can render a blank SPA home page
+before login.
 
 - Demo page: `https://openmrs.org/demo/`
-- Default app URL: `https://o2.openmrs.org/openmrs`
+- Default app URL: `https://o2.openmrs.org/openmrs/login.htm`
 - Default username: `admin`
 - Default password: `Admin123`
 - Default location: `Registration Desk`
-- Default OpenMRS record concurrency: `2`
+- Default OpenMRS record concurrency: `1`
 
-The defaults are built into the CLI. Populate `.env` only when overriding them
-or when using the OpenAI parser:
+The defaults are built into the CLI. Populate `.env` only when overriding them,
+using the OpenAI parser, or running a non-fake target profile:
 
 ```dotenv
-OPENMRS_BASE_URL=https://o2.openmrs.org/openmrs
+OPENMRS_BASE_URL=https://o2.openmrs.org/openmrs/login.htm
 OPENMRS_USERNAME=admin
 OPENMRS_PASSWORD=Admin123
-OPENMRS_CONCURRENCY=2
-OPENMRS_INTERACTIVE_FIELD_CONFIRMATION=false
-OPENMRS_FIELD_CONFIDENCE_THRESHOLD=0.8
+OPENMRS_CONCURRENCY=1
 OPENAI_API_KEY=<your-api-key>
 ```
 
-Run against the configured OpenMRS environment with the default OpenAI source
-parser:
+Run against the configured OpenMRS environment:
 
 ```sh
 set -a
 . ./.env
 set +a
 npm run dev -- run \
-  --input data/demo/intake-records.json \
+  --input data/demo/intake-records-normalized.json \
   --targets openmrs \
   --runs-dir runs \
-  --synthetic-suffix auto \
-  --openmrs-concurrency 2
+  --parser deterministic \
+  --synthetic-suffix auto
 ```
 
-`data/demo/intake-records.json` intentionally uses varied source shapes and
-field labels so the demo exercises AI source parsing before deterministic EMR
-entry.
+Use `data/demo/intake-records.json` without `--parser deterministic` when you
+want to exercise AI source parsing before deterministic EMR entry.
 
-For local smoke checks that should not call OpenAI, use
-`data/demo/intake-records-normalized.json` and add `--parser deterministic`.
-
-Public demo credentials and screens can change. If login, navigation, selectors,
-or save behavior drift, the run should finish with auditable environment or
-UI-state exceptions rather than silently claiming success.
+Public demo credentials and screens can change. If login, navigation, page
+structure, or save behavior drift, the run should finish with auditable
+environment or UI-state exceptions rather than silently claiming success.
 
 OpenMRS can expose patient deletion when `Admin` -> `Config` -> `Features` ->
 `Allow Administrators to Delete Patients` is enabled. The current public demo has
@@ -474,45 +570,51 @@ that setting off, and enabling it would mutate shared demo configuration. The
 smoke run therefore uses `--synthetic-suffix auto` to create fresh synthetic
 patient names and identifiers instead of deleting prior demo patients.
 
-### What The OpenMRS Target Does
+### What The OpenMRS Target Profile Does
 
-For each normalized valid source record, the OpenMRS adapter is expected to:
+For each normalized valid source record, the generic AI web target runner uses
+the OpenMRS target profile to:
 
-1. Log in to the configured OpenMRS environment.
-1. Capture a `before-navigation` screenshot.
-1. Open the O2 `Register a patient` app.
-1. When interactive field confirmation is enabled, prompt the operator in the
-   OpenMRS browser before writing values whose field mapping confidence is below
-   the configured threshold.
-1. Fill the registration wizard with demographics and available contact fields.
-1. Capture an `after-fill` screenshot.
-1. Advance to the confirmation step and click `Confirm`.
-1. Treat similar-patient prompts as duplicate exceptions for manual review.
-1. Wait for the newly created patient's dashboard.
-1. Expand `Show Contact Info` when available so address and phone are visible.
-1. Capture an `after-save` proof screenshot from that dashboard.
-1. Treat the record as successful only if the dashboard shows the synthetic
-    patient name and patient-detail context.
+1. Open the configured OpenMRS environment.
+1. Observe the current page, visible text, URL, title, and available controls.
+1. Ask the AI web planner for one schema-validated bounded browser action at a
+   time, using the target profile, normalized record, completed and skipped
+   fields, success criteria, forbidden actions, and step count.
+1. Leave destination-specific UI labels, dialog names, field sequences, and
+   button choices out of the OpenMRS and OpenKairo profiles; the planner infers
+   those from each fresh page observation.
+1. Provide the planner a coverage list for every normalized intake field so it
+   can semantically match visible destination controls before advancing or
+   saving, even when destination labels differ from source field names.
+1. Execute only supported browser actions: fill, select, click, wait,
+   screenshot, verify, or stop.
+1. Repeat the observe-plan-execute loop for each field fill or select and for
+   each navigation, save, wait, screenshot, or verification step.
+1. Capture screenshots, field mappings, target evidence, and events as the run
+   progresses.
+1. Treat possible duplicates, unexpected UI state, and verification failures as
+   auditable target exceptions for manual review.
+1. Treat the record as successful only when the planner verifies the configured
+   success criteria for the synthetic patient.
 
-For the checked-in demo file, four records are valid and three records are
-intentionally invalid and stop in preflight validation. One valid record is
-deliberately written with uncertain source wording so source extraction metadata
-includes lower-confidence examples. A clean OpenMRS target pass therefore means:
+For `data/demo/intake-records-normalized.json`, three records are valid and
+three records intentionally stop in preflight validation. A clean OpenMRS target
+pass for that deterministic fixture therefore means:
 
 - `preflightExceptions` is `3`.
-- `targetCounts.openmrs.succeeded` is `4`.
+- `targetCounts.openmrs.succeeded` is `3`.
 - `targetCounts.openmrs.exception` is `0`.
 - `exceptions/` only contains the three intentional validation exceptions.
-- Each valid record has `before-navigation`, `after-fill`, and an `after-save`
-  proof screenshot from the patient dashboard with contact info expanded when
-  OpenMRS exposes it.
+- Each valid record has OpenMRS screenshot evidence captured by the generic
+  runner, including ordered `ai-step-*` observations and `ai-field-*` proof
+  images for completed fields when fields are entered.
 - `executive-summary.md` gives a quick run outcome, while `summary.md` includes
-  an OpenMRS record review with raw intake input, patient-dashboard proof
-  screenshots, per-field mapping confidence, and source-to-OpenMRS comparisons.
+  an OpenMRS record review with raw intake input, runner screenshots, AI action
+  evidence, planner rationale and confidence for field actions, and
+  source-to-target comparisons.
   Issue sections categorize exceptions by severity and include remediation
-  guidance for manual review.
-  On public demo layouts, optional contact fields that are unavailable may
-  appear as failed mappings without causing a target exception.
+  guidance for manual review. On public demo layouts, optional fields that are
+  unavailable may appear as failed mappings without causing a target exception.
 
 Manual verification:
 
@@ -530,25 +632,28 @@ Manual verification:
    values in `normalized-records.json`. With `--synthetic-suffix auto`, the
    valid demo patients are renamed to values like `Nguyen Run-...`,
    `Lee Run-...`, and `Shah Run-...`.
-3. Confirm the OpenMRS screenshot sequence exists for each valid record:
+3. Confirm OpenMRS screenshot evidence exists for each valid record:
 
    ```sh
    find "runs/$RUN_ID/screenshots" -path "*/openmrs/*.png" | sort
    ```
 
-4. Open each `*-after-save.png` screenshot and confirm it shows the newly
-   created patient's dashboard with the generated synthetic patient name.
+4. Open the latest `ai-step-*` or target proof screenshot for each successful
+   record and confirm it supports the configured success criteria for the
+   generated synthetic patient.
 5. Log in to the same OpenMRS environment used by the run.
 6. Open the patient search or finder screen.
-7. Search for the four generated last names from `normalized-records.json`.
+7. Search for the three generated last names from `normalized-records.json`.
 8. Open each patient record and confirm the demographic and contact fields match
    `normalized-records.json` for the fields present in that demo layout. Use the
-   OpenMRS record review in `summary.md` to see source values, mapping
-   confidence, selectors, and which optional fields were unavailable.
-9. Confirm the audit log includes an `after-save` event for each valid record:
+   OpenMRS record review in `summary.md` to see source values, planner
+   rationale and confidence, AI action evidence, and which optional fields were
+   unavailable.
+9. Confirm the audit log includes successful target completion events for each
+   valid record:
 
    ```sh
-   grep "after-save" "runs/$RUN_ID/events.jsonl"
+   grep '"actionType":"complete"' "runs/$RUN_ID/events.jsonl"
    ```
 
 The public OpenMRS demo keeps data for a while. If you run without
@@ -556,49 +661,54 @@ The public OpenMRS demo keeps data for a while. If you run without
 exceptions. Use `--synthetic-suffix auto` when you need a clean end-to-end
 OpenMRS success run.
 
-## OpenEMR Smoke
+## OpenKairo Smoke
 
-The OpenEMR target drives the configured OpenEMR web UI through Chromium and
-writes the same audit artifact set as the OpenMRS target. Public demo screens
-and credentials can change, so verify the current OpenEMR demo page before
-assuming a selector failure is an adapter defect.
+The OpenKairo target drives the configured OpenKairo web UI through Chromium and
+writes the same audit artifact set as the OpenMRS target. It is the recommended
+second live-demo target for demonstrating destination flexibility.
 
-- Demo page: `https://www.open-emr.org/demo/`
-- Default app URL: `https://demo.openemr.io/openemr`
-- Default username: `admin`
-- Default password: `pass`
-- Default OpenEMR record concurrency: `1`
+- Project/demo page: `https://www.openkairo.com/`
+- Default app URL: `https://ehr-app-five.vercel.app`
+- Default username: `reception@demo.com`
+- Default password: `Demo123!`
+- Default OpenKairo record concurrency: `1`
 
 Optional `.env` overrides:
 
 ```dotenv
-OPENEMR_BASE_URL=https://demo.openemr.io/openemr
-OPENEMR_USERNAME=admin
-OPENEMR_PASSWORD=pass
-OPENEMR_CONCURRENCY=1
+OPENKAIRO_BASE_URL=https://ehr-app-five.vercel.app
+OPENKAIRO_USERNAME=reception@demo.com
+OPENKAIRO_PASSWORD=Demo123!
+OPENKAIRO_CONCURRENCY=1
 ```
 
-Run against the configured OpenEMR environment:
+Run against the configured OpenKairo environment:
 
 ```sh
 set -a
 . ./.env
 set +a
 npm run dev -- run \
-  --input data/demo/intake-records.json \
-  --targets openemr \
+  --input data/demo/intake-records-normalized.json \
+  --targets openkairo \
   --runs-dir runs \
-  --synthetic-suffix auto \
-  --openemr-concurrency 1
+  --parser deterministic \
+  --synthetic-suffix auto
 ```
 
-The OpenEMR adapter opens the demographics workflow, fills visible demographic
-and contact fields from the normalized intake record, captures
-`before-navigation`, `after-fill`, and `after-save` screenshots, and records
-OpenEMR field mappings in `summary.md` and `report.json`. Fields that are not
-available in the selected OpenEMR screen are reported as field mapping evidence
-or target exceptions depending on whether they are required for patient
-creation.
+The OpenKairo target profile uses the same generic AI web target runner as
+OpenMRS. The profile supplies the OpenKairo URL, credentials, target name, goal,
+and proof criteria, without UI label, dialog, or field-sequence hints; there is
+no destination-specific UI automation class. For
+each valid normalized record, the runner observes the page, asks the
+schema-bound AI planner for one bounded action at a time, executes only
+supported browser actions, captures ordered `ai-step-*` observations and
+`ai-field-*` proof images for completed fields, and records target evidence in
+`summary.md` and `report.json`. Fields that are not available in the selected
+OpenKairo screen are reported as field mapping evidence or target exceptions
+depending on whether they are required for patient creation. Live demo sites can
+change, and those failures remain auditable target exceptions rather than silent
+successes.
 
 ## Audit Artifacts
 
@@ -629,8 +739,8 @@ find "runs/$RUN_ID/screenshots" -type f | sort
 ```
 
 The screenshot tree is nested by record and target. Screenshot filenames are
-prefixed with capture order, such as `0001-before-navigation.png`, so sorted
-directory listings show what the workflow saw in the order it saw it.
+prefixed with capture order, such as `0001-ai-step-1.png`, so sorted directory
+listings show what the workflow saw in the order it saw it.
 
 ## Run Viewer
 
@@ -655,6 +765,15 @@ the viewer color-codes severity rows for faster triage. It also exposes raw
 links for `report.json`, `events.jsonl`, `input/normalized-records.json`,
 `exceptions/`, and `screenshots/` when those artifacts exist.
 
+Each run also has a direct local URL:
+
+```text
+http://127.0.0.1:4173/runs/<run-id>
+```
+
+Use that path when you want to refresh, bookmark, or share a link to one
+specific run on the same machine.
+
 The viewer is local-only and read-only. It does not run automation, edit
 records, delete patients, or modify audit artifacts.
 
@@ -663,13 +782,12 @@ records, delete patients, or modify audit artifacts.
 ```sh
 npm run dev -- run \
   --input <path-to-json-csv-text-pdf-or-docx-source> \
-  --targets fake,openmrs,openemr \
+  --targets fake,openmrs,openkairo \
   --runs-dir runs \
   --parser openai \
-  --agent scripted \
   --synthetic-suffix auto \
-  --openmrs-concurrency 2 \
-  --openemr-concurrency 1
+  --openmrs-concurrency 1 \
+  --openkairo-concurrency 1
 ```
 
 Serve the local artifact viewer:
@@ -682,26 +800,28 @@ Options:
 
 - `--input`: required source file. AI parsing supports JSON, CSV, TXT, PDF, and
   DOCX text-bearing inputs.
-- `--targets`: comma-separated targets: `fake`, `openmrs`, `openemr`.
+- `--targets`: comma-separated targets: `fake`, `openmrs`, `openkairo`.
 - `--runs-dir`: audit output directory. Defaults to `runs`.
 - `--parser`: `openai` or `deterministic`. Defaults to `openai`; use
   `deterministic` for local fixture/smoke runs that should not call OpenAI.
 - `--parser-model`: OpenAI model for source parsing. Defaults to
   `OPENAI_PARSER_MODEL`, then `OPENAI_MODEL`, then `gpt-5.4-mini`.
-- `--agent`: `scripted` or `openai`. Defaults to `scripted`.
 - `--synthetic-suffix`: appends a suffix to valid synthetic records before
   validation and target entry. Use `auto` for public EMR demo runs so each run
   uses fresh patient names and identifiers.
+- `--confidence-threshold`: minimum AI planner confidence for field mapping
+  highlighting. Values below this threshold are marked as low confidence in the
+  run summary and viewer. Use `.99` for the full E2E demo commands when you want
+  nearly every non-perfect field mapping to be easy to spot during review.
+- `--field-confirmation`: `auto` by default. Use
+  `prompt-on-low-confidence` to show an operator confirmation prompt in the
+  active destination browser before writing fields whose AI planner confidence
+  is below `--confidence-threshold`. Edited values keep the modal open while
+  they are interpreted; unclear values are re-prompted instead of being written.
 - `--openmrs-concurrency`: maximum number of OpenMRS records to enter at the
-  same time. Defaults to `OPENMRS_CONCURRENCY`, then `2`.
-- `--openmrs-interactive-field-confirmation`: prompts in the active OpenMRS
-  browser before writing fields whose mapping confidence is below the
-  configured threshold. When enabled, OpenMRS concurrency is forced to `1`.
-- `--openmrs-field-confidence-threshold`: minimum OpenMRS field mapping
-  confidence before prompting. Defaults to
-  `OPENMRS_FIELD_CONFIDENCE_THRESHOLD`, then `0.8`.
-- `--openemr-concurrency`: maximum number of OpenEMR records to enter at the
-  same time. Defaults to `OPENEMR_CONCURRENCY`, then `1`.
+  same time. Defaults to `OPENMRS_CONCURRENCY`, then `1`.
+- `--openkairo-concurrency`: maximum number of OpenKairo records to enter at the
+  same time. Defaults to `OPENKAIRO_CONCURRENCY`, then `1`.
 
 Environment variables:
 
@@ -709,12 +829,10 @@ Environment variables:
 - `OPENMRS_USERNAME`
 - `OPENMRS_PASSWORD`
 - `OPENMRS_CONCURRENCY`
-- `OPENEMR_BASE_URL`
-- `OPENEMR_USERNAME`
-- `OPENEMR_PASSWORD`
-- `OPENEMR_CONCURRENCY`
-- `OPENMRS_INTERACTIVE_FIELD_CONFIRMATION`
-- `OPENMRS_FIELD_CONFIDENCE_THRESHOLD`
+- `OPENKAIRO_BASE_URL`
+- `OPENKAIRO_USERNAME`
+- `OPENKAIRO_PASSWORD`
+- `OPENKAIRO_CONCURRENCY`
 - `RUNS_DIR`
 - `OPENAI_API_KEY`
 - `OPENAI_PARSER_MODEL`
@@ -729,18 +847,18 @@ npm run dev -- watch \
   --inbox ~/Downloads/agentic-ui-intake \
   --targets openmrs \
   --runs-dir runs \
-  --synthetic-suffix auto \
-  --openmrs-concurrency 2
+  --openmrs-concurrency 1
 ```
 
 Options:
 
 - `--inbox`: folder containing exported `*.ready.csv` or `*.ready.json` files.
   Defaults to `~/Downloads/agentic-ui-intake`.
-- `--targets`: comma-separated target adapters. Defaults to `openmrs`.
-- `--runs-dir`, `--agent`, `--synthetic-suffix`, `--openmrs-concurrency`,
-  `--openemr-concurrency`, `--openmrs-interactive-field-confirmation`, and
-  `--openmrs-field-confidence-threshold`: same meaning as `run`.
+- `--targets`: comma-separated target profiles. Defaults to `openmrs`.
+- `--runs-dir`, `--openmrs-concurrency`, and `--openkairo-concurrency`: same
+  meaning as `run`.
+- `--synthetic-suffix`: appends a suffix to valid synthetic records before
+  validation and target entry. Defaults to `auto` for watcher runs.
 - `--once`: process currently ready files once and exit.
 
 ## Development
@@ -767,21 +885,16 @@ npm run desktop:dev
 Run the full local E2E service stack:
 
 ```sh
-npm run dev:all -- --agent openai --openmrs-field-confidence-threshold 0.9
+npm run dev:all -- --targets openmrs --intake-trigger watcher
 ```
 
-This starts `watch:intake` with interactive OpenMRS field confirmation enabled
-and a `0.9` mapping-confidence threshold, plus the Electron app and viewer. Use
-`--agent openai` when edited prompt input should be interpreted before filling
-the EMR field. Disable those prompts for unattended local runs with:
-
-```sh
-npm run dev:all -- --no-openmrs-interactive-field-confirmation --openmrs-field-confidence-threshold 0.9
-```
-
-When prompts are disabled, below-threshold OpenMRS mappings still use the
-AI-mapped value and are flagged in `summary.md`; the local viewer highlights
-those rows.
+This starts `watch:intake`, the Electron app, and the viewer with prefixed logs.
+Use `npm run dev:all -- --targets openkairo --intake-trigger watcher` to start
+the same stack with OpenKairo as the destination. Use
+`--intake-trigger auto-import` to seed the watcher automatically from
+`data/demo/intake-records-normalized.json`. The bundled viewer uses
+`http://127.0.0.1:4173` by default; pass `--viewer-port 0` for the previous
+random-port behavior or `--viewer-port <port>` for another fixed URL.
 
 Packaging dry run:
 
@@ -796,13 +909,12 @@ src/domain/        Intake schemas and validation
 src/parsing/       Deterministic loading plus AI source-document parsing
 src/orchestrator/  Workflow coordination and exception handling
 src/audit/         Run metadata, events, summaries, screenshots, exceptions
-src/agent/         Scripted and OpenAI-backed agent drivers
-src/adapters/      Shared target adapter contract and fake adapter
+src/agent/         Legacy scripted and OpenAI-backed agent drivers
 src/desktop/       Electron intake app and seeded/imported queue service
 src/handoff/       CSV/JSON handoff file writer
 src/watcher/       Separate handoff watcher and workflow launcher
 src/viewer/        Local read-only HTTP viewer for run summaries and artifacts
-src/targets/       OpenMRS and OpenEMR implementations
+src/targets/       Target profiles, generic web runner, planner, and browser actions
 tests/             Unit and integration-style coverage
 docs/demo.md       Longer smoke-demo walkthrough
 ```

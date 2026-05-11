@@ -3,19 +3,18 @@ import { mkdir, readdir, rename } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { applySyntheticSuffix } from "../parsing/syntheticRecords.js";
 import { loadSourceRecords } from "../parsing/loadRecords.js";
-import { runWorkflow, type RunWorkflowResult } from "../orchestrator/runWorkflow.js";
-import type { AgentDriver } from "../agent/types.js";
-import type { TargetAdapter } from "../adapters/contract.js";
+import { runWorkflow, type RunWorkflowResult, type TargetRunner } from "../orchestrator/runWorkflow.js";
 import type { TargetName } from "../domain/schema.js";
 import { isReadyHandoffFile } from "../handoff/intakeHandoff.js";
+import type { TargetProfile } from "../targets/profiles.js";
 
 export interface ProcessReadyIntakeFilesInput {
   inbox: string;
   runsDir: string;
   targets: TargetName[];
   syntheticSuffix?: string;
-  buildAgent: () => AgentDriver;
-  buildAdapters: () => TargetAdapter[];
+  buildProfiles: () => TargetProfile[];
+  buildTargetRunner: (profiles: TargetProfile[]) => TargetRunner;
   onResult?: (result: IntakeWatchJobResult) => void;
 }
 
@@ -92,12 +91,13 @@ async function processReadyFile(
   try {
     processingPath = await moveIntoProcessing(input.inbox, readyPath);
     const records = applySyntheticSuffix(await loadSourceRecords(processingPath), resolveWatcherSyntheticSuffix(input.syntheticSuffix));
+    const profiles = input.buildProfiles();
     const run = await runWorkflow({
       runsDir: input.runsDir,
       sourceInputPath: processingPath,
       records,
-      adapters: input.buildAdapters(),
-      agent: input.buildAgent(),
+      profiles,
+      targetRunner: input.buildTargetRunner(profiles),
     });
     const finalPath = join(input.inbox, "processed", `${run.runId}${processedExtensionFor(processingPath)}`);
     await rename(processingPath, finalPath);

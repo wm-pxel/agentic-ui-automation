@@ -7,12 +7,10 @@ const ENV_KEYS = [
   "OPENMRS_USERNAME",
   "OPENMRS_PASSWORD",
   "OPENMRS_CONCURRENCY",
-  "OPENMRS_INTERACTIVE_FIELD_CONFIRMATION",
-  "OPENMRS_FIELD_CONFIDENCE_THRESHOLD",
-  "OPENEMR_BASE_URL",
-  "OPENEMR_USERNAME",
-  "OPENEMR_PASSWORD",
-  "OPENEMR_CONCURRENCY",
+  "OPENKAIRO_BASE_URL",
+  "OPENKAIRO_USERNAME",
+  "OPENKAIRO_PASSWORD",
+  "OPENKAIRO_CONCURRENCY",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -36,7 +34,7 @@ afterEach(() => {
 
 describe("parseTargets", () => {
   it("parses comma-separated target names", () => {
-    expect(parseTargets("fake,openmrs,openemr")).toEqual(["fake", "openmrs", "openemr"]);
+    expect(parseTargets("fake,openmrs,openkairo")).toEqual(["fake", "openmrs", "openkairo"]);
   });
 
   it("trims whitespace around target names", () => {
@@ -64,7 +62,6 @@ describe("buildRunConfig", () => {
       input: "data/demo/intake-records.json",
       targets: ["fake"],
       runsDir: "runs",
-      agent: "scripted",
       parser: "openai",
     });
   });
@@ -79,6 +76,26 @@ describe("buildRunConfig", () => {
     expect(config.parser).toBe("deterministic");
   });
 
+  it("copies confidence threshold into the run config", () => {
+    const config = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openmrs",
+      confidenceThreshold: 0.99,
+    });
+
+    expect(config.confidenceThreshold).toBe(0.99);
+  });
+
+  it("copies field confirmation mode into the run config", () => {
+    const config = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openmrs",
+      fieldConfirmation: "prompt-on-low-confidence",
+    });
+
+    expect(config.fieldConfirmation).toBe("prompt-on-low-confidence");
+  });
+
   it("uses fallback defaults when environment variables are unset", () => {
     const config = buildRunConfig({
       input: "data/demo/intake-records.json",
@@ -86,6 +103,17 @@ describe("buildRunConfig", () => {
     });
 
     expect(config.runsDir).toBe("runs");
+  });
+
+  it("keeps OpenMRS and OpenKairo config available for target profiles", () => {
+    const config = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openmrs,openkairo",
+    });
+
+    expect(config.targets).toEqual(["openmrs", "openkairo"]);
+    expect(config.openMrs.baseUrl).toBe("https://o2.openmrs.org/openmrs/login.htm");
+    expect(config.openKairo.baseUrl).toBe("https://ehr-app-five.vercel.app");
   });
 
   it("uses environment defaults when options omit paths", () => {
@@ -115,37 +143,35 @@ describe("buildRunConfig", () => {
       username: "admin",
       password: "secret",
       concurrency: 3,
-      interactiveFieldConfirmation: false,
-      fieldConfidenceThreshold: 0.8,
     });
   });
 
-  it("copies OpenEMR defaults and environment variables into the config", () => {
+  it("copies OpenKairo defaults and environment variables into the config", () => {
     const defaultConfig = buildRunConfig({
       input: "data/demo/intake-records.json",
-      targets: "openemr",
+      targets: "openkairo",
     });
 
-    expect(defaultConfig.openEmr).toEqual({
-      baseUrl: "https://demo.openemr.io/openemr",
-      username: "admin",
-      password: "pass",
+    expect(defaultConfig.openKairo).toEqual({
+      baseUrl: "https://ehr-app-five.vercel.app",
+      username: "reception@demo.com",
+      password: "Demo123!",
       concurrency: 1,
     });
 
-    process.env.OPENEMR_BASE_URL = "https://openemr.example.test/openemr";
-    process.env.OPENEMR_USERNAME = "operator";
-    process.env.OPENEMR_PASSWORD = "secret";
-    process.env.OPENEMR_CONCURRENCY = "2";
+    process.env.OPENKAIRO_BASE_URL = "https://openkairo.example.test";
+    process.env.OPENKAIRO_USERNAME = "demo@example.test";
+    process.env.OPENKAIRO_PASSWORD = "secret";
+    process.env.OPENKAIRO_CONCURRENCY = "2";
 
     const envConfig = buildRunConfig({
       input: "data/demo/intake-records.json",
-      targets: "openemr",
+      targets: "openkairo",
     });
 
-    expect(envConfig.openEmr).toEqual({
-      baseUrl: "https://openemr.example.test/openemr",
-      username: "operator",
+    expect(envConfig.openKairo).toEqual({
+      baseUrl: "https://openkairo.example.test",
+      username: "demo@example.test",
       password: "secret",
       concurrency: 2,
     });
@@ -163,99 +189,13 @@ describe("buildRunConfig", () => {
     expect(config.openMrs.concurrency).toBe(4);
   });
 
-  it("defaults OpenMRS interactive field confirmation off with a 0.8 threshold", () => {
+  it("defaults OpenMRS concurrency to 1", () => {
     const config = buildRunConfig({
       input: "data/demo/intake-records.json",
       targets: "openmrs",
     });
 
-    expect(config.openMrs.interactiveFieldConfirmation).toBe(false);
-    expect(config.openMrs.fieldConfidenceThreshold).toBe(0.8);
-    expect(config.openMrs.concurrency).toBe(2);
-  });
-
-  it("uses OpenMRS interactive field confirmation environment defaults", () => {
-    process.env.OPENMRS_INTERACTIVE_FIELD_CONFIRMATION = "yes";
-    process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD = "0.72";
-    process.env.OPENMRS_CONCURRENCY = "4";
-
-    const config = buildRunConfig({
-      input: "data/demo/intake-records.json",
-      targets: "openmrs",
-    });
-
-    expect(config.openMrs).toMatchObject({
-      interactiveFieldConfirmation: true,
-      fieldConfidenceThreshold: 0.72,
-      concurrency: 1,
-    });
-  });
-
-  it("uses explicit OpenMRS interactive options before environment defaults", () => {
-    process.env.OPENMRS_INTERACTIVE_FIELD_CONFIRMATION = "false";
-    process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD = "0.95";
-
-    const config = buildRunConfig({
-      input: "data/demo/intake-records.json",
-      targets: "openmrs",
-      openMrsInteractiveFieldConfirmation: true,
-      openMrsFieldConfidenceThreshold: 0.6,
-      openMrsConcurrency: 3,
-    });
-
-    expect(config.openMrs.interactiveFieldConfirmation).toBe(true);
-    expect(config.openMrs.fieldConfidenceThreshold).toBe(0.6);
     expect(config.openMrs.concurrency).toBe(1);
   });
 
-  it("rejects OpenMRS field confidence thresholds outside 0 through 1", () => {
-    expect(() =>
-      buildRunConfig({
-        input: "data/demo/intake-records.json",
-        targets: "openmrs",
-        openMrsFieldConfidenceThreshold: 1.01,
-      }),
-    ).toThrow();
-
-    expect(() =>
-      buildRunConfig({
-        input: "data/demo/intake-records.json",
-        targets: "openmrs",
-        openMrsFieldConfidenceThreshold: -0.01,
-      }),
-    ).toThrow();
-  });
-
-  it("rejects non-numeric OpenMRS field confidence threshold environment defaults", () => {
-    process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD = "not-a-number";
-
-    expect(() =>
-      buildRunConfig({
-        input: "data/demo/intake-records.json",
-        targets: "openmrs",
-      }),
-    ).toThrow();
-  });
-
-  it("rejects empty OpenMRS field confidence threshold environment defaults", () => {
-    process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD = "";
-
-    expect(() =>
-      buildRunConfig({
-        input: "data/demo/intake-records.json",
-        targets: "openmrs",
-      }),
-    ).toThrow();
-  });
-
-  it("rejects whitespace-only OpenMRS field confidence threshold environment defaults", () => {
-    process.env.OPENMRS_FIELD_CONFIDENCE_THRESHOLD = "   ";
-
-    expect(() =>
-      buildRunConfig({
-        input: "data/demo/intake-records.json",
-        targets: "openmrs",
-      }),
-    ).toThrow();
-  });
 });

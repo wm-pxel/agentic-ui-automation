@@ -2,9 +2,9 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { FakeAdapter } from "../../src/adapters/fakeAdapter.js";
-import { ScriptedAgentDriver } from "../../src/agent/scriptedAgent.js";
 import { writeIntakeHandoff } from "../../src/handoff/intakeHandoff.js";
+import type { AiWebTargetResult, AiWebTargetRunContext } from "../../src/targets/aiWebTargetRunner.js";
+import type { TargetProfile } from "../../src/targets/profiles.js";
 import { processReadyIntakeFiles } from "../../src/watcher/intakeWatcher.js";
 
 const tempDirs: string[] = [];
@@ -49,8 +49,8 @@ describe("processReadyIntakeFiles", () => {
       inbox,
       runsDir,
       targets: ["fake"],
-      buildAgent: () => new ScriptedAgentDriver(),
-      buildAdapters: () => [new FakeAdapter()],
+      buildProfiles: () => [fakeProfile()],
+      buildTargetRunner: () => new FakeTargetRunner(),
     });
 
     expect(results).toHaveLength(1);
@@ -82,8 +82,8 @@ describe("processReadyIntakeFiles", () => {
       inbox,
       runsDir: join(root, "runs"),
       targets: ["fake"],
-      buildAgent: () => new ScriptedAgentDriver(),
-      buildAdapters: () => [new FakeAdapter()],
+      buildProfiles: () => [fakeProfile()],
+      buildTargetRunner: () => new FakeTargetRunner(),
     });
 
     expect(results).toEqual([]);
@@ -101,8 +101,8 @@ describe("processReadyIntakeFiles", () => {
       inbox,
       runsDir: join(root, "runs"),
       targets: ["fake"],
-      buildAgent: () => new ScriptedAgentDriver(),
-      buildAdapters: () => [new FakeAdapter()],
+      buildProfiles: () => [fakeProfile()],
+      buildTargetRunner: () => new FakeTargetRunner(),
     });
 
     expect(results).toHaveLength(1);
@@ -110,6 +110,30 @@ describe("processReadyIntakeFiles", () => {
     expect(await readdir(join(inbox, "failed"))).toHaveLength(1);
   });
 });
+
+class FakeTargetRunner {
+  async prepare(_profiles: TargetProfile[], _plannedRecords: number): Promise<void> {}
+
+  async runRecord(_context: AiWebTargetRunContext): Promise<AiWebTargetResult> {
+    return { status: "succeeded" };
+  }
+
+  async close(): Promise<void> {}
+}
+
+function fakeProfile(): TargetProfile {
+  return {
+    name: "fake",
+    displayName: "Fake Target",
+    baseUrl: "local://dry-run",
+    credentials: { username: "", password: "" },
+    task: "Validate orchestration and audit output without entering an EMR.",
+    workflowHints: [],
+    successCriteria: ["The normalized record is accepted by the dry-run target."],
+    forbiddenActions: ["Do not use real patient data."],
+    concurrency: 1,
+  };
+}
 
 async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8"));

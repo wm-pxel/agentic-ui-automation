@@ -5,20 +5,16 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Command, Option } from "commander";
 import { ZodError } from "zod";
-import { FakeAdapter } from "./adapters/fakeAdapter.js";
-import type { TargetAdapter } from "./adapters/contract.js";
-import { OpenAiUiAgentDriver } from "./agent/openAiUiAgent.js";
-import { ScriptedAgentDriver } from "./agent/scriptedAgent.js";
-import type { AgentDriver } from "./agent/types.js";
 import { buildRunConfig, type CliRunConfig } from "./config.js";
 import { OpenAiIntakeParser } from "./parsing/aiIntakeParser.js";
 import { loadSourceRecords } from "./parsing/loadRecords.js";
 import { applySyntheticSuffix } from "./parsing/syntheticRecords.js";
-import { runWorkflow } from "./orchestrator/runWorkflow.js";
+import { runWorkflow, type TargetRunner } from "./orchestrator/runWorkflow.js";
 import { defaultIntakeInbox } from "./handoff/intakeHandoff.js";
 import { processReadyIntakeFiles, watchIntakeInbox, type IntakeWatchJobResult } from "./watcher/intakeWatcher.js";
-import { OpenMrsAdapter } from "./targets/openmrs/openMrsAdapter.js";
-import { OpenEmrAdapter } from "./targets/openemr/openEmrAdapter.js";
+import { AiWebTargetRunner, type AiWebTargetResult } from "./targets/aiWebTargetRunner.js";
+import { OpenAiAiWebPlanner } from "./targets/aiWebPlanner.js";
+import { buildTargetProfiles, type TargetProfile } from "./targets/profiles.js";
 import { startViewerServer as defaultStartViewerServer, type ViewerServer } from "./viewer/server.js";
 
 interface CliWritable {
@@ -36,32 +32,41 @@ export interface CliDependencies {
     port?: number;
     stdout?: CliWritable;
   }) => Promise<ViewerServer>;
+  buildTargetRunner?: (options: { profiles: TargetProfile[] }) => TargetRunner;
+  buildAiTargetRunner?: () => TargetRunner;
+}
+
+interface ResolvedCliDependencies {
+  startViewerServer: (options: {
+    runsDir: string;
+    port?: number;
+    stdout?: CliWritable;
+  }) => Promise<ViewerServer>;
+  buildTargetRunner: (options: { profiles: TargetProfile[] }) => TargetRunner;
 }
 
 interface RunCommandOptions {
   input: string;
   targets: string;
   runsDir?: string;
-  agent?: CliRunConfig["agent"];
   parser?: CliRunConfig["parser"];
   parserModel?: string;
   syntheticSuffix?: string;
+  confidenceThreshold?: number;
+  fieldConfirmation?: CliRunConfig["fieldConfirmation"];
   openmrsConcurrency?: number;
-  openmrsInteractiveFieldConfirmation?: boolean;
-  openmrsFieldConfidenceThreshold?: number;
-  openemrConcurrency?: number;
+  openkairoConcurrency?: number;
 }
 
 interface WatchCommandOptions {
   inbox?: string;
   targets: string;
   runsDir?: string;
-  agent?: CliRunConfig["agent"];
   syntheticSuffix?: string;
+  confidenceThreshold?: number;
+  fieldConfirmation?: CliRunConfig["fieldConfirmation"];
   openmrsConcurrency?: number;
-  openmrsInteractiveFieldConfirmation?: boolean;
-  openmrsFieldConfidenceThreshold?: number;
-  openemrConcurrency?: number;
+  openkairoConcurrency?: number;
   once?: boolean;
 }
 
@@ -84,8 +89,10 @@ export async function runCli(
     stdout: io.stdout ?? defaultIo.stdout,
     stderr: io.stderr ?? defaultIo.stderr,
   };
+  const buildAiTargetRunner = dependencies.buildAiTargetRunner ?? buildDefaultAiTargetRunner;
   const program = createProgram(resolvedIo, {
     startViewerServer: dependencies.startViewerServer ?? defaultStartViewerServer,
+    buildTargetRunner: dependencies.buildTargetRunner ?? ((options) => buildDefaultTargetRunner(options.profiles, buildAiTargetRunner)),
   });
 
   try {
@@ -103,7 +110,7 @@ export async function runCli(
   }
 }
 
-function createProgram(io: Required<CliIo>, dependencies: Required<CliDependencies>): Command {
+function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencies): Command {
   const program = new Command();
 
   program
@@ -122,43 +129,69 @@ function createProgram(io: Required<CliIo>, dependencies: Required<CliDependenci
     .command("run")
     .description("Run an intake automation workflow.")
     .requiredOption("--input <path>", "Path to the intake source file.")
-    .option("--targets <targets>", "Comma-separated target adapters to run.", "fake")
+    .option("--targets <targets>", "Comma-separated target profiles to run.", "fake")
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
-    .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
     .addOption(new Option("--parser <parser>", "Input parser to use.").choices(["openai", "deterministic"]))
     .option("--parser-model <model>", "OpenAI model to use for AI source parsing.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
-    .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parseOpenMrsPositiveInteger)
-    .option("--openemr-concurrency <count>", "Maximum concurrent OpenEMR records.", parseOpenMrsPositiveInteger)
-    .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
     .option(
-      "--openmrs-field-confidence-threshold <threshold>",
-      "Minimum OpenMRS field mapping confidence before prompting.",
-      parseConfidenceThreshold,
+      "--confidence-threshold <threshold>",
+      "Minimum AI planner confidence for field mapping highlighting.",
+      parseConfidenceThresholdOption,
+    )
+    .addOption(
+      new Option("--field-confirmation <mode>", "Operator confirmation mode for AI-planned field mappings.")
+        .choices(["auto", "prompt-on-low-confidence"])
+        .default("auto"),
+    )
+    .option(
+      "--openmrs-concurrency <count>",
+      "Maximum concurrent OpenMRS records.",
+      parsePositiveIntegerOption("--openmrs-concurrency"),
+    )
+    .option(
+      "--openkairo-concurrency <count>",
+      "Maximum concurrent OpenKairo records.",
+      parsePositiveIntegerOption("--openkairo-concurrency"),
     )
     .action(async (options: RunCommandOptions) => {
-      await runCommand(options, io.stdout);
+      await runCommand(options, io.stdout, dependencies);
     });
 
   program
     .command("watch")
     .description("Watch an intake handoff folder and run workflows for ready exports.")
     .option("--inbox <path>", "Folder to watch for *.ready.csv or *.ready.json intake handoff files.")
-    .option("--targets <targets>", "Comma-separated target adapters to run.", "openmrs")
+    .option("--targets <targets>", "Comma-separated target profiles to run.", "openmrs")
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
-    .addOption(new Option("--agent <agent>", "Agent driver to use.").choices(["scripted", "openai"]))
-    .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
-    .option("--openmrs-concurrency <count>", "Maximum concurrent OpenMRS records.", parseOpenMrsPositiveInteger)
-    .option("--openemr-concurrency <count>", "Maximum concurrent OpenEMR records.", parseOpenMrsPositiveInteger)
-    .option("--openmrs-interactive-field-confirmation", "Prompt in the OpenMRS browser before low-confidence field entry.")
     .option(
-      "--openmrs-field-confidence-threshold <threshold>",
-      "Minimum OpenMRS field mapping confidence before prompting.",
-      parseConfidenceThreshold,
+      "--synthetic-suffix <suffix>",
+      "Suffix valid synthetic records before running targets; use 'auto' to generate one.",
+      "auto",
+    )
+    .option(
+      "--confidence-threshold <threshold>",
+      "Minimum AI planner confidence for field mapping highlighting.",
+      parseConfidenceThresholdOption,
+    )
+    .addOption(
+      new Option("--field-confirmation <mode>", "Operator confirmation mode for AI-planned field mappings.")
+        .choices(["auto", "prompt-on-low-confidence"])
+        .default("auto"),
+    )
+    .option(
+      "--openmrs-concurrency <count>",
+      "Maximum concurrent OpenMRS records.",
+      parsePositiveIntegerOption("--openmrs-concurrency"),
+    )
+    .option(
+      "--openkairo-concurrency <count>",
+      "Maximum concurrent OpenKairo records.",
+      parsePositiveIntegerOption("--openkairo-concurrency"),
     )
     .option("--once", "Process currently ready files once and exit.")
     .action(async (options: WatchCommandOptions) => {
-      await watchCommand(options, io.stdout);
+      await watchCommand(options, io.stdout, dependencies);
     });
 
   program
@@ -177,38 +210,44 @@ function createProgram(io: Required<CliIo>, dependencies: Required<CliDependenci
   return program;
 }
 
-async function runCommand(options: RunCommandOptions, stdout: CliWritable): Promise<void> {
+async function runCommand(
+  options: RunCommandOptions,
+  stdout: CliWritable,
+  dependencies: ResolvedCliDependencies,
+): Promise<void> {
   const config = buildRunConfig({
     ...options,
     openMrsConcurrency: options.openmrsConcurrency,
-    openEmrConcurrency: options.openemrConcurrency,
-    openMrsInteractiveFieldConfirmation: options.openmrsInteractiveFieldConfirmation,
-    openMrsFieldConfidenceThreshold: options.openmrsFieldConfidenceThreshold,
+    openKairoConcurrency: options.openkairoConcurrency,
   });
   const records = applySyntheticSuffix(await loadRecords(config), resolveSyntheticSuffix(config.syntheticSuffix));
+  const profiles = buildTargetProfiles(config);
   const result = await runWorkflow({
     runsDir: config.runsDir,
     sourceInputPath: config.input,
     records,
-    adapters: buildAdapters(config),
-    agent: buildAgent(config.agent),
+    profiles,
+    targetRunner: dependencies.buildTargetRunner({ profiles }),
   });
 
   stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
-async function watchCommand(options: WatchCommandOptions, stdout: CliWritable): Promise<void> {
+async function watchCommand(
+  options: WatchCommandOptions,
+  stdout: CliWritable,
+  dependencies: ResolvedCliDependencies,
+): Promise<void> {
   const config = buildRunConfig({
     input: options.inbox ?? defaultIntakeInbox(),
     targets: options.targets,
     runsDir: options.runsDir,
-    agent: options.agent,
     parser: "deterministic",
     syntheticSuffix: options.syntheticSuffix,
+    confidenceThreshold: options.confidenceThreshold,
+    fieldConfirmation: options.fieldConfirmation,
     openMrsConcurrency: options.openmrsConcurrency,
-    openEmrConcurrency: options.openemrConcurrency,
-    openMrsInteractiveFieldConfirmation: options.openmrsInteractiveFieldConfirmation,
-    openMrsFieldConfidenceThreshold: options.openmrsFieldConfidenceThreshold,
+    openKairoConcurrency: options.openkairoConcurrency,
   });
   const inbox = options.inbox ?? defaultIntakeInbox();
   const watcherInput = {
@@ -216,8 +255,8 @@ async function watchCommand(options: WatchCommandOptions, stdout: CliWritable): 
     runsDir: config.runsDir,
     targets: config.targets,
     syntheticSuffix: config.syntheticSuffix,
-    buildAgent: () => buildAgent(config.agent),
-    buildAdapters: () => buildAdapters(config),
+    buildProfiles: () => buildTargetProfiles(config),
+    buildTargetRunner: (profiles: TargetProfile[]) => dependencies.buildTargetRunner({ profiles }),
     onResult: (result: IntakeWatchJobResult) => {
       stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     },
@@ -253,51 +292,124 @@ function resolveSyntheticSuffix(suffix: string | undefined): string | undefined 
   return `run-${timestamp}-${randomUUID().slice(0, 6)}`;
 }
 
-function buildAgent(agent: CliRunConfig["agent"]): AgentDriver {
-  switch (agent) {
-    case "scripted":
-      return new ScriptedAgentDriver();
-    case "openai":
-      return new OpenAiUiAgentDriver({
-        apiKey: process.env.OPENAI_API_KEY,
-        model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
-      });
+function buildDefaultTargetRunner(profiles: TargetProfile[], buildAiTargetRunner: () => TargetRunner): TargetRunner {
+  const fakeProfiles = profiles.filter((profile) => profile.name === "fake");
+  const aiProfiles = profiles.filter((profile) => profile.name !== "fake");
+
+  if (aiProfiles.length === 0) {
+    return new DryRunTargetRunner();
   }
+
+  if (fakeProfiles.length === 0) {
+    return buildAiTargetRunner();
+  }
+
+  return new ProfileDispatchingTargetRunner([
+    { profiles: fakeProfiles, runner: new DryRunTargetRunner() },
+    { profiles: aiProfiles, runner: buildAiTargetRunner() },
+  ]);
 }
 
-function buildAdapters(config: CliRunConfig): TargetAdapter[] {
-  return config.targets.map((target) => {
-    switch (target) {
-      case "fake":
-        return new FakeAdapter("success");
-      case "openmrs":
-        return new OpenMrsAdapter(config.openMrs);
-      case "openemr":
-        return new OpenEmrAdapter(config.openEmr);
-    }
+function buildDefaultAiTargetRunner(): TargetRunner {
+  return new AiWebTargetRunner({
+    planner: new OpenAiAiWebPlanner({
+      apiKey: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
+    }),
   });
 }
 
-function parseOpenMrsPositiveInteger(value: string): number {
+class ProfileDispatchingTargetRunner implements TargetRunner {
+  private readonly routes: Array<{ profileNames: Set<string>; runner: TargetRunner }>;
+
+  constructor(routes: Array<{ profiles: TargetProfile[]; runner: TargetRunner }>) {
+    this.routes = routes.map((route) => ({
+      profileNames: new Set(route.profiles.map((profile) => profile.name)),
+      runner: route.runner,
+    }));
+  }
+
+  async prepare(profiles: TargetProfile[], plannedRecords: number): Promise<void> {
+    for (const route of this.routes) {
+      const routeProfiles = profiles.filter((profile) => route.profileNames.has(profile.name));
+      if (routeProfiles.length > 0) {
+        await route.runner.prepare?.(routeProfiles, plannedRecords);
+      }
+    }
+  }
+
+  async runRecord(context: Parameters<TargetRunner["runRecord"]>[0]): Promise<AiWebTargetResult> {
+    return this.runnerForProfile(context.profile).runRecord(context);
+  }
+
+  async close(): Promise<void> {
+    let firstError: unknown;
+    for (const route of this.routes) {
+      try {
+        await route.runner.close?.();
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+
+    if (firstError !== undefined) {
+      throw firstError;
+    }
+  }
+
+  private runnerForProfile(profile: TargetProfile): TargetRunner {
+    const route = this.routes.find((candidate) => candidate.profileNames.has(profile.name));
+    if (!route) {
+      throw new Error(`No target runner is configured for profile ${profile.name}.`);
+    }
+    return route.runner;
+  }
+}
+
+class DryRunTargetRunner implements TargetRunner {
+  async prepare(_profiles: TargetProfile[], _plannedRecords: number): Promise<void> {}
+
+  async runRecord(context: Parameters<TargetRunner["runRecord"]>[0]): Promise<AiWebTargetResult> {
+    await context.audit.writeEvent({
+      recordId: context.record.sourceRecordId,
+      target: context.profile.name,
+      phase: "target",
+      actionType: "dry-run",
+      rationale: "Dry-run target accepted the normalized intake record without browser automation.",
+      result: "dry run accepted",
+    });
+
+    return {
+      status: "succeeded",
+      targetRecordId: `${context.profile.name}-${context.record.sourceRecordId}`,
+    };
+  }
+
+  async close(): Promise<void> {}
+}
+
+function parsePositiveIntegerOption(optionName: string): (value: string) => number {
+  return (value) => {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      throw new Error(`${optionName} must be a positive integer.`);
+    }
+    return parsed;
+  };
+}
+
+function parseConfidenceThresholdOption(value: string): number {
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error("--openmrs-concurrency must be a positive integer.");
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error("--confidence-threshold must be a number from 0 through 1.");
   }
   return parsed;
 }
 
 function parseViewerPort(value: string): number {
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error("--port must be a positive integer.");
-  }
-  return parsed;
-}
-
-function parseConfidenceThreshold(value: string): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
-    throw new Error("--openmrs-field-confidence-threshold must be a number from 0 through 1.");
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error("--port must be zero or a positive integer.");
   }
   return parsed;
 }

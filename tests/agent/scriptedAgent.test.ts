@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { TargetAdapterResultSchema } from "../../src/adapters/contract.js";
 import { ScriptedAgentDriver } from "../../src/agent/scriptedAgent.js";
 import { STOP_AGENT_ACTION_ID, validateAgentDecision } from "../../src/agent/types.js";
 
@@ -99,23 +98,5 @@ describe("ScriptedAgentDriver", () => {
         },
       ),
     ).toThrow("not allowed");
-  });
-
-  it("validates target adapter results at runtime", () => {
-    expect(
-      TargetAdapterResultSchema.parse({
-        status: "succeeded",
-        targetRecordId: "fake-demo-001",
-      }),
-    ).toEqual({
-      status: "succeeded",
-      targetRecordId: "fake-demo-001",
-    });
-
-    expect(() =>
-      TargetAdapterResultSchema.parse({
-        status: "skipped",
-      }),
-    ).toThrow();
   });
 });
