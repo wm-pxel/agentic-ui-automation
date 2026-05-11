@@ -220,6 +220,8 @@ describe("runCli", () => {
           "deterministic",
           "--confidence-threshold",
           ".99",
+          "--field-confirmation",
+          "prompt-on-low-confidence",
         ],
         io,
         {
@@ -235,6 +237,7 @@ describe("runCli", () => {
       expect(factoryCalls).toHaveLength(1);
       expect(factoryCalls[0]?.profiles.map((profile) => profile.name)).toEqual([target]);
       expect(factoryCalls[0]?.profiles[0]?.confidenceThreshold).toBe(0.99);
+      expect(factoryCalls[0]?.profiles[0]?.fieldConfirmation).toBe("prompt-on-low-confidence");
       expect(runner.runProfiles).toEqual([target, target, target]);
       const result = JSON.parse(io.stdoutText()) as {
         targetCounts: Record<string, { succeeded: number; exception: number; skipped: number }>;
@@ -372,6 +375,19 @@ describe("runCli", () => {
     expect(exitCode).toBe(1);
     expect(io.stdoutText()).toBe("");
     expect(io.stderrText()).toContain("--confidence-threshold must be a number from 0 through 1.");
+  });
+
+  it.each([
+    ["run", ["run", "--input", "data/demo/intake-records-normalized.json", "--field-confirmation", "always"]],
+    ["watch", ["watch", "--once", "--field-confirmation", "always"]],
+  ] as const)("rejects invalid field confirmation modes on %s", async (_command, args) => {
+    const io = captureIo();
+
+    const exitCode = await runCli(["node", "agentic-ui", ...args], io);
+
+    expect(exitCode).toBe(1);
+    expect(io.stdoutText()).toBe("");
+    expect(io.stderrText()).toContain("Allowed choices are auto, prompt-on-low-confidence.");
   });
 
   it("requires an OpenAI API key for default non-fake target runs", async () => {

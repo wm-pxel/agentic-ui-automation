@@ -90,6 +90,16 @@ describe("buildRunConfig", () => {
     expect(config.confidenceThreshold).toBe(0.99);
   });
 
+  it("copies field confirmation mode into the run config", () => {
+    const config = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openmrs",
+      fieldConfirmation: "prompt-on-low-confidence",
+    });
+
+    expect(config.fieldConfirmation).toBe("prompt-on-low-confidence");
+  });
+
   it("uses fallback defaults when environment variables are unset", () => {
     const config = buildRunConfig({
       input: "data/demo/intake-records.json",

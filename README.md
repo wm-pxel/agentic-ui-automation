@@ -12,9 +12,7 @@ traceable audit package for each run.
 Run these from the repository root for the full E2E demo. Each command starts
 the handoff watcher, Electron intake app, and local run viewer. Use
 `--intake-trigger watcher` when the watcher should wait for Electron to export a
-`.ready.csv` or `.ready.json` file into `~/Downloads/agentic-ui-intake`. Use
-`--intake-trigger auto-import` when the command should also drop
-`data/demo/intake-records-normalized.json` into that inbox as a ready handoff.
+`.ready.csv` or `.ready.json` file into `~/Downloads/agentic-ui-intake`.
 The target commands are otherwise identical except for the destination web app
 in `--targets`.
 
@@ -23,7 +21,7 @@ in `--targets`.
 Uses the official OpenMRS 2 Reference Application demo by default:
 `https://o2.openmrs.org/openmrs/login.htm`.
 
-Interactive watcher-triggered:
+Watcher-triggered handoff:
 
 ```sh
 set -a
@@ -32,18 +30,18 @@ set +a
 npm run dev:all -- --targets openmrs --intake-trigger watcher --confidence-threshold .99
 ```
 
-Unattended auto-import demo JSON:
+Operator confirmation for low-confidence fields:
 
 ```sh
 set -a
 . ./.env
 set +a
-npm run dev:all -- --targets openmrs --intake-trigger auto-import --confidence-threshold .99
+npm run dev:all -- --targets openmrs --intake-trigger watcher --confidence-threshold .99 --field-confirmation prompt-on-low-confidence
 ```
 
 ### OpenKairo Target
 
-Interactive watcher-triggered:
+Watcher-triggered handoff:
 
 ```sh
 set -a
@@ -52,18 +50,18 @@ set +a
 npm run dev:all -- --targets openkairo --intake-trigger watcher --confidence-threshold .99
 ```
 
-Unattended auto-import demo JSON:
+Operator confirmation for low-confidence fields:
 
 ```sh
 set -a
 . ./.env
 set +a
-npm run dev:all -- --targets openkairo --intake-trigger auto-import --confidence-threshold .99
+npm run dev:all -- --targets openkairo --intake-trigger watcher --confidence-threshold .99 --field-confirmation prompt-on-low-confidence
 ```
 
 ### Both Targets Simultaneously
 
-Interactive watcher-triggered:
+Watcher-triggered handoff:
 
 ```sh
 set -a
@@ -72,22 +70,22 @@ set +a
 npm run dev:all -- --targets openmrs,openkairo --intake-trigger watcher --confidence-threshold .99
 ```
 
-Unattended auto-import demo JSON:
+Operator confirmation for low-confidence fields:
 
 ```sh
 set -a
 . ./.env
 set +a
-npm run dev:all -- --targets openmrs,openkairo --intake-trigger auto-import --confidence-threshold .99
+npm run dev:all -- --targets openmrs,openkairo --intake-trigger watcher --confidence-threshold .99 --field-confirmation prompt-on-low-confidence
 ```
 
 Click `Export Selected`, or use the Computer Use prompt below, to create the
-handoff file in watcher-triggered mode. Auto-import mode creates that handoff
-from the checked-in demo JSON after the services start. The watcher applies a
-unique synthetic suffix by default, so repeated demo exports create fresh
-synthetic patient identifiers. Interactive and unattended use the same commands;
-the difference is whether you watch the browser while the triggered run is
-active.
+handoff file. The watcher applies a unique synthetic suffix by default, so
+repeated demo exports create fresh synthetic patient identifiers. Add
+`--field-confirmation prompt-on-low-confidence` when the destination browser
+should pause before writing any field whose AI planner confidence is below
+`--confidence-threshold`; the prompt lets the operator confirm, edit, skip, or
+stop the field entry.
 
 The viewer starts with the stack at `http://127.0.0.1:4173` by default and
 prints its URL in the `[viewer]` log line. Use `--viewer-port 0` only when you
@@ -791,6 +789,10 @@ Options:
   highlighting. Values below this threshold are marked as low confidence in the
   run summary and viewer. Use `.99` for the full E2E demo commands when you want
   nearly every non-perfect field mapping to be easy to spot during review.
+- `--field-confirmation`: `auto` by default. Use
+  `prompt-on-low-confidence` to show an operator confirmation prompt in the
+  active destination browser before writing fields whose AI planner confidence
+  is below `--confidence-threshold`.
 - `--openmrs-concurrency`: maximum number of OpenMRS records to enter at the
   same time. Defaults to `OPENMRS_CONCURRENCY`, then `1`.
 - `--openemr-concurrency`: maximum number of OpenEMR records to enter at the

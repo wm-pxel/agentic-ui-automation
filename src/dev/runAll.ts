@@ -55,6 +55,7 @@ type DevAllConfig = {
   autoImportInput: string;
   viewerPort: number;
   confidenceThreshold?: number;
+  fieldConfirmation: "auto" | "prompt-on-low-confidence";
 };
 
 const defaultAutoImportInput = "data/demo/intake-records-normalized.json";
@@ -149,6 +150,7 @@ function parseDevAllArgs(args: string[]): DevAllConfig {
     intakeTrigger: "watcher",
     autoImportInput: defaultAutoImportInput,
     viewerPort: defaultViewerPort,
+    fieldConfirmation: "auto",
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -236,6 +238,21 @@ function parseDevAllArgs(args: string[]): DevAllConfig {
       continue;
     }
 
+    if (arg === "--field-confirmation") {
+      const mode = args[index + 1];
+      if (!mode || mode.startsWith("--")) {
+        throw new Error("--field-confirmation requires 'auto' or 'prompt-on-low-confidence'.");
+      }
+      config.fieldConfirmation = parseFieldConfirmation(mode);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--field-confirmation=")) {
+      config.fieldConfirmation = parseFieldConfirmation(arg.slice("--field-confirmation=".length));
+      continue;
+    }
+
     throw new Error(`Unknown dev:all option: ${arg}`);
   }
 
@@ -263,6 +280,11 @@ function parseConfidenceThreshold(value: string): number {
   return parsed;
 }
 
+function parseFieldConfirmation(value: string): DevAllConfig["fieldConfirmation"] {
+  if (value === "auto" || value === "prompt-on-low-confidence") return value;
+  throw new Error("--field-confirmation must be either 'auto' or 'prompt-on-low-confidence'.");
+}
+
 function npmRunArgs(command: DevAllCommand, config: DevAllConfig): string[] {
   const args = ["run", command.script];
   if (command.name === "watch" && config.targets) {
@@ -273,6 +295,12 @@ function npmRunArgs(command: DevAllCommand, config: DevAllConfig): string[] {
       args.push("--");
     }
     args.push("--confidence-threshold", String(config.confidenceThreshold));
+  }
+  if (command.name === "watch" && config.fieldConfirmation !== "auto") {
+    if (!args.includes("--")) {
+      args.push("--");
+    }
+    args.push("--field-confirmation", config.fieldConfirmation);
   }
   if (command.name === "viewer") {
     args.push("--", "--port", String(config.viewerPort));

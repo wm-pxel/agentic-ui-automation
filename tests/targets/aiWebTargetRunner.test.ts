@@ -281,6 +281,120 @@ describe("AiWebTargetRunner", () => {
     );
   });
 
+  it("prompts in the browser before low-confidence field entry and records operator confirmation", async () => {
+    const page = new FakeRunnerPage({ promptResults: [{ type: "confirm" }] });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-field-confirmed-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "fill",
+            elementId: "control-1",
+            field: "firstName",
+            value: "Ava",
+            rationale: "The first-name textbox label likely matches.",
+          },
+          confidence: 0.91,
+        },
+        {
+          action: {
+            type: "click",
+            elementId: "control-2",
+            purpose: "save",
+            rationale: "Save the synthetic patient.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen appears in the saved patient state.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), confidenceThreshold: 0.99, fieldConfirmation: "prompt-on-low-confidence" },
+      record: record(),
+      audit,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(page.actions).toContainEqual(["fill", "#first-name", "Ava"]);
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "firstName",
+        status: "succeeded",
+        approvalSource: "operator_confirmed",
+        confidenceThreshold: 0.99,
+        finalValue: "Ava",
+      }),
+    );
+  });
+
+  it("uses an operator-edited low-confidence value before filling the browser field", async () => {
+    const page = new FakeRunnerPage({ promptResults: [{ type: "edit", value: "Avery" }] });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-field-edited-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "fill",
+            elementId: "control-1",
+            field: "firstName",
+            value: "Ava",
+            rationale: "The first-name textbox label likely matches.",
+          },
+          confidence: 0.91,
+        },
+        {
+          action: {
+            type: "click",
+            elementId: "control-2",
+            purpose: "save",
+            rationale: "Save the synthetic patient.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Avery Nguyen appears in the saved patient state.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), confidenceThreshold: 0.99, fieldConfirmation: "prompt-on-low-confidence" },
+      record: record(),
+      audit,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(page.actions).toContainEqual(["fill", "#first-name", "Avery"]);
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "firstName",
+        status: "succeeded",
+        approvalSource: "operator_edited",
+        originalProposedValue: "Ava",
+        finalValue: "Avery",
+      }),
+    );
+  });
+
   it("uses the observed forward-next control when the planner intends to advance a wizard", async () => {
     const page = new FakeRunnerPage({
       elements: [
@@ -872,6 +986,7 @@ class FakeRunnerPage {
       title?: string;
       elements?: FakeElement[];
       bodyTextAfterWait?: string;
+      promptResults?: unknown[];
     } = {},
   ) {
     this.document = new FakeDocument(
@@ -926,7 +1041,15 @@ class FakeRunnerPage {
     this.actions.push(["wait", timeoutMs]);
   }
 
-  async evaluate<T>(pageFunction: () => T): Promise<T> {
+  async evaluate<T>(pageFunction: (() => T) | string): Promise<T> {
+    if (typeof pageFunction === "string") {
+      const result = this.options.promptResults?.shift();
+      if (result instanceof Error) {
+        throw result;
+      }
+      return result as T;
+    }
+
     const previousDocument = globalThis.document;
     const previousWindow = globalThis.window;
     const previousNode = globalThis.Node;

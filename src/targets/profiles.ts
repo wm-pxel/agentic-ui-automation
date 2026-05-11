@@ -15,9 +15,12 @@ export interface TargetProfile {
   forbiddenActions: string[];
   concurrency: number;
   confidenceThreshold?: number;
+  fieldConfirmation?: "auto" | "prompt-on-low-confidence";
 }
 
-type ProfileConfig = Pick<CliRunConfig, "targets" | "confidenceThreshold" | "openMrs" | "openEmr" | "openKairo">;
+type ProfileConfig = Pick<CliRunConfig, "targets" | "confidenceThreshold" | "openMrs" | "openEmr" | "openKairo"> & {
+  fieldConfirmation?: CliRunConfig["fieldConfirmation"];
+};
 
 const DEFAULT_SUCCESS_CRITERIA = [
   "A saved patient detail page or dashboard is visible.",
@@ -72,6 +75,7 @@ export function buildTargetProfiles(config: ProfileConfig): TargetProfile[] {
           forbiddenActions: [...DEFAULT_FORBIDDEN_ACTIONS],
           concurrency: Math.max(1, config.openMrs.concurrency),
           confidenceThreshold: config.confidenceThreshold,
+          fieldConfirmation: config.fieldConfirmation,
         };
       case "openemr":
         return {
@@ -88,6 +92,7 @@ export function buildTargetProfiles(config: ProfileConfig): TargetProfile[] {
           forbiddenActions: [...DEFAULT_FORBIDDEN_ACTIONS],
           concurrency: Math.max(1, config.openEmr.concurrency),
           confidenceThreshold: config.confidenceThreshold,
+          fieldConfirmation: config.fieldConfirmation,
         };
       case "openkairo":
         return {
@@ -104,6 +109,7 @@ export function buildTargetProfiles(config: ProfileConfig): TargetProfile[] {
           forbiddenActions: [...DEFAULT_FORBIDDEN_ACTIONS],
           concurrency: Math.max(1, config.openKairo.concurrency),
           confidenceThreshold: config.confidenceThreshold,
+          fieldConfirmation: config.fieldConfirmation,
         };
       case "fake":
         return {

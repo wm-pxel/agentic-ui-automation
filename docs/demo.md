@@ -135,6 +135,11 @@ npm run dev -- watch \
   --synthetic-suffix auto
 ```
 
+To demo operator-in-the-loop review, add
+`--confidence-threshold .99 --field-confirmation prompt-on-low-confidence`.
+The destination browser pauses before writing below-threshold fields and lets
+the operator confirm, edit, skip, or stop that field entry.
+
 For a local dry run that does not open OpenMRS:
 
 ```sh

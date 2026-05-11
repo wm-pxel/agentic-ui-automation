@@ -9,6 +9,7 @@ export const CliRunConfigSchema = z.object({
   parserModel: z.string().optional(),
   syntheticSuffix: z.string().optional(),
   confidenceThreshold: z.number().min(0).max(1).optional(),
+  fieldConfirmation: z.enum(["auto", "prompt-on-low-confidence"]).default("auto"),
   openMrs: z.object({
     baseUrl: z.string().optional(),
     username: z.string().optional(),
@@ -39,6 +40,7 @@ export interface BuildRunConfigOptions {
   parserModel?: string;
   syntheticSuffix?: string;
   confidenceThreshold?: number;
+  fieldConfirmation?: "auto" | "prompt-on-low-confidence";
   openMrsConcurrency?: number;
   openEmrConcurrency?: number;
   openKairoConcurrency?: number;
@@ -64,6 +66,7 @@ export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
     parserModel: options.parserModel ?? process.env.OPENAI_PARSER_MODEL ?? process.env.OPENAI_MODEL,
     syntheticSuffix: options.syntheticSuffix,
     confidenceThreshold: options.confidenceThreshold,
+    fieldConfirmation: options.fieldConfirmation,
     openMrs: {
       baseUrl: process.env.OPENMRS_BASE_URL ?? "https://o2.openmrs.org/openmrs/login.htm",
       username: process.env.OPENMRS_USERNAME ?? "admin",

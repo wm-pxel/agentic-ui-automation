@@ -53,6 +53,7 @@ interface RunCommandOptions {
   parserModel?: string;
   syntheticSuffix?: string;
   confidenceThreshold?: number;
+  fieldConfirmation?: CliRunConfig["fieldConfirmation"];
   openmrsConcurrency?: number;
   openemrConcurrency?: number;
   openkairoConcurrency?: number;
@@ -64,6 +65,7 @@ interface WatchCommandOptions {
   runsDir?: string;
   syntheticSuffix?: string;
   confidenceThreshold?: number;
+  fieldConfirmation?: CliRunConfig["fieldConfirmation"];
   openmrsConcurrency?: number;
   openemrConcurrency?: number;
   openkairoConcurrency?: number;
@@ -139,6 +141,11 @@ function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencie
       "Minimum AI planner confidence for field mapping highlighting.",
       parseConfidenceThresholdOption,
     )
+    .addOption(
+      new Option("--field-confirmation <mode>", "Operator confirmation mode for AI-planned field mappings.")
+        .choices(["auto", "prompt-on-low-confidence"])
+        .default("auto"),
+    )
     .option(
       "--openmrs-concurrency <count>",
       "Maximum concurrent OpenMRS records.",
@@ -173,6 +180,11 @@ function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencie
       "--confidence-threshold <threshold>",
       "Minimum AI planner confidence for field mapping highlighting.",
       parseConfidenceThresholdOption,
+    )
+    .addOption(
+      new Option("--field-confirmation <mode>", "Operator confirmation mode for AI-planned field mappings.")
+        .choices(["auto", "prompt-on-low-confidence"])
+        .default("auto"),
     )
     .option(
       "--openmrs-concurrency <count>",
@@ -246,6 +258,7 @@ async function watchCommand(
     parser: "deterministic",
     syntheticSuffix: options.syntheticSuffix,
     confidenceThreshold: options.confidenceThreshold,
+    fieldConfirmation: options.fieldConfirmation,
     openMrsConcurrency: options.openmrsConcurrency,
     openEmrConcurrency: options.openemrConcurrency,
     openKairoConcurrency: options.openkairoConcurrency,

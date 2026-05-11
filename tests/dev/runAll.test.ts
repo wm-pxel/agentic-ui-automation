@@ -75,6 +75,30 @@ describe("runDevAll", () => {
     await expect(running).resolves.toBe(0);
   });
 
+  it("passes low-confidence field confirmation mode to the watcher", async () => {
+    const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
+    const running = runDevAll({
+      args: ["--targets", "openmrs", "--field-confirmation", "prompt-on-low-confidence"],
+      cwd: "/repo",
+      spawnProcess: (command, args) => {
+        const child = new FakeChildProcess();
+        spawned.push({ command, args, child });
+        return child;
+      },
+      stdout: writable(),
+      stderr: writable(),
+    });
+
+    expect(spawned.map(({ command, args }) => [command, ...args])).toEqual([
+      ["npm", "run", "watch:intake", "--", "--targets", "openmrs", "--field-confirmation", "prompt-on-low-confidence"],
+      ["npm", "run", "desktop:dev"],
+      ["npm", "run", "viewer", "--", "--port", "4173"],
+    ]);
+
+    spawned[0]?.child.exit(0);
+    await expect(running).resolves.toBe(0);
+  });
+
   it("rejects invalid confidence thresholds before starting services", async () => {
     const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
 
@@ -91,6 +115,26 @@ describe("runDevAll", () => {
         stderr: writable(),
       }),
     ).rejects.toThrow("--confidence-threshold must be a number from 0 through 1.");
+
+    expect(spawned).toEqual([]);
+  });
+
+  it("rejects invalid field confirmation modes before starting services", async () => {
+    const spawned: Array<{ command: string; args: string[]; child: FakeChildProcess }> = [];
+
+    await expect(
+      runDevAll({
+        args: ["--field-confirmation", "always"],
+        cwd: "/repo",
+        spawnProcess: (command, args) => {
+          const child = new FakeChildProcess();
+          spawned.push({ command, args, child });
+          return child;
+        },
+        stdout: writable(),
+        stderr: writable(),
+      }),
+    ).rejects.toThrow("--field-confirmation must be either 'auto' or 'prompt-on-low-confidence'.");
 
     expect(spawned).toEqual([]);
   });
