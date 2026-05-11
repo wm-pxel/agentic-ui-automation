@@ -82,7 +82,7 @@ describe("AiWebTargetRunner", () => {
         recordId: "demo-001",
         target: "openkairo",
         sourceField: "firstName",
-        targetField: "firstName",
+        targetField: "First Name",
         normalizedValue: "Ava",
         finalValue: "Ava",
         action: "fill",
@@ -163,6 +163,68 @@ describe("AiWebTargetRunner", () => {
         result: "succeeded",
       },
     ]);
+  });
+
+  it("records the observed target UI field label separately from the normalized source field", async () => {
+    const page = new FakeRunnerPage({
+      elements: [
+        fakeElement("label", { for: "birthdateYear-field" }, "Year (required)"),
+        fakeElement("input", { id: "birthdateYear-field", value: "" }),
+        fakeElement("button", { class: "save" }, "Save"),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-target-field-label-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "fill",
+            elementId: "control-1",
+            field: "dateOfBirth",
+            value: "1990",
+            rationale: "The year textbox is the visible target control for the normalized date of birth.",
+          },
+          confidence: 0.95,
+        },
+        {
+          action: {
+            type: "click",
+            elementId: "control-2",
+            purpose: "save",
+            rationale: "The visible button saves the synthetic patient.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen appears in the success page text.",
+          },
+          confidence: 0.94,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 5,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "dateOfBirth",
+        targetField: "Year (required)",
+        normalizedValue: "1990",
+        selectedSelector: "#birthdateYear-field",
+      }),
+    );
   });
 
   it("waits instead of stopping when a SPA observation has no controls yet", async () => {
@@ -872,6 +934,67 @@ describe("AiWebTargetRunner", () => {
     );
   });
 
+  it("continues past relationship controls when pending intake fields are unsupported by the destination", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Relationship Person Name Relationship Type",
+      bodyTextAfterClick: "Patient Details Ava Nguyen Patient ID 100HXG General Actions Show Contact Info",
+      elements: [
+        fakeElement("label", { for: "person-name" }, "Person Name"),
+        fakeElement("input", { id: "person-name", value: "" }),
+        fakeElement("label", { for: "relationship-type" }, "Relationship Type"),
+        fakeElement("select", { id: "relationship-type" }, "Select Relationship Type"),
+        fakeElement("button", { id: "next-button", "aria-label": "Forward Next" }, ""),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs-unsupported-relationship-fields-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "The form is currently on a relationship step (Person Name / Relationship Type) that does not match the remaining pending intake fields, so I cannot safely continue patient registration from the observed controls.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the saved patient dashboard.",
+            rationale: "Ava Nguyen appears on the patient dashboard.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+    expect(page.actions).toEqual([["click", "#next-button"]]);
+    expect(audit.getReportDetails().targetEvidence).toContainEqual(
+      expect.objectContaining({
+        target: "openmrs",
+        status: "succeeded",
+      }),
+    );
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "email",
+        status: "no_matching_destination_field",
+      }),
+    );
+  });
+
   it("creates a patient instead of stopping when only unsupported fields remain in the new-patient dialog", async () => {
     const page = new FakeRunnerPage({
       bodyText:
@@ -990,7 +1113,7 @@ describe("AiWebTargetRunner", () => {
     expect(audit.getReportDetails().fieldMappings).toContainEqual(
       expect.objectContaining({
         sourceField: "phone",
-        targetField: "",
+        targetField: "First Name",
         status: "skipped",
         approvalSource: "agent",
         skipReason: "AI confidence was too low to safely fill this field without operator input.",

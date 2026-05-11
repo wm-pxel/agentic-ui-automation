@@ -280,9 +280,11 @@ export class AiWebTargetRunner {
         let approvalSource: ReportFieldMapping["approvalSource"] = "agent";
         let originalProposedValue: string | undefined;
         let finalValue: string | undefined;
+        let targetField = "";
         let credentialAction = false;
         if (action.type === "fill" || action.type === "select") {
           const selectedSelector = observation.elementSelectors.get(action.elementId);
+          targetField = targetFieldForAction(observation, action);
           credentialAction = isCredentialFieldAction(context.profile, action);
           if (!credentialAction && shouldSkipUnsafeAutonomousFieldAction(context.profile, plan.confidence)) {
             skippedFields.push(action.field);
@@ -291,7 +293,7 @@ export class AiWebTargetRunner {
               recordId: context.record.sourceRecordId,
               target: context.profile.name,
               sourceField: action.field,
-              targetField: "",
+              targetField,
               normalizedValue: action.value,
               selectorCandidates: selectorCandidatesForAction(observation.elementSelectors, action),
               selectedSelector,
@@ -336,7 +338,7 @@ export class AiWebTargetRunner {
               recordId: context.record.sourceRecordId,
               target: context.profile.name,
               sourceField: action.field,
-              targetField: action.field,
+              targetField,
               normalizedValue: action.value,
               selectorCandidates: selectorCandidatesForAction(observation.elementSelectors, action),
               selectedSelector,
@@ -369,7 +371,7 @@ export class AiWebTargetRunner {
               recordId: context.record.sourceRecordId,
               target: context.profile.name,
               sourceField: action.field,
-              targetField: action.field,
+              targetField,
               normalizedValue: action.value,
               selectorCandidates: selectorCandidatesForAction(observation.elementSelectors, action),
               selectedSelector,
@@ -431,7 +433,7 @@ export class AiWebTargetRunner {
             recordId: context.record.sourceRecordId,
             target: context.profile.name,
             sourceField: action.field,
-            targetField: action.field,
+            targetField,
             normalizedValue: action.value,
             selectorCandidates: selectorCandidatesForAction(observation.elementSelectors, action),
             selectedSelector: observation.elementSelectors.get(action.elementId),
@@ -539,7 +541,7 @@ function continueWizardInsteadOfStoppingAction(
   }
 
   const stopText = normalizeForVerification(action.message);
-  if (!/\b(no safe|no remaining|remaining intake|matching controls|unsupported|no editable)\b/.test(stopText)) {
+  if (!unsupportedDestinationFieldsStopMessage(stopText)) {
     return undefined;
   }
 
@@ -571,6 +573,10 @@ function continueWizardInsteadOfStoppingAction(
     purpose: "save patient with supported destination fields",
     rationale: "The destination has no visible matching field for the remaining intake data, but a save/create control can persist the supported patient fields.",
   };
+}
+
+function unsupportedDestinationFieldsStopMessage(stopText: string): boolean {
+  return /\b(no safe|no remaining|remaining intake|remaining pending intake|matching controls|unsupported|no editable|cannot safely continue|does not match the remaining)\b/.test(stopText);
 }
 
 function shouldWaitInsteadOfClickingTransientOpenKairoClose(
@@ -1487,6 +1493,24 @@ function selectorCandidatesForAction(
 ): string[] {
   const selector = elementSelectors.get(action.elementId);
   return selector ? [selector] : [];
+}
+
+function targetFieldForAction(
+  observation: { controls: Array<{ elementId: string; label?: string; visibleText?: string }>; elementSelectors: Map<string, string> },
+  action: Extract<BrowserExecutableAiWebAction, { type: "fill" | "select" }>,
+): string {
+  const control = observation.controls.find((candidate) => candidate.elementId === action.elementId);
+  const label = (control?.label ?? "").trim();
+  if (label) {
+    return label;
+  }
+
+  const visibleText = (control?.visibleText ?? "").trim();
+  if (visibleText) {
+    return visibleText;
+  }
+
+  return observation.elementSelectors.get(action.elementId) ?? action.field;
 }
 
 function rationaleForAction(action: AiWebAction): string | undefined {

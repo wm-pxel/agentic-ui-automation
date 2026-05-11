@@ -31,6 +31,13 @@ OpenMRS data entry is bounded-concurrent. Keep `OPENMRS_CONCURRENCY` and
 `--openmrs-concurrency` low for shared public demos so runs remain auditable and
 do not overload the demo environment.
 
+Destination demos may not expose every normalized intake field. Extra intake
+fields that are not available in the target UI are acceptable and should be
+recorded as `no_matching_destination_field` audit mappings, not target
+exceptions. If a wizard step only contains controls for unsupported optional
+data, continue to the next/save action when the observed controls make that
+safe.
+
 When OpenMRS selectors, profile field guidance, planner behavior, or navigation
 behavior change, update the current generic target coverage in
 `tests/targets/profiles.test.ts`, `tests/targets/aiWebTargetRunner.test.ts`,
