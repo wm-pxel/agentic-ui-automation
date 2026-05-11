@@ -1081,6 +1081,166 @@ describe("AiWebTargetRunner", () => {
     expect(page.actions).toEqual([["click", "#next-button"]]);
   });
 
+  it("continues the OpenMRS relationship step from the failed run message", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "9 similar patient(s) found Who is the patient related to? Review patient(s)",
+      bodyTextAfterClick: "Patient Details Taylor Morgan Patient ID 100HXG General Actions Show Contact Info",
+      elements: [
+        fakeElement("select", { id: "relationship-type" }, "Select Relationship Type"),
+        fakeElement("input", { id: "person-name", placeholder: "Person Name", value: "" }),
+        fakeElement("button", { id: "next-button", class: "right", "aria-label": ">" }, ""),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs-failed-run-relationship-step-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "Observed page is on a relationship step with only Person Name and relationship selector, but there is no visible control to directly enter the current patient or continue patient registration safely from this state.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the saved patient dashboard.",
+            rationale: "Taylor Morgan appears on the patient dashboard.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: {
+        ...record(),
+        firstName: "Taylor",
+        lastName: "Morgan",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+    expect(page.actions).toEqual([["click", "#next-button"]]);
+  });
+
+  it("does not continue a generic required-control stop just because a forward button is visible", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Insurance Information Forward",
+      elements: [
+        fakeElement("input", { id: "insurance-id", value: "" }),
+        fakeElement("button", { id: "next-button", class: "right", "aria-label": ">" }, ""),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-generic-no-visible-control-stop-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message: "There is no visible control for the required insurance information, so I cannot safely continue.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 1,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({
+      status: "exception",
+      exception: expect.objectContaining({
+        code: "ui_state_unexpected",
+      }),
+    });
+    expect(page.actions).toEqual([]);
+  });
+
+  it("selects a missing birthdate day when the target exposes day as a dropdown", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "New Patient First Name Taylor Last Name Morgan Date of Birth Day Month Year Gender Create Patient",
+      bodyTextAfterClick: "Patient Record Taylor Morgan DOB Apr 18, 1990 Gender Female",
+      elements: [
+        fakeElement("label", { for: "day" }, "Day"),
+        fakeElement("select", { id: "day", value: "" }, "Day"),
+        fakeElement("label", { for: "month" }, "Month"),
+        fakeElement("select", { id: "month", value: "04" }, "April"),
+        fakeElement("label", { for: "year" }, "Year"),
+        fakeElement("select", { id: "year", value: "1990" }, "1990"),
+        fakeElement("button", { id: "create-patient" }, "Create Patient"),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openkairo-birthdate-day-select-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "click",
+            elementId: "control-4",
+            purpose: "create patient",
+            rationale: "The visible fields are complete and the Create Patient button submits the dialog.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "click",
+            elementId: "control-4",
+            purpose: "create patient",
+            rationale: "The missing birthdate day has been selected and the Create Patient button submits the dialog.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the saved patient record.",
+            rationale: "Taylor Morgan appears on the saved patient record.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 3,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openkairo", displayName: "OpenKairo" },
+      record: {
+        ...record(),
+        firstName: "Taylor",
+        lastName: "Morgan",
+        dateOfBirth: "1990-04-18",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
+    expect(page.actions).toEqual([
+      ["select", "#day", "label", "18"],
+      ["click", "#create-patient"],
+    ]);
+  });
+
   it("fills missing birthdate controls before continuing an OpenMRS birthdate step", async () => {
     const page = new FakeRunnerPage({
       bodyText: "What's the patient's birth date? You need to inform a valid date Day Month Year",

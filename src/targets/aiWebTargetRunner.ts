@@ -589,9 +589,7 @@ function continueWizardInsteadOfStoppingAction(
     return undefined;
   }
 
-  const forwardControl = observation.controls.find(
-    (control) => control.role === "button" && controlTextMatches(control, /\b(forward next|next button|continue|proceed|advance)\b/),
-  );
+  const forwardControl = observation.controls.find((control) => control.role === "button" && isForwardNavigationControl(control));
   if (forwardControl) {
     return {
       type: "click",
@@ -620,7 +618,14 @@ function continueWizardInsteadOfStoppingAction(
 }
 
 function unsupportedDestinationFieldsStopMessage(stopText: string): boolean {
-  return /\b(no safe|no observed controls.*match|no remaining|remaining intake|remaining pending intake|matching controls|unsupported|no editable|cannot safely continue|does not match the remaining)\b/.test(stopText);
+  const unsupportedRemainingFieldMessage =
+    /\b(no observed controls.*match|no remaining|remaining intake|remaining pending intake|matching controls|unsupported|no editable|does not match the remaining)\b/.test(
+      stopText,
+    );
+  const optionalRelationshipStepMessage =
+    /\b(relationship|related|relatives?)\b/.test(stopText) &&
+    /\b(no visible control|only person name|relationship selector|continue patient registration safely)\b/.test(stopText);
+  return unsupportedRemainingFieldMessage || optionalRelationshipStepMessage;
 }
 
 function shouldWaitInsteadOfClickingTransientOpenKairoClose(
@@ -717,7 +722,7 @@ function missingBirthdateAction(
   const dayControl = observation.controls.find((control) => birthdateControlMatches(control, /\bday\b/));
   if (dayControl && dayControl.value?.trim() !== birthdate.day) {
     return {
-      type: "fill",
+      type: selectLikeControl(dayControl) ? "select" : "fill",
       elementId: dayControl.elementId,
       field: "dateOfBirth",
       value: birthdate.day,
@@ -728,7 +733,7 @@ function missingBirthdateAction(
   const monthControl = observation.controls.find((control) => birthdateControlMatches(control, /\bmonth\b/));
   if (monthControl && !birthdateMonthMatches(monthControl.value ?? "", birthdate.monthLabel)) {
     return {
-      type: monthControl.tag === "select" || monthControl.role === "combobox" ? "select" : "fill",
+      type: selectLikeControl(monthControl) ? "select" : "fill",
       elementId: monthControl.elementId,
       field: "dateOfBirth",
       value: birthdate.monthLabel,
@@ -739,7 +744,7 @@ function missingBirthdateAction(
   const yearControl = observation.controls.find((control) => birthdateControlMatches(control, /\byear\b/));
   if (yearControl && yearControl.value?.trim() !== birthdate.year) {
     return {
-      type: "fill",
+      type: selectLikeControl(yearControl) ? "select" : "fill",
       elementId: yearControl.elementId,
       field: "dateOfBirth",
       value: birthdate.year,
@@ -757,12 +762,21 @@ function birthdateControlMatches(control: { label?: string; visibleText?: string
   return pattern.test(normalizeForVerification(`${control.label ?? ""} ${control.visibleText ?? ""}`));
 }
 
+function selectLikeControl(control: { tag?: string; role?: string }): boolean {
+  return control.tag === "select" || control.role === "combobox";
+}
+
 function birthdateMonthMatches(value: string, monthLabel: string): boolean {
   const normalizedValue = normalizeForVerification(value);
   if (!normalizedValue || normalizedValue === "select") {
     return false;
   }
-  return normalizedValue === normalizeForVerification(monthLabel) || normalizedValue === String(MONTH_LABELS.indexOf(monthLabel) + 1);
+  const monthNumber = MONTH_LABELS.indexOf(monthLabel) + 1;
+  return (
+    normalizedValue === normalizeForVerification(monthLabel) ||
+    normalizedValue === String(monthNumber) ||
+    normalizedValue === String(monthNumber).padStart(2, "0")
+  );
 }
 
 function birthdateParts(value: string): { day: string; monthLabel: string; year: string } | undefined {
@@ -1333,13 +1347,11 @@ function forwardNavigationActionForIntent(
   }
 
   const selectedControl = controls.find((control) => control.elementId === action.elementId);
-  if (controlTextMatches(selectedControl, /\b(forward next|next button|continue|proceed|advance)\b/)) {
+  if (isForwardNavigationControl(selectedControl)) {
     return undefined;
   }
 
-  const forwardControl = controls.find(
-    (control) => control.role === "button" && controlTextMatches(control, /\b(forward next|next button|continue|proceed|advance)\b/),
-  );
+  const forwardControl = controls.find((control) => control.role === "button" && isForwardNavigationControl(control));
   if (!forwardControl) {
     return undefined;
   }
@@ -1348,6 +1360,13 @@ function forwardNavigationActionForIntent(
     ...action,
     elementId: forwardControl.elementId,
   };
+}
+
+function isForwardNavigationControl(control: { label?: string; visibleText?: string } | undefined): boolean {
+  return (
+    controlTextMatches(control, /\b(forward next|next button|continue|proceed|advance)\b/) ||
+    controlTextMatches(control, /(?:^|\s)(>|›|→)(?:\s|$)/)
+  );
 }
 
 function controlTextMatches(

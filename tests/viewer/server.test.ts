@@ -116,13 +116,59 @@ describe("createViewerServer", () => {
     try {
       const script = await fetchText(`${viewer.url()}/assets/app.js`);
 
-      expect(script).toContain('button.innerHTML = \'<strong></strong><span class="run-id"></span><span class="run-meta"></span>\';');
+      expect(script).toContain(
+        'button.innerHTML = \'<span class="run-title"><strong></strong><span class="run-spinner" aria-hidden="true"></span></span><span class="run-id"></span><span class="run-meta"></span>\';',
+      );
       expect(script).toContain('selectedRunId = selectedRunIdFromPath() || runs[0]?.runId || "";');
       expect(script).toContain("button.querySelector(\"strong\").textContent = formatRunTitle(run);");
       expect(script).toContain("button.querySelector(\".run-id\").textContent = run.runId;");
-      expect(script).toContain('window.history.pushState({}, "", runUrl(run.runId));');
+      expect(script).toContain('window.history.pushState({}, "", runUrl(run.runId, selectedKind));');
       expect(script).toContain('window.addEventListener("popstate", async () => {');
       expect(script).toContain('return [run.targetLabel, formatRunTimestamp(run)].filter(Boolean).join(" - ") || run.displayName || formatRunId(run.runId);');
+    } finally {
+      await viewer.close();
+    }
+  });
+
+  it("serves client code that refreshes from the app title and preserves the selected summary kind in the URL", async () => {
+    const runsDir = await makeRunsDir();
+    const viewer = createViewerServer({ runsDir });
+    await viewer.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      const shell = await fetchText(`${viewer.url()}/`);
+      const script = await fetchText(`${viewer.url()}/assets/app.js`);
+
+      expect(shell).toContain('<a class="app-title" href="/runs">Agentic UI Run Viewer</a>');
+      expect(script).toContain("selectedKind = selectedKindFromUrl() || selectedKind;");
+      expect(script).toContain("const requestedKind = selectedKind;");
+      expect(script).toContain('window.history.replaceState({}, "", runUrl(run.runId, selectedKind));');
+      expect(script).toContain('window.history.pushState({}, "", runUrl(run.runId, selectedKind));');
+      expect(script).toContain('window.history.pushState({}, "", runUrl(selectedRunId, selectedKind));');
+      expect(script).toContain('params.set("view", kind);');
+    } finally {
+      await viewer.close();
+    }
+  });
+
+  it("serves client code and styles that show running runs and refresh until they complete", async () => {
+    const runsDir = await makeRunsDir();
+    const viewer = createViewerServer({ runsDir });
+    await viewer.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      const script = await fetchText(`${viewer.url()}/assets/app.js`);
+      const css = await fetchText(`${viewer.url()}/assets/styles.css`);
+
+      expect(script).toContain("const RUN_REFRESH_INTERVAL_MS = 2000;");
+      expect(script).toContain("button.classList.toggle(\"running\", isRunRunning(run));");
+      expect(script).toContain("button.querySelector(\".run-spinner\").hidden = !isRunRunning(run);");
+      expect(script).toContain("function scheduleRunRefresh()");
+      expect(script).toContain("if (!runs.some(isRunRunning)) return;");
+      expect(script).toContain("refreshRuns().catch((error) => {");
+      expect(script).toContain("const wasSelectedRunRunning = previousSelectedRun ? isRunRunning(previousSelectedRun) : false;");
+      expect(script).toContain("await renderSelectedRun({ forceMarkdownReload: wasSelectedRunRunning && !isRunRunning(selectedRun) });");
+      expect(script).toContain('container.textContent = "Run is in progress. Summary markdown will appear when the run completes.";');
+      expect(css).toContain(".run-spinner");
+      expect(css).toContain("@keyframes run-spinner-spin");
     } finally {
       await viewer.close();
     }

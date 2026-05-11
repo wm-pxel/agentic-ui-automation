@@ -349,7 +349,7 @@ const INDEX_HTML = `<!doctype html>
   <div id="app" class="app-shell">
     <aside class="run-pane">
       <header>
-        <h1>Agentic UI Run Viewer</h1>
+        <h1><a class="app-title" href="/runs">Agentic UI Run Viewer</a></h1>
       </header>
       <div id="run-list" class="run-list" aria-label="Runs"></div>
     </aside>
@@ -362,21 +362,34 @@ const INDEX_HTML = `<!doctype html>
 </html>`;
 
 const APP_JS = `
+const RUN_REFRESH_INTERVAL_MS = 2000;
 const runList = document.querySelector("#run-list");
 const runDetail = document.querySelector("#run-detail");
 let runs = [];
 let selectedRunId = "";
 let selectedKind = "executive-summary";
+let runRefreshTimer;
 
 async function loadRuns() {
+  await refreshRuns({ initial: true });
+}
+
+async function refreshRuns(options = {}) {
+  const previousSelectedRun = runs.find((candidate) => candidate.runId === selectedRunId);
   const response = await fetch("/api/runs");
   if (!response.ok) throw new Error("Unable to load runs.");
   const payload = await response.json();
   runs = payload.runs || [];
-  selectedRunId = selectedRunIdFromPath() || runs[0]?.runId || "";
+  if (options.initial) {
+    selectedRunId = selectedRunIdFromPath() || runs[0]?.runId || "";
+    selectedKind = selectedKindFromUrl() || selectedKind;
+  }
   if (!runs.some((run) => run.runId === selectedRunId)) selectedRunId = runs[0]?.runId || "";
   renderRuns();
-  await renderSelectedRun();
+  const selectedRun = runs.find((candidate) => candidate.runId === selectedRunId);
+  const wasSelectedRunRunning = previousSelectedRun ? isRunRunning(previousSelectedRun) : false;
+  await renderSelectedRun({ forceMarkdownReload: wasSelectedRunRunning && !isRunRunning(selectedRun) });
+  scheduleRunRefresh();
 }
 
 function renderRuns() {
@@ -384,14 +397,16 @@ function renderRuns() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = run.runId === selectedRunId ? "run-item selected" : "run-item";
-    button.innerHTML = '<strong></strong><span class="run-id"></span><span class="run-meta"></span>';
+    button.classList.toggle("running", isRunRunning(run));
+    button.innerHTML = '<span class="run-title"><strong></strong><span class="run-spinner" aria-hidden="true"></span></span><span class="run-id"></span><span class="run-meta"></span>';
     button.querySelector("strong").textContent = formatRunTitle(run);
+    button.querySelector(".run-spinner").hidden = !isRunRunning(run);
     button.querySelector(".run-id").textContent = run.runId;
-    button.querySelector(".run-meta").textContent = [run.status, formatCount(run.totalRecords)].filter(Boolean).join(" · ");
+    button.querySelector(".run-meta").textContent = [formatStatus(run.status), formatCount(run.totalRecords)].filter(Boolean).join(" · ");
     button.addEventListener("click", async () => {
       selectedRunId = run.runId;
       selectedKind = run.hasExecutiveSummary ? "executive-summary" : "summary";
-      window.history.pushState({}, "", runUrl(run.runId));
+      window.history.pushState({}, "", runUrl(run.runId, selectedKind));
       renderRuns();
       await renderSelectedRun();
     });
@@ -399,7 +414,7 @@ function renderRuns() {
   }));
 }
 
-async function renderSelectedRun() {
+async function renderSelectedRun(_options = {}) {
   const run = runs.find((candidate) => candidate.runId === selectedRunId);
   if (!run) {
     runDetail.className = "empty-state";
@@ -407,15 +422,19 @@ async function renderSelectedRun() {
     return;
   }
 
+  const requestedKind = selectedKind;
   if (selectedKind === "executive-summary" && !run.hasExecutiveSummary) selectedKind = "summary";
   if (selectedKind === "summary" && !run.hasSummary) selectedKind = "executive-summary";
+  if (requestedKind !== selectedKind) {
+    window.history.replaceState({}, "", runUrl(run.runId, selectedKind));
+  }
 
   runDetail.className = "run-detail";
   runDetail.replaceChildren();
   const header = document.createElement("header");
   header.className = "detail-header";
   header.innerHTML = "<div><p></p><h2></h2></div><dl></dl>";
-  header.querySelector("p").textContent = [run.status || "unknown status", run.runId].join(" · ");
+  header.querySelector("p").textContent = [formatStatus(run.status) || "Unknown status", run.runId].join(" · ");
   header.querySelector("h2").textContent = formatRunTitle(run);
   header.querySelector("dl").append(
     metric("Records", run.totalRecords),
@@ -449,6 +468,10 @@ async function renderSelectedRun() {
 
 async function loadMarkdown(run, container) {
   if (!run.hasExecutiveSummary && !run.hasSummary) {
+    if (isRunRunning(run)) {
+      container.textContent = "Run is in progress. Summary markdown will appear when the run completes.";
+      return;
+    }
     container.textContent = "No summary markdown is available for this run.";
     return;
   }
@@ -469,9 +492,28 @@ function tab(kind, label, enabled) {
   button.textContent = label;
   button.addEventListener("click", async () => {
     selectedKind = kind;
+    window.history.pushState({}, "", runUrl(selectedRunId, selectedKind));
     await renderSelectedRun();
   });
   return button;
+}
+
+function scheduleRunRefresh() {
+  if (runRefreshTimer) {
+    clearTimeout(runRefreshTimer);
+    runRefreshTimer = undefined;
+  }
+  if (!runs.some(isRunRunning)) return;
+  runRefreshTimer = setTimeout(() => {
+    refreshRuns().catch((error) => {
+      runDetail.className = "empty-state";
+      runDetail.textContent = error.message;
+    });
+  }, RUN_REFRESH_INTERVAL_MS);
+}
+
+function isRunRunning(run) {
+  return run?.status === "running" || run?.status === "created";
 }
 
 function metric(label, value) {
@@ -484,6 +526,11 @@ function metric(label, value) {
 
 function formatCount(value) {
   return typeof value === "number" ? value + " records" : "";
+}
+
+function formatStatus(status) {
+  if (!status) return "";
+  return String(status).replace(/_/g, " ").replace(/^./, (character) => character.toUpperCase());
 }
 
 function formatRunTitle(run) {
@@ -517,12 +564,23 @@ function selectedRunIdFromPath() {
   }
 }
 
-function runUrl(runId) {
-  return "/runs/" + encodeURIComponent(runId);
+function selectedKindFromUrl() {
+  const kind = new URLSearchParams(window.location.search).get("view");
+  return kind === "summary" || kind === "executive-summary" ? kind : "";
+}
+
+function runUrl(runId, kind) {
+  const params = new URLSearchParams();
+  if (kind === "summary" || kind === "executive-summary") {
+    params.set("view", kind);
+  }
+  const query = params.toString();
+  return "/runs/" + encodeURIComponent(runId) + (query ? "?" + query : "");
 }
 
 window.addEventListener("popstate", async () => {
   selectedRunId = selectedRunIdFromPath() || runs[0]?.runId || "";
+  selectedKind = selectedKindFromUrl() || selectedKind;
   if (!runs.some((run) => run.runId === selectedRunId)) selectedRunId = runs[0]?.runId || "";
   renderRuns();
   await renderSelectedRun();
@@ -566,6 +624,13 @@ h1 {
   font-size: 20px;
   line-height: 1.2;
 }
+.app-title {
+  color: inherit;
+  text-decoration: none;
+}
+.app-title:hover {
+  text-decoration: underline;
+}
 .run-list {
   display: grid;
   gap: 1px;
@@ -589,6 +654,23 @@ h1 {
   display: block;
   overflow-wrap: anywhere;
 }
+.run-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.run-spinner {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border: 2px solid #a8cdeb;
+  border-top-color: #27606f;
+  border-radius: 50%;
+  animation: run-spinner-spin 0.8s linear infinite;
+}
+.run-spinner[hidden] {
+  display: none;
+}
 .run-item strong {
   font-size: 14px;
 }
@@ -600,6 +682,15 @@ h1 {
 .run-item .run-id {
   color: #3f4a55;
   font-family: "SFMono-Regular", Consolas, monospace;
+}
+.run-item.running .run-meta {
+  color: #27606f;
+  font-weight: 700;
+}
+@keyframes run-spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .detail-pane {
   min-width: 0;
