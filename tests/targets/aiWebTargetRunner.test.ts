@@ -118,6 +118,41 @@ describe("AiWebTargetRunner", () => {
     ]);
   });
 
+  it("retries an aborted initial navigation before planning actions", async () => {
+    const page = new FakeRunnerPage({
+      gotoErrors: [new Error("page.goto: net::ERR_ABORTED at https://example.test/emr")],
+      bodyText: "Patient Details Ava Nguyen saved",
+      title: "Patient Details",
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-goto-retry-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen appears after navigation retry.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 1,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
+    expect(page.gotoUrls).toEqual(["https://example.test/emr", "https://example.test/emr"]);
+    expect(page.actions).toEqual([["wait", 1000]]);
+  });
+
   it("passes recent action history to the planner so it can avoid loops", async () => {
     const page = new FakeRunnerPage();
     const browser = new FakeRunnerBrowser(page);
@@ -995,6 +1030,135 @@ describe("AiWebTargetRunner", () => {
     );
   });
 
+  it("continues an OpenMRS relationship step when pending fields are unsupported", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "9 similar patient(s) found Who is the patient related to? Review patient(s)",
+      bodyTextAfterClick: "Patient Details Taylor Morgan Patient ID 100HXG General Actions Show Contact Info",
+      elements: [
+        fakeElement("select", { id: "relationship-type" }, "Select Relationship Type"),
+        fakeElement("input", { id: "person-name", value: "" }),
+        fakeElement("button", { id: "next-button", "aria-label": "Forward Next" }, ""),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs-relationship-unsupported-fields-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "The current screen shows a patient relationship step, and no observed controls safely match the pending registration fields (email, insurance, reason for visit, preferred contact, notes).",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the saved patient dashboard.",
+            rationale: "Taylor Morgan appears on the patient dashboard.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: {
+        ...record(),
+        firstName: "Taylor",
+        lastName: "Morgan",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+    expect(page.actions).toEqual([["click", "#next-button"]]);
+  });
+
+  it("fills missing birthdate controls before continuing an OpenMRS birthdate step", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "What's the patient's birth date? You need to inform a valid date Day Month Year",
+      bodyTextAfterClick: "Patient Details Marcus Lee Patient ID 100HXG General Actions Show Contact Info",
+      elements: [
+        fakeElement("label", { for: "birthdateDay-field" }, "Day (required)"),
+        fakeElement("input", { id: "birthdateDay-field", value: "2" }),
+        fakeElement("label", { for: "birthdateMonth-field" }, "Month (required)"),
+        fakeElement("select", { id: "birthdateMonth-field", value: "" }, "Select"),
+        fakeElement("label", { for: "birthdateYear-field" }, "Year (required)"),
+        fakeElement("input", { id: "birthdateYear-field", value: "" }),
+        fakeElement("button", { id: "next-button", "aria-label": "Forward Next" }, ""),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs-birthdate-guard-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "Birthdate step is still shown but the date of birth appears already entered; advancing further risks repeating a non-progress action without new observed controls for pending fields.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "Birthdate step is still shown but the date of birth appears already entered; advancing further risks repeating a non-progress action without new observed controls for pending fields.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "click",
+            elementId: "control-4",
+            purpose: "continue birthdate step",
+            rationale: "The birthdate controls are complete.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the saved patient dashboard.",
+            rationale: "Marcus Lee appears on the patient dashboard.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 4,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: {
+        ...record(),
+        firstName: "Marcus",
+        lastName: "Lee",
+        dateOfBirth: "1979-11-02",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+    expect(page.actions).toEqual([
+      ["select", "#birthdateMonth-field", "label", "November"],
+      ["fill", "#birthdateYear-field", "1979"],
+      ["click", "#next-button"],
+    ]);
+  });
+
   it("creates a patient instead of stopping when only unsupported fields remain in the new-patient dialog", async () => {
     const page = new FakeRunnerPage({
       bodyText:
@@ -1179,7 +1343,7 @@ describe("AiWebTargetRunner", () => {
       title: "Patient Details",
       elements: [
         fakeElement("label", { for: "username" }, "Username"),
-        fakeElement("input", { id: "username", value: "" }),
+        fakeElement("input", { id: "username", value: "admin" }),
         fakeElement("button", { class: "login" }, "Login"),
       ],
     });
@@ -1221,6 +1385,85 @@ describe("AiWebTargetRunner", () => {
       expect.objectContaining({ actionType: "ai-click", result: "succeeded" }),
       expect.objectContaining({ actionType: "ai-verify", result: "succeeded" }),
     ]);
+  });
+
+  it("fills missing credentials before executing a planned login click", async () => {
+    const page = new FakeRunnerPage({
+      elements: [
+        fakeElement("label", { for: "username" }, "Username"),
+        fakeElement("input", { id: "username", value: "" }),
+        fakeElement("label", { for: "password" }, "Password"),
+        fakeElement("input", { id: "password", value: "", type: "password" }),
+        fakeElement("button", { class: "login" }, "Log In"),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-login-guard-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "click",
+            elementId: "control-3",
+            purpose: "log in",
+            rationale: "Log in is the next progress action.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "click",
+            elementId: "control-3",
+            purpose: "log in",
+            rationale: "Log in is the next progress action.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "click",
+            elementId: "control-3",
+            purpose: "log in",
+            rationale: "Credentials are now entered.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen is visible after login.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 4,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
+    expect(page.actions).toEqual([
+      ["fill", "#username", "admin"],
+      ["fill", "#password", "pass"],
+      ["click", "button.login"],
+    ]);
+    expect(audit.getReportDetails().fieldMappings).not.toContainEqual(
+      expect.objectContaining({
+        sourceField: "username",
+      }),
+    );
+    expect(audit.getReportDetails().fieldMappings).not.toContainEqual(
+      expect.objectContaining({
+        sourceField: "password",
+      }),
+    );
   });
 
   it("rejects verification on an unsaved patient form even when the patient name is visible", async () => {
@@ -1560,6 +1803,47 @@ describe("AiWebTargetRunner", () => {
     );
   });
 
+  it("succeeds when the AI stop identifies a saved patient page despite partial visible name text", async () => {
+    const page = new FakeRunnerPage({
+      bodyText:
+        "Patient Record MRN-MP1NC2CF New Encounter +13125550198 Nguyen Run-20260511201845 Age 36 Gender Female DOB 1990",
+      title: "OpenKairo",
+      elements: [],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-stop-partial-saved-patient-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "The visible page is already a saved patient detail page for Ava Nguyen, and no safe control is available to complete the remaining intake fields from this state.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 1,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openkairo", displayName: "OpenKairo" },
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({
+        actionType: "ai-verify",
+        result: "succeeded",
+      }),
+    ]);
+  });
+
   it("rejects verification when the observed page does not show the synthetic patient", async () => {
     const page = new FakeRunnerPage({ bodyText: "OpenKairo dashboard Patient Search" });
     const browser = new FakeRunnerBrowser(page);
@@ -1815,6 +2099,7 @@ class FakeRunnerPage {
       bodyTextAfterClick?: string;
       promptResults?: unknown[];
       failSelectOptions?: boolean;
+      gotoErrors?: Error[];
     } = {},
   ) {
     this.document = new FakeDocument(
@@ -1848,9 +2133,17 @@ class FakeRunnerPage {
               : "First Name Save"))
           : "",
       fill: async (value: string) => {
+        const element = this.document.querySelectorAll(selector)[0];
+        if (element) {
+          element.value = value;
+        }
         this.actions.push(["fill", selector, value]);
       },
       selectOption: async (option: { label?: string; value?: string }) => {
+        const element = this.document.querySelectorAll(selector)[0];
+        if (element) {
+          element.value = option.label ?? option.value ?? "";
+        }
         this.actions.push(["select", selector, option.label ? "label" : "value", option.label ?? option.value]);
         if (this.options.failSelectOptions) {
           throw new Error(`selectOption unavailable: ${selector}`);
@@ -1864,6 +2157,10 @@ class FakeRunnerPage {
 
   async goto(url: string, _options: { waitUntil: "domcontentloaded" }): Promise<void> {
     this.gotoUrls.push(url);
+    const error = this.options.gotoErrors?.shift();
+    if (error) {
+      throw error;
+    }
   }
 
   async screenshot(_options: { fullPage: boolean }): Promise<Buffer> {

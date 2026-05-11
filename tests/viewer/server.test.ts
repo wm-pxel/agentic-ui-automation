@@ -36,6 +36,9 @@ describe("createViewerServer", () => {
       const shell = await fetchText(`${baseUrl}/`);
       expect(shell).toContain("Agentic UI Run Viewer");
 
+      const runShell = await fetchText(`${baseUrl}/runs/${encodeURIComponent(runId)}`);
+      expect(runShell).toContain("Agentic UI Run Viewer");
+
       const runs = (await fetchJson(`${baseUrl}/api/runs`)) as { runs: Array<{ runId: string; totalRecords: number }> };
       expect(runs.runs).toEqual([expect.objectContaining({ runId, totalRecords: 1 })]);
 
@@ -114,8 +117,11 @@ describe("createViewerServer", () => {
       const script = await fetchText(`${viewer.url()}/assets/app.js`);
 
       expect(script).toContain('button.innerHTML = \'<strong></strong><span class="run-id"></span><span class="run-meta"></span>\';');
+      expect(script).toContain('selectedRunId = selectedRunIdFromPath() || runs[0]?.runId || "";');
       expect(script).toContain("button.querySelector(\"strong\").textContent = formatRunTitle(run);");
       expect(script).toContain("button.querySelector(\".run-id\").textContent = run.runId;");
+      expect(script).toContain('window.history.pushState({}, "", runUrl(run.runId));');
+      expect(script).toContain('window.addEventListener("popstate", async () => {');
       expect(script).toContain('return [run.targetLabel, formatRunTimestamp(run)].filter(Boolean).join(" - ") || run.displayName || formatRunId(run.runId);');
     } finally {
       await viewer.close();

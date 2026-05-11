@@ -107,7 +107,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     return;
   }
 
-  if (url.pathname === "/" || url.pathname === "/index.html") {
+  if (isViewerPageRoute(url.pathname)) {
     writeHtml(response, 200, INDEX_HTML);
     return;
   }
@@ -183,6 +183,10 @@ function decodePathSegments(pathname: string): string[] | null {
   } catch {
     return null;
   }
+}
+
+function isViewerPageRoute(pathname: string): boolean {
+  return pathname === "/" || pathname === "/index.html" || pathname === "/runs" || pathname === "/runs/" || pathname.startsWith("/runs/");
 }
 
 function matchMarkdownRoute(segments: string[]): { runId: string; kind: string } | null {
@@ -369,7 +373,8 @@ async function loadRuns() {
   if (!response.ok) throw new Error("Unable to load runs.");
   const payload = await response.json();
   runs = payload.runs || [];
-  selectedRunId = runs[0]?.runId || "";
+  selectedRunId = selectedRunIdFromPath() || runs[0]?.runId || "";
+  if (!runs.some((run) => run.runId === selectedRunId)) selectedRunId = runs[0]?.runId || "";
   renderRuns();
   await renderSelectedRun();
 }
@@ -386,6 +391,7 @@ function renderRuns() {
     button.addEventListener("click", async () => {
       selectedRunId = run.runId;
       selectedKind = run.hasExecutiveSummary ? "executive-summary" : "summary";
+      window.history.pushState({}, "", runUrl(run.runId));
       renderRuns();
       await renderSelectedRun();
     });
@@ -500,6 +506,27 @@ function formatRunTimestamp(run) {
 function formatRunId(runId) {
   return String(runId || "Untitled run").replace(/^run-/, "");
 }
+
+function selectedRunIdFromPath() {
+  const match = /^\\/runs\\/(.+)$/.exec(window.location.pathname);
+  if (!match) return "";
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return "";
+  }
+}
+
+function runUrl(runId) {
+  return "/runs/" + encodeURIComponent(runId);
+}
+
+window.addEventListener("popstate", async () => {
+  selectedRunId = selectedRunIdFromPath() || runs[0]?.runId || "";
+  if (!runs.some((run) => run.runId === selectedRunId)) selectedRunId = runs[0]?.runId || "";
+  renderRuns();
+  await renderSelectedRun();
+});
 
 loadRuns().catch((error) => {
   runDetail.className = "empty-state";

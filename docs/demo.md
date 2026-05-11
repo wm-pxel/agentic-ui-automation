@@ -65,7 +65,9 @@ destination web app selected by `--targets`.
 
 Run `npm run viewer` and compare the two runs. The viewer sidebar, each
 `executive-summary.md`, and each `summary.md` identify the destination target so
-the OpenMRS and OpenKairo runs are easy to distinguish.
+the OpenMRS and OpenKairo runs are easy to distinguish. Open
+`http://127.0.0.1:4173/runs/<run-id>` to refresh or share a direct local link to
+one specific run.
 
 ## Desktop Intake Export Demo
 

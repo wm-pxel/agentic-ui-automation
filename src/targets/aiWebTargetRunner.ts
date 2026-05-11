@@ -103,7 +103,7 @@ export class AiWebTargetRunner {
         env: {},
       });
       const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-      await page.goto(context.profile.baseUrl, { waitUntil: "domcontentloaded" });
+      await gotoWithTransientAbortRetry(page, context.profile.baseUrl);
 
       for (let stepCount = 1; stepCount <= this.maxSteps; stepCount += 1) {
         latestScreenshotPath = await captureScreenshot(context, page, `ai-step-${stepCount}`);
@@ -120,7 +120,8 @@ export class AiWebTargetRunner {
         const action = plan.action;
 
         if (action.type === "stop") {
-          if (!verificationFailureMessage(context.record, observation)) {
+          const verificationFailure = verificationFailureMessage(context.record, observation);
+          if (!verificationFailure || stopActionDescribesSavedPatient(action, context.record, observation)) {
             const verifyAction: AiWebAction = {
               type: "verify",
               criteria: savedPatientProofMessage(context.record),
@@ -148,6 +149,14 @@ export class AiWebTargetRunner {
             await executeBrowserAction(page, observation.elementSelectors, waitAction);
             await writeAiActionEvent(context, waitAction, latestScreenshotPath, "succeeded");
             rememberRecentAction(recentActions, waitAction, "succeeded");
+            continue;
+          }
+
+          const birthdateAction = missingBirthdateAction(context.record, observation);
+          if (birthdateAction) {
+            await executeBrowserAction(page, observation.elementSelectors, birthdateAction);
+            await writeAiActionEvent(context, birthdateAction, latestScreenshotPath, "succeeded");
+            rememberRecentAction(recentActions, birthdateAction, "succeeded");
             continue;
           }
 
@@ -247,6 +256,22 @@ export class AiWebTargetRunner {
           await executeBrowserAction(page, observation.elementSelectors, waitAction);
           await writeAiActionEvent(context, waitAction, latestScreenshotPath, "succeeded");
           rememberRecentAction(recentActions, waitAction, "succeeded");
+          continue;
+        }
+
+        const birthdateAction = missingBirthdateAction(context.record, observation);
+        if (birthdateAction && action.type !== "fill" && action.type !== "select") {
+          await executeBrowserAction(page, observation.elementSelectors, birthdateAction);
+          await writeAiActionEvent(context, birthdateAction, latestScreenshotPath, "succeeded");
+          rememberRecentAction(recentActions, birthdateAction, "succeeded");
+          continue;
+        }
+
+        const credentialFillAction = credentialFillBeforeLoginClick(action, observation, context.profile);
+        if (credentialFillAction) {
+          await executeBrowserAction(page, observation.elementSelectors, credentialFillAction);
+          await writeAiActionEvent(context, credentialFillAction, latestScreenshotPath, "succeeded");
+          rememberRecentAction(recentActions, credentialFillAction, "succeeded");
           continue;
         }
 
@@ -488,6 +513,25 @@ export class AiWebTargetRunner {
   }
 }
 
+async function gotoWithTransientAbortRetry(page: AiWebTargetPage, url: string): Promise<void> {
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    return;
+  } catch (error) {
+    if (!transientNavigationAbort(error)) {
+      throw error;
+    }
+  }
+
+  await page.waitForTimeout?.(1000);
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+}
+
+function transientNavigationAbort(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b(net::ERR_ABORTED|interrupted by another navigation)\b/i.test(message);
+}
+
 function shouldWaitInsteadOfStopping(
   action: Extract<AiWebAction, { type: "stop" }>,
   observation: { controls: readonly unknown[]; visibleText: string },
@@ -576,7 +620,7 @@ function continueWizardInsteadOfStoppingAction(
 }
 
 function unsupportedDestinationFieldsStopMessage(stopText: string): boolean {
-  return /\b(no safe|no remaining|remaining intake|remaining pending intake|matching controls|unsupported|no editable|cannot safely continue|does not match the remaining)\b/.test(stopText);
+  return /\b(no safe|no observed controls.*match|no remaining|remaining intake|remaining pending intake|matching controls|unsupported|no editable|cannot safely continue|does not match the remaining)\b/.test(stopText);
 }
 
 function shouldWaitInsteadOfClickingTransientOpenKairoClose(
@@ -594,6 +638,150 @@ function shouldWaitInsteadOfClickingTransientOpenKairoClose(
   const control = observation.controls.find((item) => item.elementId === action.elementId);
   const actionText = normalizeForVerification(`${control?.label ?? ""} ${control?.visibleText ?? ""} ${action.purpose} ${action.rationale}`);
   return openKairoNewPatientStillLoading(observation, profile) && /\b(close|dismiss|cancel|x)\b/.test(actionText);
+}
+
+function credentialFillBeforeLoginClick(
+  action: AiWebAction,
+  observation: {
+    controls: Array<{ elementId: string; label?: string; value?: string; visibleText?: string; role?: string }>;
+  },
+  profile: TargetProfile,
+): Extract<AiWebAction, { type: "fill" }> | undefined {
+  if (action.type !== "click") {
+    return undefined;
+  }
+
+  const intent = normalizeForVerification(`${action.purpose} ${action.rationale}`);
+  if (!/\b(log in|login|sign in|signin)\b/.test(intent)) {
+    return undefined;
+  }
+
+  const usernameControl = observation.controls.find((control) =>
+    credentialControlMatches(control, /\b(username|user name|email|e mail)\b/),
+  );
+  if (usernameControl && !usernameControl.value?.trim()) {
+    return {
+      type: "fill",
+      elementId: usernameControl.elementId,
+      field: "username",
+      value: profile.credentials.username,
+      rationale: "Fill the required login username before submitting login.",
+    };
+  }
+
+  const passwordControl = observation.controls.find((control) =>
+    credentialControlMatches(control, /\b(password|passcode)\b/),
+  );
+  if (passwordControl && !passwordControl.value?.trim()) {
+    return {
+      type: "fill",
+      elementId: passwordControl.elementId,
+      field: "password",
+      value: profile.credentials.password,
+      rationale: "Fill the required login password before submitting login.",
+    };
+  }
+
+  return undefined;
+}
+
+function credentialControlMatches(
+  control: { label?: string; visibleText?: string; role?: string },
+  pattern: RegExp,
+): boolean {
+  if (control.role && !/\b(textbox|combobox)\b/.test(control.role)) {
+    return false;
+  }
+  return pattern.test(normalizeForVerification(`${control.label ?? ""} ${control.visibleText ?? ""}`));
+}
+
+function missingBirthdateAction(
+  record: NormalizedIntakeRecord,
+  observation: {
+    visibleText: string;
+    controls: Array<{ elementId: string; tag?: string; label?: string; value?: string; visibleText?: string; role?: string }>;
+  },
+): Extract<AiWebAction, { type: "fill" | "select" }> | undefined {
+  const birthdate = birthdateParts(record.dateOfBirth);
+  if (!birthdate) {
+    return undefined;
+  }
+
+  const observationText = normalizeForVerification(
+    `${observation.visibleText} ${observation.controls.map((control) => `${control.label ?? ""} ${control.visibleText ?? ""}`).join(" ")}`,
+  );
+  if (!/\b(birth date|birthdate|date of birth)\b/.test(observationText)) {
+    return undefined;
+  }
+
+  const dayControl = observation.controls.find((control) => birthdateControlMatches(control, /\bday\b/));
+  if (dayControl && dayControl.value?.trim() !== birthdate.day) {
+    return {
+      type: "fill",
+      elementId: dayControl.elementId,
+      field: "dateOfBirth",
+      value: birthdate.day,
+      rationale: "Fill the missing birthdate day before leaving the birthdate step.",
+    };
+  }
+
+  const monthControl = observation.controls.find((control) => birthdateControlMatches(control, /\bmonth\b/));
+  if (monthControl && !birthdateMonthMatches(monthControl.value ?? "", birthdate.monthLabel)) {
+    return {
+      type: monthControl.tag === "select" || monthControl.role === "combobox" ? "select" : "fill",
+      elementId: monthControl.elementId,
+      field: "dateOfBirth",
+      value: birthdate.monthLabel,
+      rationale: "Fill the missing birthdate month before leaving the birthdate step.",
+    };
+  }
+
+  const yearControl = observation.controls.find((control) => birthdateControlMatches(control, /\byear\b/));
+  if (yearControl && yearControl.value?.trim() !== birthdate.year) {
+    return {
+      type: "fill",
+      elementId: yearControl.elementId,
+      field: "dateOfBirth",
+      value: birthdate.year,
+      rationale: "Fill the missing birthdate year before leaving the birthdate step.",
+    };
+  }
+
+  return undefined;
+}
+
+function birthdateControlMatches(control: { label?: string; visibleText?: string; role?: string }, pattern: RegExp): boolean {
+  if (control.role && !/\b(textbox|combobox)\b/.test(control.role)) {
+    return false;
+  }
+  return pattern.test(normalizeForVerification(`${control.label ?? ""} ${control.visibleText ?? ""}`));
+}
+
+function birthdateMonthMatches(value: string, monthLabel: string): boolean {
+  const normalizedValue = normalizeForVerification(value);
+  if (!normalizedValue || normalizedValue === "select") {
+    return false;
+  }
+  return normalizedValue === normalizeForVerification(monthLabel) || normalizedValue === String(MONTH_LABELS.indexOf(monthLabel) + 1);
+}
+
+function birthdateParts(value: string): { day: string; monthLabel: string; year: string } | undefined {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return undefined;
+  }
+
+  const monthIndex = Number(match[2]) - 1;
+  const monthLabel = MONTH_LABELS[monthIndex];
+  if (!monthLabel) {
+    return undefined;
+  }
+
+  return {
+    year: match[1] ?? "",
+    monthLabel,
+    day: String(Number(match[3])),
+  };
 }
 
 function shouldWaitInsteadOfStoppingTransientOpenKairoLoading(
@@ -1367,6 +1555,23 @@ function verificationFailureMessage(
   return undefined;
 }
 
+function stopActionDescribesSavedPatient(
+  action: Extract<AiWebAction, { type: "stop" }>,
+  record: NormalizedIntakeRecord,
+  observation: { currentUrl: string; title: string; visibleText: string; controls?: Array<{ label: string; value: string; visibleText: string }> },
+): boolean {
+  const message = normalizeForVerification(action.message);
+  if (!/\bsaved patient\b/.test(message) || !/\b(detail page|record page|dashboard|patient record)\b/.test(message)) {
+    return false;
+  }
+
+  if (unsavedPatientEntryFormVisible(observation) || !savedPatientStateVisible(observation)) {
+    return false;
+  }
+
+  return syntheticPatientBaseNameVisible(record, `${action.message} ${verificationEvidenceText(observation)}`);
+}
+
 function verificationEvidenceText(observation: {
   visibleText: string;
   controls?: Array<{ label: string; value: string; visibleText: string }>;
@@ -1404,6 +1609,16 @@ function verificationException(
 function syntheticPatientNameVisible(record: NormalizedIntakeRecord, visibleText: string): boolean {
   const normalizedText = normalizeForVerification(visibleText);
   const nameParts = [record.firstName, record.lastName].map(normalizeForVerification).filter(Boolean);
+  return nameParts.length > 0 && nameParts.every((part) => normalizedText.includes(part));
+}
+
+function syntheticPatientBaseNameVisible(record: NormalizedIntakeRecord, visibleText: string): boolean {
+  const normalizedText = normalizeForVerification(visibleText);
+  const baseLastName = record.lastName
+    .replace(/\s+run-\S+.*$/i, "")
+    .replace(/\s+\d{6,}.*$/, "")
+    .trim();
+  const nameParts = [record.firstName, baseLastName].map(normalizeForVerification).filter(Boolean);
   return nameParts.length > 0 && nameParts.every((part) => normalizedText.includes(part));
 }
 

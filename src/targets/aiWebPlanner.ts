@@ -23,6 +23,8 @@ const SYSTEM_INSTRUCTIONS = [
   "Use recent action history to avoid repeating the same non-progress action.",
   "Before clicking a login, submit, continue, or save control, fill or select visible required fields that are blank and relevant to the task.",
   "Do not fill or select fields that are already represented in completedFields unless the visible value is wrong.",
+  "Extra intake fields that are not available in the target UI are acceptable; do not stop solely because remaining intake fields have no observed destination controls.",
+  "If a wizard step only contains controls for unsupported optional data, continue to the next, save, submit, create, or verify action when the observed controls make that safe.",
   "Never plan deletion, admin setting changes, exports of unrelated records, or use of real patient data.",
   "If no observed action is safe or useful, return a stop action with a concise message.",
 ].join(" ");

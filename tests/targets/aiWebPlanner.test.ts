@@ -248,6 +248,12 @@ describe("OpenAiAiWebPlanner", () => {
     expect(call.instructions).toContain(
       "Before advancing, submitting, saving, or verifying, fill or select visible controls that match pending intake fields, even when destination labels differ from normalized field names.",
     );
+    expect(call.instructions).toContain(
+      "Extra intake fields that are not available in the target UI are acceptable; do not stop solely because remaining intake fields have no observed destination controls.",
+    );
+    expect(call.instructions).toContain(
+      "If a wizard step only contains controls for unsupported optional data, continue to the next, save, submit, create, or verify action when the observed controls make that safe.",
+    );
     expect(prompt).toMatchObject({
       targetProfile: {
         name: "openmrs",

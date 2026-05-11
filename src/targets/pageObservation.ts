@@ -99,7 +99,28 @@ export async function createObservationSnapshot({
         const value = buttonValue(element);
         const descriptor = controlDescriptor(element);
 
-        return firstNormalizedText([explicitLabel, wrappingLabel, ariaLabel, title, placeholder, text, value, descriptor]);
+        return firstNormalizedText([
+          explicitLabel,
+          wrappingLabel,
+          ariaLabel,
+          title,
+          semanticPlaceholderLabel(placeholder),
+          placeholder,
+          text,
+          value,
+          descriptor,
+        ]);
+      }
+
+      function semanticPlaceholderLabel(value: string | null): string {
+        const normalized = normalizedText(value ?? "").toLowerCase();
+        if (/^(jane|john)$/.test(normalized)) {
+          return "First Name";
+        }
+        if (/^(smith|doe)$/.test(normalized)) {
+          return "Last Name";
+        }
+        return "";
       }
 
       function labelForId(id: string): string {

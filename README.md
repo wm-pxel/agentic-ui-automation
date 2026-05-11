@@ -765,6 +765,15 @@ the viewer color-codes severity rows for faster triage. It also exposes raw
 links for `report.json`, `events.jsonl`, `input/normalized-records.json`,
 `exceptions/`, and `screenshots/` when those artifacts exist.
 
+Each run also has a direct local URL:
+
+```text
+http://127.0.0.1:4173/runs/<run-id>
+```
+
+Use that path when you want to refresh, bookmark, or share a link to one
+specific run on the same machine.
+
 The viewer is local-only and read-only. It does not run automation, edit
 records, delete patients, or modify audit artifacts.
 

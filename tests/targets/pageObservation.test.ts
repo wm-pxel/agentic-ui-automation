@@ -103,6 +103,28 @@ describe("createObservationSnapshot", () => {
     expect(observation.elementSelectors).toEqual(new Map([["control-1", 'label[for="outpatient"]']]));
   });
 
+  it("maps common example name placeholders to field labels", async () => {
+    const page = new FakeObservationPage({
+      url: "https://example.test/openkairo/new",
+      title: "New Patient",
+      text: "New Patient Create Patient",
+      elements: [
+        fakeElement("input", { placeholder: "Jane", value: "" }),
+        fakeElement("input", { placeholder: "Smith", value: "" }),
+      ],
+    });
+
+    const observation = await createObservationSnapshot({
+      page,
+      screenshotPath: "screenshots/demo/openkairo/name-placeholders.png",
+    });
+
+    expect(observation.controls).toEqual([
+      { elementId: "control-1", tag: "input", role: "textbox", label: "First Name", value: "", visibleText: "First Name" },
+      { elementId: "control-2", tag: "input", role: "textbox", label: "Last Name", value: "", visibleText: "Last Name" },
+    ]);
+  });
+
   it("observes controls with unusual attribute text without throwing", async () => {
     const page = new FakeObservationPage({
       url: "https://example.test/unusual",
