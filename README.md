@@ -27,7 +27,7 @@ Watcher-triggered handoff:
 set -a
 . ./.env
 set +a
-npm run dev:all -- --targets openmrs --intake-trigger watcher --confidence-threshold .99
+npm run dev:all -- --targets openmrs --intake-trigger watcher --confidence-threshold .97
 ```
 
 Operator confirmation for low-confidence fields:
@@ -36,7 +36,7 @@ Operator confirmation for low-confidence fields:
 set -a
 . ./.env
 set +a
-npm run dev:all -- --targets openmrs --intake-trigger watcher --confidence-threshold .99 --field-confirmation prompt-on-low-confidence
+npm run dev:all -- --targets openmrs --intake-trigger watcher --confidence-threshold .97 --field-confirmation prompt-on-low-confidence
 ```
 
 ### OpenKairo Target
@@ -47,7 +47,7 @@ Watcher-triggered handoff:
 set -a
 . ./.env
 set +a
-npm run dev:all -- --targets openkairo --intake-trigger watcher --confidence-threshold .99
+npm run dev:all -- --targets openkairo --intake-trigger watcher --confidence-threshold .97
 ```
 
 Operator confirmation for low-confidence fields:
@@ -56,7 +56,7 @@ Operator confirmation for low-confidence fields:
 set -a
 . ./.env
 set +a
-npm run dev:all -- --targets openkairo --intake-trigger watcher --confidence-threshold .99 --field-confirmation prompt-on-low-confidence
+npm run dev:all -- --targets openkairo --intake-trigger watcher --confidence-threshold .97 --field-confirmation prompt-on-low-confidence
 ```
 
 ### Both Targets Simultaneously
@@ -71,7 +71,7 @@ Watcher-triggered handoff:
 set -a
 . ./.env
 set +a
-npm run dev:all -- --targets openmrs,openkairo --intake-trigger watcher --confidence-threshold .99
+npm run dev:all -- --targets openmrs,openkairo --intake-trigger watcher --confidence-threshold .97
 ```
 
 Operator confirmation for low-confidence fields:
@@ -80,7 +80,7 @@ Operator confirmation for low-confidence fields:
 set -a
 . ./.env
 set +a
-npm run dev:all -- --targets openmrs,openkairo --intake-trigger watcher --confidence-threshold .99 --field-confirmation prompt-on-low-confidence
+npm run dev:all -- --targets openmrs,openkairo --intake-trigger watcher --confidence-threshold .97 --field-confirmation prompt-on-low-confidence
 ```
 
 Click `Export Selected`, or use the Computer Use prompt below, to create the
