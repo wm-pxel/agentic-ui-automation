@@ -223,13 +223,16 @@ OpenMRS target profile to:
 1. Open the configured OpenMRS environment.
 2. Observe the current page, visible text, URL, title, and available controls.
 3. Ask the schema-bound AI planner for one bounded browser action at a time.
-4. Execute only supported browser actions: fill, select, click, wait,
+4. Provide the planner a coverage list for every normalized intake field so it
+   can semantically match visible destination controls before advancing or
+   saving, even when destination labels differ from source field names.
+5. Execute only supported browser actions: fill, select, click, wait,
    screenshot, verify, or stop.
-5. Capture ordered `ai-step-*` observations, `ai-field-*` proof images for
+6. Capture ordered `ai-step-*` observations, `ai-field-*` proof images for
    completed fields, target evidence, events, and field mappings.
-6. Treat possible duplicates, unexpected UI state, and verification failures as
+7. Treat possible duplicates, unexpected UI state, and verification failures as
    auditable target exceptions for manual review.
-7. Mark the record successful only when the planner verifies the configured
+8. Mark the record successful only when the planner verifies the configured
    success criteria for the synthetic patient.
 
 For `data/demo/intake-records-normalized.json`, the expected clean OpenMRS

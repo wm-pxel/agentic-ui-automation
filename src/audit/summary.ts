@@ -342,7 +342,7 @@ function targetComparisonRows(
       sourceValue: source.value,
       confidence: mappingConfidenceCell(mapping),
       targetField: mapping.targetField,
-      aiMappedValue: mapping.normalizedValue,
+      aiMappedValue: aiMappedValue(mapping),
       finalInputValue: finalInputValue(mapping),
       action: mapping.action ?? "",
       status: [mapping.status, mappingIntervention(mapping)].filter(Boolean).join("; "),
@@ -371,6 +371,10 @@ function targetComparisonRows(
   }
 
   return rows;
+}
+
+function aiMappedValue(mapping: ReportFieldMapping): string {
+  return mapping.targetField.trim().length > 0 ? mapping.normalizedValue : "";
 }
 
 function sourceForMapping(
@@ -445,7 +449,13 @@ function normalizedComparisonText(value: string): string {
 }
 
 function finalInputValue(mapping: ReportFieldMapping): string {
-  if (mapping.status === "skipped") return "";
+  if (
+    mapping.status === "skipped" ||
+    mapping.status === "not_visible_yet" ||
+    mapping.status === "no_matching_destination_field"
+  ) {
+    return "";
+  }
   return mapping.finalValue ?? mapping.normalizedValue;
 }
 

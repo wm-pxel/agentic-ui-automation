@@ -237,10 +237,17 @@ describe("OpenAiAiWebPlanner", () => {
       stream: false,
     });
     const call = calls[0] as {
+      instructions: string;
       input: Array<{ content: Array<{ type: string; text: string }> }>;
       text: { format: { schema: { properties: Record<string, unknown> } } };
     };
     const prompt = JSON.parse(call.input[0]?.content[0]?.text ?? "{}") as Record<string, unknown>;
+    expect(call.instructions).toContain(
+      "For every visible destination control, semantically compare its label, role, visible text, name, and surrounding context against all pending intake fields.",
+    );
+    expect(call.instructions).toContain(
+      "Before advancing, submitting, saving, or verifying, fill or select visible controls that match pending intake fields, even when destination labels differ from normalized field names.",
+    );
     expect(prompt).toMatchObject({
       targetProfile: {
         name: "openmrs",
@@ -276,6 +283,22 @@ describe("OpenAiAiWebPlanner", () => {
       ],
       stepCount: 4,
     });
+    expect(prompt.intakeFieldCoverage).toEqual([
+      { field: "firstName", value: "Ava", status: "pending" },
+      { field: "lastName", value: "Nguyen", status: "mapped" },
+      { field: "dateOfBirth", value: "1987-03-14", status: "pending" },
+      { field: "sexOrGender", value: "female", status: "pending" },
+      { field: "phone", value: "+13125550198", status: "pending" },
+      { field: "email", value: "ava.nguyen@example.test", status: "pending" },
+      { field: "streetAddress", value: "1200 West Lake Street", status: "pending" },
+      { field: "city", value: "Chicago", status: "pending" },
+      { field: "state", value: "IL", status: "pending" },
+      { field: "zip", value: "60607", status: "pending" },
+      { field: "insurancePayer", value: "Aetna", status: "pending" },
+      { field: "insuranceMemberId", value: "AET123456", status: "pending" },
+      { field: "reasonForVisit", value: "Annual wellness visit", status: "pending" },
+      { field: "preferredContactMethod", value: "phone", status: "pending" },
+    ]);
     expect(call.text.format.schema.properties).toHaveProperty("action");
     expect(call.text.format.schema.properties).toHaveProperty("confidence");
   });

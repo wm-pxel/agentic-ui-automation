@@ -94,6 +94,23 @@ describe("AiWebTargetRunner", () => {
         fieldScreenshotPath: "screenshots/demo-001/openemr/0002-ai-field-firstName.png",
       }),
     );
+    expect(details.fieldMappings).toContainEqual(
+      expect.objectContaining({
+        recordId: "demo-001",
+        target: "openemr",
+        sourceField: "lastName",
+        targetField: "",
+        normalizedValue: "Nguyen",
+        status: "no_matching_destination_field",
+        skipReason: "No matching destination field was filled before verification.",
+      }),
+    );
+    expect(details.fieldMappings).not.toContainEqual(
+      expect.objectContaining({
+        sourceField: "firstName",
+        status: "no_matching_destination_field",
+      }),
+    );
     expect(await readEvents(audit)).toEqual([
       expect.objectContaining({ actionType: "ai-fill", result: "succeeded" }),
       expect.objectContaining({ actionType: "ai-click", result: "succeeded" }),
@@ -421,6 +438,52 @@ describe("AiWebTargetRunner", () => {
     ]);
   });
 
+  it("reopens OpenKairo New Patient when the dialog disappears after an interrupted form fill", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Patients Search by name, MRN, or phone New Patient",
+      bodyTextAfterClick: "Patient Record MRN-M0XPCLB0 New Encounter Ava Nguyen DOB Mar 14 1987 Gender Female",
+      elements: [fakeElement("button", { id: "new-patient" }, "New Patient")],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openkairo-reopen-dialog-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message: "The New Patient dialog is not currently visible in the observed controls.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient record.",
+            rationale: "Ava Nguyen is visible on the patient record page.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openkairo", displayName: "OpenKairo" },
+      record: record(),
+      audit,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(page.actions).toEqual([["click", "#new-patient"]]);
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({ actionType: "ai-click", result: "succeeded" }),
+      expect.objectContaining({ actionType: "ai-verify", result: "succeeded" }),
+    ]);
+  });
+
   it("prompts in the browser before low-confidence field entry and records operator confirmation", async () => {
     const page = new FakeRunnerPage({ promptResults: [{ type: "confirm" }] });
     const browser = new FakeRunnerBrowser(page);
@@ -467,6 +530,10 @@ describe("AiWebTargetRunner", () => {
 
     expect(result.status).toBe("succeeded");
     expect(page.actions).toContainEqual(["fill", "#first-name", "Ava"]);
+    expect(page.evaluationScripts[0]).toContain('document.createElement("div")');
+    expect(page.evaluationScripts[0]).toContain("findFieldConfirmationHost");
+    expect(page.evaluationScripts[0]).toContain("event.stopPropagation()");
+    expect(page.evaluationScripts[0]).not.toContain("showModal");
     expect(audit.getReportDetails().fieldMappings).toContainEqual(
       expect.objectContaining({
         sourceField: "firstName",

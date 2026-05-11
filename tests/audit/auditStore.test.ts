@@ -591,6 +591,13 @@ describe("FileAuditStore", () => {
                 evidence: "sex_at_birth: female",
               },
               {
+                sourceField: "lastName",
+                sourceLabel: "family_name",
+                value: "Nguyen",
+                confidence: 0.95,
+                evidence: "Name: Ava Nguyen",
+              },
+              {
                 sourceField: "state",
                 sourceLabel: "province",
                 value: "IL",
@@ -671,6 +678,17 @@ describe("FileAuditStore", () => {
             approvalSource: "operator_skipped",
             skipReason: "Operator skipped optional field.",
           },
+          {
+            recordId: "demo-001",
+            target: "openmrs",
+            sourceField: "lastName",
+            targetField: "",
+            normalizedValue: "Nguyen",
+            mappingConfidence: 0.88,
+            selectorCandidates: [],
+            status: "no_matching_destination_field",
+            skipReason: "No matching destination field was filled before verification.",
+          },
         ],
       },
     });
@@ -698,6 +716,8 @@ describe("FileAuditStore", () => {
     expect(summary).toContain("| province | IL | 0.96 | State | Illinois | Illinois | select | succeeded |  |");
     expect(summary).toContain("| phone | 3125550198 | 0.62; user edited | Phone Number | +13125550198 |  | fill | succeeded; low confidence: 62% below threshold 80%; operator_edited; proposed +13125550198; final <empty>; AI rationale The visible label could refer to another contact field. |  |");
     expect(summary).toContain("| streetAddress |  | 0.98; user skipped | Address Line 1 | 1200 West Lake Street |  |  | skipped; operator_skipped; Operator skipped optional field. |  |");
+    expect(summary).toContain("| family_name | Nguyen | 0.88 |  |  |  |  | no_matching_destination_field; No matching destination field was filled before verification. |  |");
+    expect(summary).not.toContain("| family_name | Nguyen | 0.88 |  | Nguyen |");
     expect(summary).toContain("| given_name | Ava |  |  |  |  |  | not mapped |  |");
     expect(summary).not.toContain("## AI Source Extraction");
     expect(summary).not.toContain("## Intake to OpenMRS Field Mapping");

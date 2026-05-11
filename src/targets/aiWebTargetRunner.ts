@@ -5,6 +5,7 @@ import type { NormalizedIntakeRecord, ValidationException } from "../domain/sche
 import type { AiWebPlanner, AiWebRecentAction } from "./aiWebPlanner.js";
 import type { AiWebAction, BrowserExecutableAiWebAction } from "./browserActions.js";
 import { executeBrowserAction } from "./browserActions.js";
+import { normalizedIntakeFieldEntries } from "./intakeFieldCoverage.js";
 import { createObservationSnapshot } from "./pageObservation.js";
 import type { TargetProfile } from "./profiles.js";
 
@@ -130,7 +131,14 @@ export class AiWebTargetRunner {
               observation,
               screenshotPath: latestScreenshotPath,
             });
-            await writeSuccessfulVerificationEvidence(context, verifyAction, latestScreenshotPath, latestFieldScreenshotPath);
+            await writeSuccessfulVerificationEvidence(
+              context,
+              verifyAction,
+              latestScreenshotPath,
+              latestFieldScreenshotPath,
+              completedFields,
+              skippedFields,
+            );
             return { status: "succeeded", targetRecordId: aiTargetRecordId(context) };
           }
 
@@ -139,6 +147,18 @@ export class AiWebTargetRunner {
             await executeBrowserAction(page, observation.elementSelectors, waitAction);
             await writeAiActionEvent(context, waitAction, latestScreenshotPath, "succeeded");
             rememberRecentAction(recentActions, waitAction, "succeeded");
+            continue;
+          }
+
+          const reopenAction = reopenOpenKairoNewPatientAction(action, observation, context.profile);
+          if (reopenAction) {
+            completedFields.length = 0;
+            skippedFields.length = 0;
+            recentActions.length = 0;
+            latestFieldScreenshotPath = undefined;
+            await executeBrowserAction(page, observation.elementSelectors, reopenAction);
+            await writeAiActionEvent(context, reopenAction, latestScreenshotPath, "succeeded");
+            rememberRecentAction(recentActions, reopenAction, "succeeded");
             continue;
           }
 
@@ -195,7 +215,14 @@ export class AiWebTargetRunner {
             observation,
             screenshotPath: latestScreenshotPath,
           });
-          await writeSuccessfulVerificationEvidence(context, action, latestScreenshotPath, latestFieldScreenshotPath);
+          await writeSuccessfulVerificationEvidence(
+            context,
+            action,
+            latestScreenshotPath,
+            latestFieldScreenshotPath,
+            completedFields,
+            skippedFields,
+          );
           return { status: "succeeded", targetRecordId: aiTargetRecordId(context) };
         }
 
@@ -468,6 +495,43 @@ function shouldWaitInsteadOfStoppingTransientOpenKairoLoading(
   );
 }
 
+function reopenOpenKairoNewPatientAction(
+  action: Extract<AiWebAction, { type: "stop" }>,
+  observation: {
+    controls: Array<{ elementId: string; label?: string; visibleText?: string; role?: string }>;
+    visibleText: string;
+  },
+  profile: TargetProfile,
+): Extract<AiWebAction, { type: "click" }> | undefined {
+  if (profile.name !== "openkairo" || action.code !== "ui_state_unexpected") {
+    return undefined;
+  }
+
+  const stopText = normalizeForVerification(action.message);
+  if (!/\bnew patient\b/.test(stopText) || !/\b(dialog|form).*\b(not|no)\b|\bnot currently visible\b/.test(stopText)) {
+    return undefined;
+  }
+
+  const pageText = normalizeForVerification(observation.visibleText);
+  if (!pageText.includes("patients") || !pageText.includes("new patient")) {
+    return undefined;
+  }
+
+  const control = observation.controls.find((candidate) =>
+    /\bnew patient\b/.test(normalizeForVerification(`${candidate.label ?? ""} ${candidate.visibleText ?? ""}`)),
+  );
+  if (!control) {
+    return undefined;
+  }
+
+  return {
+    type: "click",
+    elementId: control.elementId,
+    purpose: "reopen OpenKairo New Patient dialog",
+    rationale: "The New Patient dialog disappeared before the record was saved, but the Patients page still exposes New Patient.",
+  };
+}
+
 function openKairoNewPatientStillLoading(
   observation: {
     controls: Array<{ label?: string; visibleText?: string; role?: string }>;
@@ -567,7 +631,10 @@ async function promptForFieldMappingInBrowser(
 }
 
 async function cleanupFieldConfirmationPrompt(page: AiWebTargetPage): Promise<void> {
-  await page.evaluate(`document.querySelector("#agentic-field-confirmation")?.remove();`).catch(() => undefined);
+  await page.evaluate(`
+    var prompt = document.querySelector("#agentic-field-confirmation");
+    prompt?.remove();
+  `).catch(() => undefined);
 }
 
 function withFieldPromptTimeout<T>(prompt: Promise<T>): Promise<T> {
@@ -772,15 +839,27 @@ function fieldConfirmationPromptScript(input: FieldConfirmationPromptInput): str
 (function () {
   var input = JSON.parse(decodeURIComponent("${encoded}"));
   var existing = document.querySelector("#agentic-field-confirmation");
-  if (existing) existing.remove();
+  if (existing) {
+    existing.remove();
+  }
 
   return new Promise(function (resolve) {
     var overlay = document.createElement("div");
     overlay.id = "agentic-field-confirmation";
-    overlay.style.cssText = "position:fixed;inset:0;z-index:2147483647;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;color:#111827;";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:2147483647;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;color:#111827;pointer-events:auto;";
+    ["click", "mousedown", "mouseup", "pointerdown", "pointerup"].forEach(function (eventName) {
+      overlay.addEventListener(eventName, function (event) {
+        event.stopPropagation();
+      });
+    });
 
     var form = document.createElement("form");
-    form.style.cssText = "width:min(560px,calc(100vw - 32px));background:#fff;border-radius:8px;box-shadow:0 24px 80px rgba(0,0,0,.35);padding:24px;display:grid;gap:14px;";
+    form.style.cssText = "width:min(560px,calc(100vw - 32px));box-sizing:border-box;background:#fff;border-radius:8px;box-shadow:0 24px 80px rgba(0,0,0,.35);padding:24px;display:grid;gap:14px;";
+    ["click", "mousedown", "mouseup", "pointerdown", "pointerup"].forEach(function (eventName) {
+      form.addEventListener(eventName, function (event) {
+        event.stopPropagation();
+      });
+    });
 
     var title = document.createElement("h2");
     title.textContent = "Review Low-Confidence Field";
@@ -848,7 +927,10 @@ function fieldConfirmationPromptScript(input: FieldConfirmationPromptInput): str
       button.style.cssText = "border:1px solid #9ca3af;background:#fff;border-radius:6px;padding:9px 12px;font-size:14px;cursor:pointer;";
       if (primary) button.style.cssText += "background:#2563eb;border-color:#2563eb;color:#fff;";
       if (danger) button.style.cssText += "background:#b91c1c;border-color:#b91c1c;color:#fff;";
-      button.addEventListener("click", onClick);
+      button.addEventListener("click", function (event) {
+        event.stopPropagation();
+        onClick();
+      });
       actionButtons.push(button);
       buttons.appendChild(button);
     }
@@ -861,6 +943,7 @@ function fieldConfirmationPromptScript(input: FieldConfirmationPromptInput): str
 
     form.addEventListener("submit", function (event) {
       event.preventDefault();
+      event.stopPropagation();
       var value = valueInput.value;
       finish(value === input.proposedValue ? { type: "confirm" } : { type: "edit", value: value }, value !== input.proposedValue);
     });
@@ -872,8 +955,32 @@ function fieldConfirmationPromptScript(input: FieldConfirmationPromptInput): str
     form.appendChild(status);
     form.appendChild(buttons);
     overlay.appendChild(form);
-    document.body.appendChild(overlay);
+    var host = findFieldConfirmationHost();
+    if (host !== document.body) {
+      var hostStyle = window.getComputedStyle(host);
+      if (hostStyle.position === "static") host.style.position = "relative";
+      overlay.style.position = "absolute";
+      overlay.style.inset = "0";
+    }
+    host.appendChild(overlay);
     valueInput.focus();
+
+    function findFieldConfirmationHost() {
+      var candidates = Array.from(document.querySelectorAll("[aria-modal='true'], [role='dialog'], dialog[open], .modal, .modal-dialog, [class*='modal']"))
+        .filter(function (candidate) {
+          return candidate.id !== "agentic-field-confirmation" && isVisible(candidate);
+        });
+      var newPatientCandidates = candidates.filter(function (candidate) {
+        return /\\bnew patient\\b/i.test(candidate.textContent || "");
+      });
+      return newPatientCandidates[newPatientCandidates.length - 1] || candidates[candidates.length - 1] || document.body;
+    }
+
+    function isVisible(element) {
+      var rect = element.getBoundingClientRect();
+      var style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    }
   });
 })()`;
 }
@@ -1043,8 +1150,11 @@ async function writeSuccessfulVerificationEvidence(
   action: Extract<AiWebAction, { type: "verify" }>,
   screenshotPath: string | undefined,
   fieldScreenshotPath: string | undefined,
+  completedFields: readonly string[],
+  skippedFields: readonly string[],
 ): Promise<void> {
   const targetRecordId = aiTargetRecordId(context);
+  await writeUnmatchedIntakeFieldCoverage(context, completedFields, skippedFields);
   await writeAiActionEvent(context, action, screenshotPath, "succeeded");
   await context.audit.writeTargetEvidence({
     recordId: context.record.sourceRecordId,
@@ -1055,6 +1165,36 @@ async function writeSuccessfulVerificationEvidence(
     targetRecordId,
     message: action.criteria,
   });
+}
+
+async function writeUnmatchedIntakeFieldCoverage(
+  context: AiWebTargetRunContext,
+  completedFields: readonly string[],
+  skippedFields: readonly string[],
+): Promise<void> {
+  const completed = new Set(completedFields);
+  const skipped = new Set(skippedFields);
+  const existingMappings = context.audit
+    .getReportDetails()
+    .fieldMappings.filter((mapping) => mapping.recordId === context.record.sourceRecordId && mapping.target === context.profile.name);
+  const existingSourceFields = new Set(existingMappings.map((mapping) => mapping.sourceField));
+
+  for (const { field, value } of normalizedIntakeFieldEntries(context.record)) {
+    if (completed.has(field) || skipped.has(field) || existingSourceFields.has(field)) {
+      continue;
+    }
+
+    await context.audit.writeFieldMapping({
+      recordId: context.record.sourceRecordId,
+      target: context.profile.name,
+      sourceField: field,
+      targetField: "",
+      normalizedValue: value,
+      selectorCandidates: [],
+      status: "no_matching_destination_field",
+      skipReason: "No matching destination field was filled before verification.",
+    });
+  }
 }
 
 async function writeAiActionEvent(

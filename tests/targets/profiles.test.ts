@@ -66,8 +66,14 @@ describe("buildTargetProfiles", () => {
     expect(profiles[0].workflowHints).toContain(
       "In OpenMRS, date of birth may be split into day, month, and year fields; fill all visible birthdate parts before clicking any save, register, or confirm control.",
     );
-    expect(profiles[0].workflowHints).toContain(
-      "If the OpenMRS address step shows address inputs or a validation message requiring at least one field, fill available address fields from the normalized record before clicking the forward/next control.",
+    expect(profiles[0].workflowHints.join(" ")).not.toContain("address step");
+    expect(profiles[0].workflowHints.join(" ")).not.toContain("streetAddress");
+    expect(profiles[0].workflowHints.join(" ")).not.toContain("stateProvince");
+    expect(profiles[0].workflowHints.join(" ")).not.toContain("postalCode");
+    expect(profiles[0].workflowHints.join(" ")).not.toContain("normalized state");
+    expect(profiles[0].workflowHints.join(" ")).not.toContain("normalized zip");
+    expect(profiles[0].workflowHints).not.toContain(
+      "After name, gender, and birthdate are complete, skip optional address, phone, and relationship steps with the forward/next control unless required fields are visible.",
     );
     expect(profiles[1].workflowHints).toContain(
       "If Patient Finder reports no matching records and Add New Patient is visible, click Add New Patient rather than repeating search.",

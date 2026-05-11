@@ -4,6 +4,7 @@ import type { ResponseCreateParamsNonStreaming } from "openai/resources/response
 import type { NormalizedIntakeRecord } from "../domain/schema.js";
 import { AiWebActionSchema } from "./browserActions.js";
 import type { AiWebAction } from "./browserActions.js";
+import { buildIntakeFieldCoverage } from "./intakeFieldCoverage.js";
 import type { PageObservation } from "./pageObservation.js";
 import type { TargetProfile } from "./profiles.js";
 
@@ -15,6 +16,9 @@ const SYSTEM_INSTRUCTIONS = [
   "Return one JSON plan only. The plan must match the provided schema.",
   "Use only observed control elementId values when filling, selecting, or clicking.",
   "Prefer filling missing normalized record fields, selecting visible options by label, clicking navigation/save controls, waiting for transitions, taking proof screenshots, or verifying success criteria.",
+  "For every visible destination control, semantically compare its label, role, visible text, name, and surrounding context against all pending intake fields.",
+  "Before advancing, submitting, saving, or verifying, fill or select visible controls that match pending intake fields, even when destination labels differ from normalized field names.",
+  "When filling or selecting a matched intake value, set action.field to the normalized intake field name from intakeFieldCoverage.",
   "Use target workflow hints as guidance, but still choose actions only from the currently observed controls.",
   "Use recent action history to avoid repeating the same non-progress action.",
   "Before clicking a login, submit, continue, or save control, fill or select visible required fields that are blank and relevant to the task.",
@@ -216,6 +220,11 @@ function buildPlannerPrompt(input: AiWebPlanInput): Record<string, unknown> {
       forbiddenActions: input.profile.forbiddenActions,
     },
     normalizedRecord: input.record,
+    intakeFieldCoverage: buildIntakeFieldCoverage({
+      record: input.record,
+      completedFields: input.completedFields,
+      skippedFields: input.skippedFields,
+    }),
     pageObservation: {
       currentUrl: input.observation.currentUrl,
       title: input.observation.title,

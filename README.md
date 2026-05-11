@@ -580,6 +580,9 @@ the OpenMRS target profile to:
 1. Ask the AI web planner for one schema-validated bounded browser action at a
    time, using the target profile, normalized record, completed and skipped
    fields, success criteria, forbidden actions, and step count.
+1. Provide the planner a coverage list for every normalized intake field so it
+   can semantically match visible destination controls before advancing or
+   saving, even when destination labels differ from source field names.
 1. Execute only supported browser actions: fill, select, click, wait,
    screenshot, verify, or stop.
 1. Repeat the observe-plan-execute loop for each field fill or select and for

@@ -42,8 +42,6 @@ const OPENMRS_WORKFLOW_HINTS = [
   "In the registration wizard, use the forward/next control, not the back/previous control, after each completed step.",
   "The OpenMRS wizard's blank green right-arrow control is the forward/next button and may be labeled forward next button or next-button; do not use the left-arrow previous/back button.",
   "In OpenMRS, date of birth may be split into day, month, and year fields; fill all visible birthdate parts before clicking any save, register, or confirm control.",
-  "If the OpenMRS address step shows address inputs or a validation message requiring at least one field, fill available address fields from the normalized record before clicking the forward/next control.",
-  "After name, gender, and birthdate are complete, skip optional address, phone, and relationship steps with the forward/next control unless required fields are visible.",
   "If similar patients are shown but no exact full synthetic name and birthdate match is visible, continue registering the new suffixed demo patient rather than opening an existing record.",
 ];
 
