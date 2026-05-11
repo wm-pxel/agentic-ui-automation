@@ -281,6 +281,146 @@ describe("AiWebTargetRunner", () => {
     );
   });
 
+  it("waits instead of closing OpenKairo New Patient while fields are still loading", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "New Patient Loading fields... Close",
+      bodyTextAfterWait: "Patient Record MRN-M0XPCLB0 New Encounter Ava Nguyen DOB Mar 14 1987 Gender Female",
+      elements: [fakeElement("button", { "aria-label": "Close" }, "Close")],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openkairo-loading-dialog-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "click",
+            elementId: "control-1",
+            purpose: "close blocking dialog",
+            rationale: "The dialog currently blocks the form and only the Close control is visible.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient record.",
+            rationale: "Ava Nguyen is visible on the patient record page.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openkairo", displayName: "OpenKairo" },
+      record: record(),
+      audit,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(page.actions).toEqual([["wait", 1000]]);
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({ actionType: "ai-wait", result: "succeeded" }),
+      expect.objectContaining({ actionType: "ai-verify", result: "succeeded" }),
+    ]);
+  });
+
+  it("waits instead of stopping when OpenKairo New Patient fields are still loading", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "New Patient Loading fields...",
+      bodyTextAfterWait: "Patient Record MRN-M0XPCLB0 New Encounter Ava Nguyen DOB Mar 14 1987 Gender Female",
+      elements: [fakeElement("button", { "aria-label": "Close" }, "Close")],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openkairo-loading-stop-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message: "The New Patient dialog is still loading and no patient form controls are visible yet.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient record.",
+            rationale: "Ava Nguyen is visible on the patient record page.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openkairo", displayName: "OpenKairo" },
+      record: record(),
+      audit,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(page.actions).toEqual([["wait", 1000]]);
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({ actionType: "ai-wait", result: "succeeded" }),
+      expect.objectContaining({ actionType: "ai-verify", result: "succeeded" }),
+    ]);
+  });
+
+  it("dismisses the OpenKairo zoom hint instead of treating it as the New Patient loading dialog", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Patients New Patient Better with 150% zoom This app is designed for higher zoom Got it Close",
+      bodyTextAfterClick: "Patient Details Ava Nguyen saved",
+      elements: [fakeElement("button", { "aria-label": "Close" }, "Close")],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openkairo-zoom-dialog-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "click",
+            elementId: "control-1",
+            purpose: "close zoom hint",
+            rationale: "Dismiss the Better with 150% zoom dialog before creating a new patient.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen appears in the saved patient state.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openkairo", displayName: "OpenKairo" },
+      record: record(),
+      audit,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(page.actions).toEqual([["click", "body > button"]]);
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({ actionType: "ai-click", result: "succeeded" }),
+      expect.objectContaining({ actionType: "ai-verify", result: "succeeded" }),
+    ]);
+  });
+
   it("prompts in the browser before low-confidence field entry and records operator confirmation", async () => {
     const page = new FakeRunnerPage({ promptResults: [{ type: "confirm" }] });
     const browser = new FakeRunnerBrowser(page);
@@ -391,6 +531,83 @@ describe("AiWebTargetRunner", () => {
         approvalSource: "operator_edited",
         originalProposedValue: "Ava",
         finalValue: "Avery",
+      }),
+    );
+  });
+
+  it("re-prompts when an operator-edited select value cannot be confidently mapped", async () => {
+    const page = new FakeRunnerPage({
+      elements: [
+        fakeElement("label", { for: "gender" }, "Gender"),
+        fakeElement("button", { id: "gender", role: "combobox" }, "Gender"),
+        fakeElement("button", { class: "save" }, "Save"),
+      ],
+      failSelectOptions: true,
+      promptResults: [
+        { type: "edit", value: "not sure" },
+        { type: "edit", value: "m" },
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-field-reprompted-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "select",
+            elementId: "control-1",
+            field: "sexOrGender",
+            value: "Female",
+            rationale: "The gender select likely matches the intake sex field.",
+          },
+          confidence: 0.91,
+        },
+        {
+          action: {
+            type: "click",
+            elementId: "control-2",
+            purpose: "save",
+            rationale: "Save the synthetic patient.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen appears in the saved patient state.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), confidenceThreshold: 0.99, fieldConfirmation: "prompt-on-low-confidence" },
+      record: record(),
+      audit,
+    });
+
+    const promptInputs = page.evaluationScripts
+      .map((script) => promptInputFromEvaluationScript(script))
+      .filter((input): input is Record<string, unknown> => input !== undefined);
+
+    expect(result.status).toBe("succeeded");
+    expect(page.actions).toContainEqual(["click", "#gender"]);
+    expect(page.actions).toContainEqual(["click", '[role="option"]:has-text("Male")']);
+    expect(promptInputs).toHaveLength(2);
+    expect(page.evaluationScripts[0]).toContain("AI is interpreting this value");
+    expect(promptInputs[1]?.feedbackMessage).toContain("could not confidently map");
+    expect(promptInputs[1]?.currentValue).toBe("not sure");
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "sexOrGender",
+        status: "succeeded",
+        approvalSource: "operator_edited",
+        originalProposedValue: "Female",
+        finalValue: "Male",
       }),
     );
   });
@@ -574,7 +791,7 @@ describe("AiWebTargetRunner", () => {
       status: "exception",
       exception: expect.objectContaining({
         code: "verification_failed",
-        message: "AI verification did not find a saved patient state in the observed page.",
+        message: "AI verification found an unsaved patient entry form instead of a saved patient state.",
         screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
       }),
     });
@@ -582,7 +799,59 @@ describe("AiWebTargetRunner", () => {
     expect(await readEvents(audit)).toEqual([
       expect.objectContaining({
         actionType: "ai-verify",
-        result: "failed: saved patient state not visible",
+        result: "failed: unsaved patient entry form visible",
+        exceptionCode: "verification_failed",
+      }),
+    ]);
+  });
+
+  it("rejects OpenKairo verification while the create patient modal is still visible", async () => {
+    const page = new FakeRunnerPage({
+      bodyText:
+        "Patients PATIENT MRN AGE / GENDER DOB REGISTERED Taylor Morgan 174029 Run-20260511174033-7a9f9 New Patient First Name Taylor Last Name Morgan 174029 Run-20260511174033-7a9f9 Date of Birth 1990 Gender Female Cancel Create Patient",
+      title: "OpenKairo",
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openkairo-unsaved-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient record.",
+            rationale: "The synthetic patient name is visible.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 1,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openkairo", displayName: "OpenKairo" },
+      record: {
+        ...record(),
+        firstName: "Taylor",
+        lastName: "Morgan 174029 Run-20260511174033-7a9f9",
+        dateOfBirth: "1990-04-18",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({
+      status: "exception",
+      exception: expect.objectContaining({
+        code: "verification_failed",
+        message: "AI verification found an unsaved patient entry form instead of a saved patient state.",
+        screenshotPath: "screenshots/demo-001/openkairo/0001-ai-step-1.png",
+      }),
+    });
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({
+        actionType: "ai-verify",
+        result: "failed: unsaved patient entry form visible",
         exceptionCode: "verification_failed",
       }),
     ]);
@@ -693,6 +962,52 @@ describe("AiWebTargetRunner", () => {
     expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
   });
 
+  it("expands OpenMRS contact information before recording the final verification screenshot", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Ava Nguyen Female 36 year(s) Patient ID 100ABC Diagnoses Recent Visits General Actions Show Contact Info",
+      title: "OpenMRS",
+      elements: [
+        fakeElement("button", { id: "contact-toggle" }, "Show Contact Info"),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs-contact-proof-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "verify",
+            criteria: "The OpenMRS dashboard shows the saved patient.",
+            rationale: "The OpenMRS dashboard shows the saved patient.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 1,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+    expect(page.actions).toEqual([["click", "#contact-toggle"]]);
+    expect(audit.getReportDetails().targetEvidence).toContainEqual(
+      expect.objectContaining({
+        status: "succeeded",
+        screenshotPath: "screenshots/demo-001/openmrs/0002-ai-openmrs-contact-info.png",
+      }),
+    );
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({ actionType: "ai-click", result: "succeeded" }),
+      expect.objectContaining({ actionType: "ai-verify", result: "succeeded" }),
+    ]);
+  });
+
   it("returns an exception and closes the browser when the planner stops", async () => {
     const page = new FakeRunnerPage();
     const browser = new FakeRunnerBrowser(page);
@@ -731,6 +1046,51 @@ describe("AiWebTargetRunner", () => {
       expect.objectContaining({
         status: "exception",
         screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
+      }),
+    );
+  });
+
+  it("succeeds instead of stopping when the observed page already proves the patient was saved", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Patient Record MRN-M0XPCLB0 New Encounter Ava Nguyen DOB Mar 14 1987 Gender Female",
+      title: "OpenKairo",
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-stop-after-save-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message: "No safe progress action is needed from the observed controls.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 1,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openkairo", displayName: "OpenKairo" },
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({
+        actionType: "ai-verify",
+        result: "succeeded",
+      }),
+    ]);
+    expect(audit.getReportDetails().targetEvidence).toContainEqual(
+      expect.objectContaining({
+        status: "succeeded",
+        screenshotPath: "screenshots/demo-001/openkairo/0001-ai-step-1.png",
+        message: "Saved patient record is visible for Ava Nguyen.",
       }),
     );
   });
@@ -978,6 +1338,7 @@ class FakeRunnerBrowser {
 class FakeRunnerPage {
   readonly actions: unknown[] = [];
   readonly gotoUrls: string[] = [];
+  readonly evaluationScripts: string[] = [];
   readonly document: FakeDocument;
 
   constructor(
@@ -986,7 +1347,9 @@ class FakeRunnerPage {
       title?: string;
       elements?: FakeElement[];
       bodyTextAfterWait?: string;
+      bodyTextAfterClick?: string;
       promptResults?: unknown[];
+      failSelectOptions?: boolean;
     } = {},
   ) {
     this.document = new FakeDocument(
@@ -1010,7 +1373,9 @@ class FakeRunnerPage {
     return {
       innerText: async () =>
         selector === "body"
-          ? (this.actions.some((action) => Array.isArray(action) && action[0] === "wait") && this.options.bodyTextAfterWait
+          ? (this.actions.some((action) => Array.isArray(action) && action[0] === "click") && this.options.bodyTextAfterClick
+            ? this.options.bodyTextAfterClick
+            : this.actions.some((action) => Array.isArray(action) && action[0] === "wait") && this.options.bodyTextAfterWait
             ? this.options.bodyTextAfterWait
             : this.options.bodyText ??
             (this.actions.some((action) => Array.isArray(action) && (action[0] === "click" || action[0] === "wait"))
@@ -1020,8 +1385,11 @@ class FakeRunnerPage {
       fill: async (value: string) => {
         this.actions.push(["fill", selector, value]);
       },
-      selectOption: async (option: { label: string }) => {
-        this.actions.push(["select", selector, option.label]);
+      selectOption: async (option: { label?: string; value?: string }) => {
+        this.actions.push(["select", selector, option.label ? "label" : "value", option.label ?? option.value]);
+        if (this.options.failSelectOptions) {
+          throw new Error(`selectOption unavailable: ${selector}`);
+        }
       },
       click: async () => {
         this.actions.push(["click", selector]);
@@ -1043,6 +1411,10 @@ class FakeRunnerPage {
 
   async evaluate<T>(pageFunction: (() => T) | string): Promise<T> {
     if (typeof pageFunction === "string") {
+      this.evaluationScripts.push(pageFunction);
+      if (!pageFunction.includes("agentic-field-confirmation-input")) {
+        return undefined as T;
+      }
       const result = this.options.promptResults?.shift();
       if (result instanceof Error) {
         throw result;
@@ -1195,4 +1567,10 @@ function cssEscape(value: string): string {
 
 function unescapeCssValue(value: string): string {
   return value.replace(/\\([0-9a-f]+) /gi, (_match, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)));
+}
+
+function promptInputFromEvaluationScript(script: string): Record<string, unknown> | undefined {
+  const match = script.match(/agentic-field-confirmation-input:([^\s*]+)/);
+  if (!match) return undefined;
+  return JSON.parse(decodeURIComponent(match[1] ?? "")) as Record<string, unknown>;
 }

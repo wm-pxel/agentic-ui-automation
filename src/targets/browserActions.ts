@@ -84,7 +84,7 @@ export async function executeBrowserAction(
     }
     case "select": {
       const selector = selectorForElement(elementSelectors, action.elementId);
-      await selectOptionWithFallbacks(page.locator(selector), action.value);
+      await selectOptionWithFallbacks(page, selector, action.value);
       return;
     }
     case "click": {
@@ -100,7 +100,8 @@ export async function executeBrowserAction(
   throw new Error(`unsupported browser action: ${(action as AiWebAction).type}`);
 }
 
-async function selectOptionWithFallbacks(locator: BrowserActionLocator, value: string): Promise<void> {
+async function selectOptionWithFallbacks(page: BrowserActionPage, selector: string, value: string): Promise<void> {
+  const locator = page.locator(selector);
   const candidates = optionCandidates(value);
   let lastError: unknown;
 
@@ -113,7 +114,40 @@ async function selectOptionWithFallbacks(locator: BrowserActionLocator, value: s
     }
   }
 
+  try {
+    await locator.click({ timeout: BROWSER_ACTION_TIMEOUT_MS });
+    await clickCustomOption(page, value);
+    return;
+  } catch (error) {
+    lastError = error;
+  }
+
   throw lastError instanceof Error ? lastError : new Error(`Could not select option ${value}`);
+}
+
+async function clickCustomOption(page: BrowserActionPage, value: string): Promise<void> {
+  let lastError: unknown;
+  for (const selector of customOptionSelectors(value)) {
+    try {
+      await page.locator(selector).click({ timeout: BROWSER_ACTION_TIMEOUT_MS });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`Could not click custom option ${value}`);
+}
+
+function customOptionSelectors(value: string): string[] {
+  const text = JSON.stringify(value);
+  return [
+    `[role="option"]:has-text(${text})`,
+    `[role="menuitemradio"]:has-text(${text})`,
+    `[role="menuitem"]:has-text(${text})`,
+    `[cmdk-item]:has-text(${text})`,
+    `text=${text}`,
+  ];
 }
 
 function optionCandidates(value: string): Array<{ label?: string; value?: string }> {

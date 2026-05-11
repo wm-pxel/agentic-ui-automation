@@ -54,6 +54,27 @@ describe("executeBrowserAction", () => {
     ]);
   });
 
+  it("clicks custom select options when native selectOption is unavailable", async () => {
+    const page = new FakeActionPage({ failAllSelectOptions: true });
+
+    await executeBrowserAction(page, new Map([["control-1", "button.gender-trigger"]]), {
+      type: "select",
+      elementId: "control-1",
+      field: "sexOrGender",
+      value: "Male",
+      rationale: "custom gender dropdown",
+    });
+
+    expect(page.actions).toEqual([
+      ["select", "button.gender-trigger", "label", "Male"],
+      ["select", "button.gender-trigger", "value", "M"],
+      ["select", "button.gender-trigger", "label", "M"],
+      ["select", "button.gender-trigger", "value", "Male"],
+      ["click", "button.gender-trigger"],
+      ["click", '[role="option"]:has-text("Male")'],
+    ]);
+  });
+
   it("rejects stale element ids", async () => {
     await expect(
       executeBrowserAction(new FakeActionPage(), new Map(), {
@@ -87,12 +108,16 @@ describe("executeBrowserAction", () => {
 class FakeActionPage {
   readonly actions: unknown[] = [];
 
-  constructor(private readonly options: { failSelectLabels?: Set<string> } = {}) {}
+  constructor(private readonly options: { failSelectLabels?: Set<string>; failAllSelectOptions?: boolean } = {}) {}
 
   locator(selector: string) {
     return {
       fill: async (value: string) => this.actions.push(["fill", selector, value]),
       selectOption: async (option: { label?: string; value?: string }) => {
+        if (this.options.failAllSelectOptions) {
+          this.actions.push(["select", selector, option.label ? "label" : "value", option.label ?? option.value]);
+          throw new Error(`selectOption unavailable: ${selector}`);
+        }
         if (option.label && this.options.failSelectLabels?.has(option.label)) {
           this.actions.push(["select", selector, "label", option.label]);
           throw new Error(`label not found: ${option.label}`);

@@ -317,48 +317,71 @@ async function runTargetRecords(input: {
   targetRunner: TargetRunner;
   targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>;
 }): Promise<void> {
-  for (const profile of input.profiles) {
-    const runs = input.targetRuns.filter((run) => run.profile === profile);
-    if (runs.length === 0) continue;
-
-    await mapWithConcurrency(runs, profileConcurrency(profile), async (run) => {
-      await input.audit.writeEvent({
-        recordId: run.record.sourceRecordId,
-        target: profile.name,
-        phase: "target",
-        actionType: "start",
-        result: "target record started",
-      });
-      const result = await runTargetRunnerRecord(input.targetRunner, {
-        runId: input.runId,
-        profile,
-        record: run.record,
-        audit: input.audit,
-      });
-      const counts = input.targetCounts[profile.name];
-      if (counts) {
-        counts[result.status] += 1;
+  let firstError: unknown;
+  await Promise.all(
+    input.profiles.map(async (profile) => {
+      try {
+        await runTargetProfileRecords(input, profile);
+      } catch (error) {
+        firstError ??= error;
       }
-      await input.audit.writeEvent({
-        recordId: run.record.sourceRecordId,
-        target: profile.name,
-        phase: "target",
-        actionType: "complete",
-        result: targetCompletionResult(result),
-        exceptionCode: result.status === "exception" ? result.exception.code : undefined,
-      });
-
-      if (result.status === "exception") {
-        await input.audit.writeException(`${run.record.sourceRecordId}-${profile.name}`, result.exception);
-        await input.audit.writeReportIssue(issueFromException({
-          phase: "target",
-          target: profile.name,
-          recordId: run.record.sourceRecordId,
-          exception: result.exception,
-        }));
-      }
-    });
+    }),
+  );
+  if (firstError !== undefined) {
+    throw firstError;
   }
+}
+
+async function runTargetProfileRecords(
+  input: {
+    targetRuns: TargetRun[];
+    runId: string;
+    audit: FileAuditStore;
+    targetRunner: TargetRunner;
+    targetCounts: Partial<Record<TargetName, Record<TargetTaskStatus, number>>>;
+  },
+  profile: TargetProfile,
+): Promise<void> {
+  const runs = input.targetRuns.filter((run) => run.profile === profile);
+  if (runs.length === 0) return;
+
+  await mapWithConcurrency(runs, profileConcurrency(profile), async (run) => {
+    await input.audit.writeEvent({
+      recordId: run.record.sourceRecordId,
+      target: profile.name,
+      phase: "target",
+      actionType: "start",
+      result: "target record started",
+    });
+    const result = await runTargetRunnerRecord(input.targetRunner, {
+      runId: input.runId,
+      profile,
+      record: run.record,
+      audit: input.audit,
+    });
+    const counts = input.targetCounts[profile.name];
+    if (counts) {
+      counts[result.status] += 1;
+    }
+    await input.audit.writeEvent({
+      recordId: run.record.sourceRecordId,
+      target: profile.name,
+      phase: "target",
+      actionType: "complete",
+      result: targetCompletionResult(result),
+      exceptionCode: result.status === "exception" ? result.exception.code : undefined,
+    });
+
+    if (result.status === "exception") {
+      await input.audit.writeException(`${run.record.sourceRecordId}-${profile.name}`, result.exception);
+      await input.audit.writeReportIssue(issueFromException({
+        phase: "target",
+        target: profile.name,
+        recordId: run.record.sourceRecordId,
+        exception: result.exception,
+      }));
+    }
+  });
 }
 
 async function mapWithConcurrency<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {

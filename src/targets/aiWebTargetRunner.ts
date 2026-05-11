@@ -118,6 +118,30 @@ export class AiWebTargetRunner {
         const action = plan.action;
 
         if (action.type === "stop") {
+          if (!verificationFailureMessage(context.record, observation)) {
+            const verifyAction: AiWebAction = {
+              type: "verify",
+              criteria: savedPatientProofMessage(context.record),
+              rationale: "The deterministic verification checks found the synthetic patient in a saved patient state.",
+            };
+            latestScreenshotPath = await prepareSuccessfulVerificationScreenshot({
+              context,
+              page,
+              observation,
+              screenshotPath: latestScreenshotPath,
+            });
+            await writeSuccessfulVerificationEvidence(context, verifyAction, latestScreenshotPath, latestFieldScreenshotPath);
+            return { status: "succeeded", targetRecordId: aiTargetRecordId(context) };
+          }
+
+          if (shouldWaitInsteadOfStoppingTransientOpenKairoLoading(action, observation, context.profile)) {
+            const waitAction: AiWebAction = { type: "wait", reason: "OpenKairo New Patient dialog is still loading fields." };
+            await executeBrowserAction(page, observation.elementSelectors, waitAction);
+            await writeAiActionEvent(context, waitAction, latestScreenshotPath, "succeeded");
+            rememberRecentAction(recentActions, waitAction, "succeeded");
+            continue;
+          }
+
           if (shouldWaitInsteadOfStopping(action, observation, stepCount, this.maxSteps)) {
             const waitAction: AiWebAction = { type: "wait", reason: "Observed page has no actionable controls yet." };
             await executeBrowserAction(page, observation.elementSelectors, waitAction);
@@ -165,24 +189,28 @@ export class AiWebTargetRunner {
             });
             return { status: "exception", exception };
           }
-          await writeAiActionEvent(context, action, latestScreenshotPath, "succeeded");
-          const targetRecordId = aiTargetRecordId(context);
-          await context.audit.writeTargetEvidence({
-            recordId: context.record.sourceRecordId,
-            target: context.profile.name,
-            status: "succeeded",
+          latestScreenshotPath = await prepareSuccessfulVerificationScreenshot({
+            context,
+            page,
+            observation,
             screenshotPath: latestScreenshotPath,
-            fieldScreenshotPath: latestFieldScreenshotPath,
-            targetRecordId,
-            message: action.criteria,
           });
-          return { status: "succeeded", targetRecordId };
+          await writeSuccessfulVerificationEvidence(context, action, latestScreenshotPath, latestFieldScreenshotPath);
+          return { status: "succeeded", targetRecordId: aiTargetRecordId(context) };
         }
 
         if (action.type === "screenshot") {
           latestScreenshotPath = await captureScreenshot(context, page, `ai-${action.label}`);
           await writeAiActionEvent(context, action, latestScreenshotPath, "captured");
           rememberRecentAction(recentActions, action, "captured");
+          continue;
+        }
+
+        if (shouldWaitInsteadOfClickingTransientOpenKairoClose(action, observation, context.profile)) {
+          const waitAction: AiWebAction = { type: "wait", reason: "OpenKairo New Patient dialog is still loading fields." };
+          await executeBrowserAction(page, observation.elementSelectors, waitAction);
+          await writeAiActionEvent(context, waitAction, latestScreenshotPath, "succeeded");
+          rememberRecentAction(recentActions, waitAction, "succeeded");
           continue;
         }
 
@@ -409,6 +437,65 @@ function shouldWaitInsteadOfStopping(
   );
 }
 
+function shouldWaitInsteadOfClickingTransientOpenKairoClose(
+  action: AiWebAction,
+  observation: {
+    controls: Array<{ elementId: string; label?: string; visibleText?: string; role?: string }>;
+    visibleText: string;
+  },
+  profile: TargetProfile,
+): boolean {
+  if (profile.name !== "openkairo" || action.type !== "click") {
+    return false;
+  }
+
+  const control = observation.controls.find((item) => item.elementId === action.elementId);
+  const actionText = normalizeForVerification(`${control?.label ?? ""} ${control?.visibleText ?? ""} ${action.purpose} ${action.rationale}`);
+  return openKairoNewPatientStillLoading(observation, profile) && /\b(close|dismiss|cancel|x)\b/.test(actionText);
+}
+
+function shouldWaitInsteadOfStoppingTransientOpenKairoLoading(
+  action: Extract<AiWebAction, { type: "stop" }>,
+  observation: {
+    controls: Array<{ label?: string; visibleText?: string; role?: string }>;
+    visibleText: string;
+  },
+  profile: TargetProfile,
+): boolean {
+  return (
+    action.code === "ui_state_unexpected" &&
+    openKairoNewPatientStillLoading(observation, profile)
+  );
+}
+
+function openKairoNewPatientStillLoading(
+  observation: {
+    controls: Array<{ label?: string; visibleText?: string; role?: string }>;
+    visibleText: string;
+  },
+  profile: TargetProfile,
+): boolean {
+  const pageText = normalizeForVerification(observation.visibleText);
+  return (
+    profile.name === "openkairo" &&
+    pageText.includes("new patient") &&
+    pageText.includes("loading fields") &&
+    !openKairoNewPatientFieldsVisible(observation.controls)
+  );
+}
+
+function openKairoNewPatientFieldsVisible(
+  controls: Array<{ label?: string; visibleText?: string; role?: string }>,
+): boolean {
+  const controlsText = normalizeForVerification(
+    controls.map((control) => `${control.label ?? ""} ${control.visibleText ?? ""} ${control.role ?? ""}`).join(" "),
+  );
+  return (
+    /\b(first name|last name|birth|year|gender|create patient)\b/.test(controlsText) &&
+    !/^\s*(new patient|close|dismiss|cancel|x)\s*$/.test(controlsText)
+  );
+}
+
 async function confirmLowConfidenceFieldIfNeeded(input: {
   dependencies: AiWebTargetRunnerDependencies;
   context: AiWebTargetRunContext;
@@ -452,11 +539,35 @@ async function promptForFieldMappingInBrowser(
   page: AiWebTargetPage,
   input: FieldMappingConfirmationInput,
 ): Promise<FieldMappingConfirmation> {
-  const result = await withFieldPromptTimeout(page.evaluate(fieldConfirmationPromptScript(input)));
-  if (!isFieldMappingConfirmation(result)) {
-    return { type: "stop", reason: "Field confirmation prompt returned an invalid response." };
+  let currentValue = input.action.value;
+  let feedbackMessage: string | undefined;
+
+  while (true) {
+    const result = await withFieldPromptTimeout(page.evaluate(fieldConfirmationPromptScript({
+      ...input,
+      currentValue,
+      feedbackMessage,
+    })));
+    if (!isFieldMappingConfirmation(result)) {
+      return { type: "stop", reason: "Field confirmation prompt returned an invalid response." };
+    }
+    if (result.type !== "edit") {
+      return result;
+    }
+
+    const interpretation = interpretOperatorEditedValue(input.action, result.value);
+    if (interpretation.status === "mapped") {
+      await cleanupFieldConfirmationPrompt(page);
+      return { type: "edit", value: interpretation.value };
+    }
+
+    currentValue = result.value;
+    feedbackMessage = interpretation.message;
   }
-  return result;
+}
+
+async function cleanupFieldConfirmationPrompt(page: AiWebTargetPage): Promise<void> {
+  await page.evaluate(`document.querySelector("#agentic-field-confirmation")?.remove();`).catch(() => undefined);
 }
 
 function withFieldPromptTimeout<T>(prompt: Promise<T>): Promise<T> {
@@ -478,17 +589,182 @@ function isFieldMappingConfirmation(value: unknown): value is FieldMappingConfir
   return false;
 }
 
-function fieldConfirmationPromptScript(input: FieldMappingConfirmationInput): string {
+type OperatorEditInterpretation =
+  | { status: "mapped"; value: string }
+  | { status: "retry"; message: string };
+
+function interpretOperatorEditedValue(
+  action: Extract<AiWebAction, { type: "fill" | "select" }>,
+  operatorInput: string,
+): OperatorEditInterpretation {
+  const trimmedInput = operatorInput.trim();
+  if (trimmedInput.length === 0) {
+    return { status: "retry", message: "The typed value was blank. Enter a clearer value or stop the record." };
+  }
+
+  if (action.type === "fill") {
+    return { status: "mapped", value: trimmedInput };
+  }
+
+  const labels = selectLabelsForOperatorInput(action);
+  if (labels.length === 0) {
+    return { status: "mapped", value: trimmedInput };
+  }
+
+  const mappedValue = selectLabelForOperatorInput(trimmedInput, labels);
+  if (mappedValue) {
+    return { status: "mapped", value: mappedValue };
+  }
+
+  return {
+    status: "retry",
+    message: `AI could not confidently map ${JSON.stringify(trimmedInput)} to ${labels.join(", ")}. Try a clearer value.`,
+  };
+}
+
+function selectLabelsForOperatorInput(action: Extract<AiWebAction, { type: "select" }>): string[] {
+  const context = normalizeForVerification(`${action.field} ${action.value} ${action.rationale}`);
+  if (/\b(gender|sex)\b/.test(context) || ["female", "male", "unknown", "other"].includes(normalizeForVerification(action.value))) {
+    return ["Female", "Male", "Unknown", "Other"];
+  }
+  if (/\b(month|birthdate month|date of birth)\b/.test(context) || MONTH_LABELS.includes(action.value)) {
+    return MONTH_LABELS;
+  }
+  if (/\b(state|province)\b/.test(context) || stateLabel(action.value) !== undefined) {
+    return US_STATE_LABELS;
+  }
+  return [];
+}
+
+function selectLabelForOperatorInput(value: string, labels: readonly string[]): string | undefined {
+  const normalizedValue = normalizeForVerification(value);
+  const exactMatch = labels.find((label) => normalizeForVerification(label) === normalizedValue);
+  if (exactMatch) return exactMatch;
+
+  const abbreviationMatch = commonSelectAbbreviation(normalizedValue, labels);
+  if (abbreviationMatch) return abbreviationMatch;
+
+  const stateMatch = stateLabel(value);
+  if (stateMatch && labels.includes(stateMatch)) return stateMatch;
+
+  const prefixMatches = labels.filter((label) => normalizeForVerification(label).startsWith(normalizedValue));
+  return prefixMatches.length === 1 ? prefixMatches[0] : undefined;
+}
+
+function commonSelectAbbreviation(value: string, labels: readonly string[]): string | undefined {
+  const aliases: Record<string, string> = {
+    f: "Female",
+    female: "Female",
+    m: "Male",
+    male: "Male",
+    u: "Unknown",
+    unknown: "Unknown",
+    o: "Other",
+    other: "Other",
+  };
+  const label = aliases[value];
+  return label && labels.includes(label) ? label : undefined;
+}
+
+function stateLabel(value: string): string | undefined {
+  const trimmedValue = value.trim();
+  const upperValue = trimmedValue.toUpperCase();
+  if (US_STATE_LABELS_BY_ABBREVIATION[upperValue]) {
+    return US_STATE_LABELS_BY_ABBREVIATION[upperValue];
+  }
+
+  const lowerValue = trimmedValue.toLowerCase();
+  return US_STATE_LABELS.find((label) => label.toLowerCase() === lowerValue);
+}
+
+const MONTH_LABELS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+const US_STATE_LABELS_BY_ABBREVIATION: Record<string, string> = {
+  AL: "Alabama",
+  AK: "Alaska",
+  AZ: "Arizona",
+  AR: "Arkansas",
+  CA: "California",
+  CO: "Colorado",
+  CT: "Connecticut",
+  DE: "Delaware",
+  FL: "Florida",
+  GA: "Georgia",
+  HI: "Hawaii",
+  ID: "Idaho",
+  IL: "Illinois",
+  IN: "Indiana",
+  IA: "Iowa",
+  KS: "Kansas",
+  KY: "Kentucky",
+  LA: "Louisiana",
+  ME: "Maine",
+  MD: "Maryland",
+  MA: "Massachusetts",
+  MI: "Michigan",
+  MN: "Minnesota",
+  MS: "Mississippi",
+  MO: "Missouri",
+  MT: "Montana",
+  NE: "Nebraska",
+  NV: "Nevada",
+  NH: "New Hampshire",
+  NJ: "New Jersey",
+  NM: "New Mexico",
+  NY: "New York",
+  NC: "North Carolina",
+  ND: "North Dakota",
+  OH: "Ohio",
+  OK: "Oklahoma",
+  OR: "Oregon",
+  PA: "Pennsylvania",
+  RI: "Rhode Island",
+  SC: "South Carolina",
+  SD: "South Dakota",
+  TN: "Tennessee",
+  TX: "Texas",
+  UT: "Utah",
+  VT: "Vermont",
+  VA: "Virginia",
+  WA: "Washington",
+  WV: "West Virginia",
+  WI: "Wisconsin",
+  WY: "Wyoming",
+};
+
+const US_STATE_LABELS = Object.values(US_STATE_LABELS_BY_ABBREVIATION);
+
+type FieldConfirmationPromptInput = FieldMappingConfirmationInput & {
+  currentValue?: string;
+  feedbackMessage?: string;
+};
+
+function fieldConfirmationPromptScript(input: FieldConfirmationPromptInput): string {
   const encoded = encodeURIComponent(
     JSON.stringify({
       target: input.profile.displayName,
       recordId: input.record.sourceRecordId,
       sourceField: input.action.field,
       proposedValue: input.action.value,
+      currentValue: input.currentValue ?? input.action.value,
       selectedSelector: input.selectedSelector ?? input.action.elementId,
       confidence: formatPercent(input.confidence),
       threshold: formatPercent(input.threshold),
       rationale: input.action.rationale,
+      feedbackMessage: input.feedbackMessage,
     }),
   );
 
@@ -530,14 +806,39 @@ function fieldConfirmationPromptScript(input: FieldMappingConfirmationInput): st
     addDetail("Rationale", input.rationale);
 
     var valueInput = document.createElement("input");
-    valueInput.value = input.proposedValue;
+    valueInput.value = input.currentValue;
     valueInput.setAttribute("aria-label", "Field value");
     valueInput.style.cssText = "width:100%;box-sizing:border-box;border:1px solid #9ca3af;border-radius:6px;padding:10px 12px;font-size:16px;";
 
+    var error = document.createElement("div");
+    error.style.cssText = "min-height:18px;color:#b91c1c;font-size:13px;";
+    error.textContent = input.feedbackMessage || "";
+
+    var status = document.createElement("div");
+    status.style.cssText = "min-height:20px;color:#374151;font-size:13px;display:flex;align-items:center;gap:8px;";
+    var spinner = document.createElement("span");
+    spinner.style.cssText = "display:none;width:14px;height:14px;border:2px solid #bfdbfe;border-top-color:#2563eb;border-radius:999px;animation:agentic-spin .8s linear infinite;";
+    var style = document.createElement("style");
+    style.textContent = "@keyframes agentic-spin{to{transform:rotate(360deg)}}";
+    var statusText = document.createElement("span");
+    status.appendChild(spinner);
+    status.appendChild(statusText);
+
     var buttons = document.createElement("div");
     buttons.style.cssText = "display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;";
-    function finish(result) {
-      overlay.remove();
+    var actionButtons = [];
+    function setBusy(isBusy) {
+      valueInput.disabled = isBusy;
+      for (var index = 0; index < actionButtons.length; index += 1) actionButtons[index].disabled = isBusy;
+      spinner.style.display = isBusy ? "inline-block" : "none";
+      statusText.textContent = isBusy ? "AI is interpreting this value..." : "";
+    }
+    function finish(result, keepOpen) {
+      if (keepOpen) {
+        setBusy(true);
+      } else {
+        overlay.remove();
+      }
       resolve(result);
     }
     function addButton(label, onClick, primary, danger) {
@@ -548,24 +849,27 @@ function fieldConfirmationPromptScript(input: FieldMappingConfirmationInput): st
       if (primary) button.style.cssText += "background:#2563eb;border-color:#2563eb;color:#fff;";
       if (danger) button.style.cssText += "background:#b91c1c;border-color:#b91c1c;color:#fff;";
       button.addEventListener("click", onClick);
+      actionButtons.push(button);
       buttons.appendChild(button);
     }
     addButton("Use AI-Mapped Value", function () {
-      var value = valueInput.value;
-      finish(value === input.proposedValue ? { type: "confirm" } : { type: "edit", value: value });
+      finish({ type: "confirm" }, false);
     }, true, false);
-    addButton("Apply Typed Value", function () { finish({ type: "edit", value: valueInput.value }); }, false, false);
-    addButton("Skip Field", function () { finish({ type: "skip", reason: "Operator skipped low-confidence field." }); }, false, false);
-    addButton("Stop Record", function () { finish({ type: "stop", reason: "Operator stopped low-confidence field confirmation." }); }, false, true);
+    addButton("Apply Typed Value", function () { finish({ type: "edit", value: valueInput.value }, true); }, false, false);
+    addButton("Skip Field", function () { finish({ type: "skip", reason: "Operator skipped low-confidence field." }, false); }, false, false);
+    addButton("Stop Record", function () { finish({ type: "stop", reason: "Operator stopped low-confidence field confirmation." }, false); }, false, true);
 
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       var value = valueInput.value;
-      finish(value === input.proposedValue ? { type: "confirm" } : { type: "edit", value: value });
+      finish(value === input.proposedValue ? { type: "confirm" } : { type: "edit", value: value }, value !== input.proposedValue);
     });
+    form.appendChild(style);
     form.appendChild(title);
     form.appendChild(details);
     form.appendChild(valueInput);
+    form.appendChild(error);
+    form.appendChild(status);
     form.appendChild(buttons);
     overlay.appendChild(form);
     document.body.appendChild(overlay);
@@ -595,6 +899,9 @@ function executableActionForObservedControl(
 
   const control = observation.controls.find((item) => item.elementId === action.elementId);
   if (control?.tag === "select") {
+    return action;
+  }
+  if (control?.role === "combobox" || controlTextMatches(control, /\b(select|choose|gender|sex|month|state|province)\b/)) {
     return action;
   }
 
@@ -678,6 +985,78 @@ async function captureScreenshot(context: AiWebTargetRunContext, page: AiWebTarg
   return context.audit.writeScreenshot(context.record.sourceRecordId, context.profile.name, step, bytes);
 }
 
+async function prepareSuccessfulVerificationScreenshot(input: {
+  context: AiWebTargetRunContext;
+  page: AiWebTargetPage;
+  observation: {
+    controls: Array<{ elementId: string; label?: string; visibleText?: string; role?: string }>;
+    elementSelectors: Map<string, string>;
+  };
+  screenshotPath: string | undefined;
+}): Promise<string | undefined> {
+  const contactAction = openMrsShowContactInfoAction(input.observation, input.context.profile);
+  if (!contactAction) {
+    return input.screenshotPath;
+  }
+
+  try {
+    await executeBrowserAction(input.page, input.observation.elementSelectors, contactAction);
+    await writeAiActionEvent(input.context, contactAction, input.screenshotPath, "succeeded");
+    return await captureScreenshot(input.context, input.page, "ai-openmrs-contact-info");
+  } catch (error) {
+    await writeAiActionEvent(
+      input.context,
+      contactAction,
+      input.screenshotPath,
+      `failed: ${error instanceof Error ? error.message : String(error)}`,
+      "ui_state_unexpected",
+    );
+    return input.screenshotPath;
+  }
+}
+
+function openMrsShowContactInfoAction(
+  observation: { controls: Array<{ elementId: string; label?: string; visibleText?: string; role?: string }> },
+  profile: TargetProfile,
+): Extract<AiWebAction, { type: "click" }> | undefined {
+  if (profile.name !== "openmrs") {
+    return undefined;
+  }
+
+  const control = observation.controls.find((candidate) =>
+    /\bshow contact info\b/.test(normalizeForVerification(`${candidate.label ?? ""} ${candidate.visibleText ?? ""}`)),
+  );
+  if (!control) {
+    return undefined;
+  }
+
+  return {
+    type: "click",
+    elementId: control.elementId,
+    purpose: "show OpenMRS contact information before proof capture",
+    rationale: "OpenMRS hides contact details behind a Show Contact Info control on the saved patient dashboard.",
+  };
+}
+
+async function writeSuccessfulVerificationEvidence(
+  context: AiWebTargetRunContext,
+  action: Extract<AiWebAction, { type: "verify" }>,
+  screenshotPath: string | undefined,
+  fieldScreenshotPath: string | undefined,
+): Promise<void> {
+  const targetRecordId = aiTargetRecordId(context);
+  await writeAiActionEvent(context, action, screenshotPath, "succeeded");
+  await context.audit.writeTargetEvidence({
+    recordId: context.record.sourceRecordId,
+    target: context.profile.name,
+    status: "succeeded",
+    screenshotPath,
+    fieldScreenshotPath,
+    targetRecordId,
+    message: action.criteria,
+  });
+}
+
 async function writeAiActionEvent(
   context: AiWebTargetRunContext,
   action: AiWebAction,
@@ -701,6 +1080,10 @@ function aiTargetRecordId(context: AiWebTargetRunContext): string {
   return `ai-${context.profile.name}-${context.record.sourceRecordId}`;
 }
 
+function savedPatientProofMessage(record: NormalizedIntakeRecord): string {
+  return `Saved patient record is visible for ${[record.firstName, record.lastName].filter(Boolean).join(" ")}.`;
+}
+
 function verificationFailureMessage(
   record: NormalizedIntakeRecord,
   observation: { currentUrl: string; title: string; visibleText: string; controls?: Array<{ label: string; value: string; visibleText: string }> },
@@ -709,6 +1092,13 @@ function verificationFailureMessage(
     return {
       message: "AI verification did not find the synthetic patient name in the observed page.",
       eventResult: "failed: synthetic patient name not visible",
+    };
+  }
+
+  if (unsavedPatientEntryFormVisible(observation)) {
+    return {
+      message: "AI verification found an unsaved patient entry form instead of a saved patient state.",
+      eventResult: "failed: unsaved patient entry form visible",
     };
   }
 
@@ -729,6 +1119,19 @@ function verificationEvidenceText(observation: {
   const controlText =
     observation.controls?.map((control) => [control.label, control.value, control.visibleText].filter(Boolean).join(" ")).join(" ") ?? "";
   return `${observation.visibleText} ${controlText}`;
+}
+
+function unsavedPatientEntryFormVisible(observation: {
+  title: string;
+  visibleText: string;
+  controls?: Array<{ label: string; value: string; visibleText: string }>;
+}): boolean {
+  const text = normalizeForVerification(`${observation.title} ${verificationEvidenceText(observation)}`);
+  return (
+    /\bnew patient\b/.test(text) &&
+    /\b(create patient|save|submit)\b/.test(text) &&
+    /\b(first name|last name|date of birth|birth|gender)\b/.test(text)
+  );
 }
 
 function verificationException(

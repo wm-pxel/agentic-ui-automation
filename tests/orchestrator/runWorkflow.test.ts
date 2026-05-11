@@ -227,6 +227,27 @@ describe("runWorkflow", () => {
     expect(targetRunner.maxActive).toBe(2);
   });
 
+  it("runs different target profiles at the same time", async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), "workflow-concurrent-profiles-"));
+    const targetRunner = new ConcurrentTargetRunner();
+    const result = await runWorkflow({
+      runId: "run-concurrent-profiles",
+      runsDir,
+      records: [cleanRecord("demo-001")],
+      profiles: [
+        fakeProfile({ name: "openmrs", displayName: "OpenMRS", concurrency: 1 }),
+        fakeProfile({ name: "openkairo", displayName: "OpenKairo", concurrency: 1 }),
+      ],
+      targetRunner,
+      now: () => "2026-04-28T12:00:00.000Z",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.targetCounts.openmrs).toEqual({ succeeded: 1, exception: 0, skipped: 0 });
+    expect(result.targetCounts.openkairo).toEqual({ succeeded: 1, exception: 0, skipped: 0 });
+    expect(targetRunner.maxActive).toBe(2);
+  });
+
   it("passes all profiles and the planned record count when preparing the target runner", async () => {
     const runsDir = await mkdtemp(join(tmpdir(), "workflow-prepare-planned-records-"));
     const targetRunner = new PrepareContextTargetRunner();

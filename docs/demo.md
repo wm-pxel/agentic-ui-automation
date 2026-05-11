@@ -138,7 +138,13 @@ npm run dev -- watch \
 To demo operator-in-the-loop review, add
 `--confidence-threshold .99 --field-confirmation prompt-on-low-confidence`.
 The destination browser pauses before writing below-threshold fields and lets
-the operator confirm, edit, skip, or stop that field entry.
+the operator confirm, edit, skip, or stop that field entry. Edited values keep
+the prompt open with a spinner while they are interpreted, and unclear values
+re-prompt the operator with feedback.
+
+Use `--targets openmrs,openkairo` to drive both EMR destinations from the same
+handoff. The orchestrator runs the OpenMRS and OpenKairo target groups in
+parallel while preserving each target's own concurrency limit.
 
 For a local dry run that does not open OpenMRS:
 

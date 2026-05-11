@@ -889,6 +889,87 @@ describe("FileAuditStore", () => {
     expect(summary).not.toContain(["Selector", "or", "Error"].join(" "));
   });
 
+  it("aligns semantically equivalent intake and target fields in comparison rows", () => {
+    const summary = renderSummary({
+      runId: "run-test",
+      totalRecords: 1,
+      targetCounts: {
+        openmrs: { succeeded: 1, exception: 0, skipped: 0 },
+      },
+      preflightExceptions: 0,
+      environmentExceptions: 0,
+      closeExceptions: 0,
+      details: {
+        recordInputs: [
+          {
+            recordId: "demo-001",
+            sourceFormat: "json",
+            rawInput: {
+              firstName: "Ava",
+              lastName: "Nguyen",
+            },
+          },
+        ],
+        targetEvidence: [],
+        aiExtractions: [
+          {
+            recordId: "demo-001",
+            model: "demo-model",
+            sourceDocumentName: "intake.json",
+            fields: [
+              {
+                sourceField: "firstName",
+                sourceLabel: "firstName",
+                value: "Ava",
+                confidence: 0.99,
+              },
+              {
+                sourceField: "lastName",
+                sourceLabel: "lastName",
+                value: "Nguyen",
+                confidence: 0.99,
+              },
+            ],
+            additionalFields: [],
+            issues: [],
+          },
+        ],
+        issues: [],
+        fieldMappings: [
+          {
+            recordId: "demo-001",
+            target: "openmrs",
+            sourceField: "Given (required)",
+            targetField: "Given (required)",
+            normalizedValue: "Ava",
+            finalValue: "Ava",
+            selectorCandidates: [],
+            action: "fill",
+            status: "succeeded",
+            agentConfidence: 0.98,
+          },
+          {
+            recordId: "demo-001",
+            target: "openmrs",
+            sourceField: "Family Name (required)",
+            targetField: "Family Name (required)",
+            normalizedValue: "Nguyen",
+            finalValue: "Nguyen",
+            selectorCandidates: [],
+            action: "fill",
+            status: "succeeded",
+            agentConfidence: 0.98,
+          },
+        ],
+      },
+    });
+
+    expect(summary).toContain("| firstName | Ava | 0.98 | Given (required) | Ava | Ava | fill | succeeded; final Ava |  |");
+    expect(summary).toContain("| lastName | Nguyen | 0.98 | Family Name (required) | Nguyen | Nguyen | fill | succeeded; final Nguyen |  |");
+    expect(summary).not.toContain("| firstName | Ava |  |  |  |  |  | not mapped |  |");
+    expect(summary).not.toContain("| lastName | Nguyen |  |  |  |  |  | not mapped |  |");
+  });
+
   it("renders OpenMRS failure context screenshots when no filled-field screenshot is available", () => {
     const summary = renderSummary({
       runId: "run-test",

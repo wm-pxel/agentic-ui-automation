@@ -61,6 +61,10 @@ npm run dev:all -- --targets openkairo --intake-trigger watcher --confidence-thr
 
 ### Both Targets Simultaneously
 
+When multiple targets are listed, the orchestrator starts one bounded worker
+group per target. With the default demo settings, OpenMRS and OpenKairo each run
+one record at a time, but both destination apps are active concurrently.
+
 Watcher-triggered handoff:
 
 ```sh
@@ -85,7 +89,10 @@ repeated demo exports create fresh synthetic patient identifiers. Add
 `--field-confirmation prompt-on-low-confidence` when the destination browser
 should pause before writing any field whose AI planner confidence is below
 `--confidence-threshold`; the prompt lets the operator confirm, edit, skip, or
-stop the field entry.
+stop the field entry. When the operator types a replacement value, the modal
+stays open with a spinner while the runner interprets the value. If the value
+cannot be confidently mapped to the target field, the modal re-prompts with
+feedback.
 
 The viewer starts with the stack at `http://127.0.0.1:4173` by default and
 prints its URL in the `[viewer]` log line. Use `--viewer-port 0` only when you
@@ -489,6 +496,8 @@ The intentional difference is `--targets openmrs` versus `--targets openkairo`.
 OpenMRS and OpenKairo both use the same generic AI web target runner; target
 profiles supply the URL, credentials, target name, goal, and proof criteria.
 There are no destination-specific UI automation classes for those EMR screens.
+When both targets are supplied in one command, each target keeps its own
+concurrency limit and the target groups run in parallel.
 
 Run `npm run viewer` afterward. The viewer sidebar run names, each
 `executive-summary.md`, and each `summary.md` identify the destination target,
@@ -792,7 +801,8 @@ Options:
 - `--field-confirmation`: `auto` by default. Use
   `prompt-on-low-confidence` to show an operator confirmation prompt in the
   active destination browser before writing fields whose AI planner confidence
-  is below `--confidence-threshold`.
+  is below `--confidence-threshold`. Edited values keep the modal open while
+  they are interpreted; unclear values are re-prompted instead of being written.
 - `--openmrs-concurrency`: maximum number of OpenMRS records to enter at the
   same time. Defaults to `OPENMRS_CONCURRENCY`, then `1`.
 - `--openemr-concurrency`: maximum number of OpenEMR records to enter at the

@@ -335,13 +335,8 @@ function targetComparisonRows(
   const rows: TargetComparisonRow[] = [];
 
   for (const mapping of mappings) {
-    mappedFields.add(mapping.sourceField);
-    const extractedSource = extracted.get(mapping.sourceField);
-    const inputSource = inputValues.get(mapping.sourceField);
-    const source = {
-      sourceLabel: extractedSource?.sourceLabel ?? inputSource?.sourceLabel ?? mapping.sourceField,
-      value: inputSource?.value ?? extractedSource?.value ?? "",
-    };
+    const source = sourceForMapping(mapping, extracted, inputValues);
+    mappedFields.add(source.field);
     rows.push({
       sourceLabel: source.sourceLabel,
       sourceValue: source.value,
@@ -376,6 +371,77 @@ function targetComparisonRows(
   }
 
   return rows;
+}
+
+function sourceForMapping(
+  mapping: ReportFieldMapping,
+  extracted: Map<string, { sourceLabel: string; value: string }>,
+  inputValues: Map<string, { sourceLabel: string; value: string }>,
+): { field: string; sourceLabel: string; value: string } {
+  const exactSource = sourceForField(mapping.sourceField, extracted, inputValues);
+  if (exactSource) {
+    return exactSource;
+  }
+
+  const semanticField = semanticSourceFieldForMapping(mapping);
+  if (semanticField) {
+    const semanticSource = sourceForField(semanticField, extracted, inputValues);
+    if (semanticSource) {
+      return semanticSource;
+    }
+  }
+
+  return {
+    field: mapping.sourceField,
+    sourceLabel: mapping.sourceField,
+    value: "",
+  };
+}
+
+function sourceForField(
+  field: string,
+  extracted: Map<string, { sourceLabel: string; value: string }>,
+  inputValues: Map<string, { sourceLabel: string; value: string }>,
+): { field: string; sourceLabel: string; value: string } | undefined {
+  const extractedSource = extracted.get(field);
+  const inputSource = inputValues.get(field);
+  if (!extractedSource && !inputSource) {
+    return undefined;
+  }
+
+  return {
+    field,
+    sourceLabel: extractedSource?.sourceLabel ?? inputSource?.sourceLabel ?? field,
+    value: inputSource?.value ?? extractedSource?.value ?? "",
+  };
+}
+
+function semanticSourceFieldForMapping(mapping: ReportFieldMapping): string | undefined {
+  const text = normalizedComparisonText(`${mapping.sourceField} ${mapping.targetField}`);
+
+  if (/\b(given|first name|forename)\b/.test(text)) return "firstName";
+  if (/\b(family name|last name|surname)\b/.test(text)) return "lastName";
+  if (/\b(gender|sex)\b/.test(text)) return "sexOrGender";
+  if (/\b(phone|telephone|mobile)\b/.test(text)) return "phone";
+  if (/\b(address1|address 1|street address|address)\b/.test(text)) return "streetAddress";
+  if (/\b(city village|cityvillage|city)\b/.test(text)) return "city";
+  if (/\b(state province|stateprovince|state|province)\b/.test(text)) return "state";
+  if (/\b(postal code|postalcode|zip)\b/.test(text)) return "zip";
+  if (/\b(date of birth|birthdate|birth date|dob|day|required day|month|required month|year|required year)\b/.test(text)) {
+    return "dateOfBirth";
+  }
+
+  return undefined;
+}
+
+function normalizedComparisonText(value: string): string {
+  return value
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[*_/-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function finalInputValue(mapping: ReportFieldMapping): string {
