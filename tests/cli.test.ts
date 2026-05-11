@@ -218,6 +218,8 @@ describe("runCli", () => {
           runsDir,
           "--parser",
           "deterministic",
+          "--confidence-threshold",
+          ".99",
         ],
         io,
         {
@@ -232,6 +234,7 @@ describe("runCli", () => {
       expect(io.stderrText()).toBe("");
       expect(factoryCalls).toHaveLength(1);
       expect(factoryCalls[0]?.profiles.map((profile) => profile.name)).toEqual([target]);
+      expect(factoryCalls[0]?.profiles[0]?.confidenceThreshold).toBe(0.99);
       expect(runner.runProfiles).toEqual([target, target, target]);
       const result = JSON.parse(io.stdoutText()) as {
         targetCounts: Record<string, { succeeded: number; exception: number; skipped: number }>;
@@ -358,6 +361,19 @@ describe("runCli", () => {
     expect(io.stderrText()).toContain("--openemr-concurrency must be a positive integer.");
   });
 
+  it.each([
+    ["run", ["run", "--input", "data/demo/intake-records-normalized.json", "--confidence-threshold", "1.1"]],
+    ["watch", ["watch", "--once", "--confidence-threshold", "-0.1"]],
+  ] as const)("rejects invalid confidence threshold values on %s", async (_command, args) => {
+    const io = captureIo();
+
+    const exitCode = await runCli(["node", "agentic-ui", ...args], io);
+
+    expect(exitCode).toBe(1);
+    expect(io.stdoutText()).toBe("");
+    expect(io.stderrText()).toContain("--confidence-threshold must be a number from 0 through 1.");
+  });
+
   it("requires an OpenAI API key for default non-fake target runs", async () => {
     const io = captureIo();
     const originalApiKey = process.env.OPENAI_API_KEY;
@@ -427,16 +443,31 @@ describe("runCli", () => {
     expect(io.stderrText()).toBe("");
   });
 
+  it("allows port zero so the viewer can use an available ephemeral port", async () => {
+    const io = captureIo();
+    const calls: Array<{ runsDir: string; port?: number }> = [];
+    const exitCode = await runCli(["node", "agentic-ui", "viewer", "--port", "0"], io, {
+      startViewerServer: async (options) => {
+        calls.push({ runsDir: options.runsDir, port: options.port });
+        return fakeViewerServer();
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(calls).toEqual([{ runsDir: "runs", port: 0 }]);
+    expect(io.stderrText()).toBe("");
+  });
+
   it("rejects invalid viewer ports", async () => {
     const io = captureIo();
 
-    const exitCode = await runCli(["node", "agentic-ui", "viewer", "--port", "0"], io, {
+    const exitCode = await runCli(["node", "agentic-ui", "viewer", "--port", "-1"], io, {
       startViewerServer: async () => fakeViewerServer(),
     });
 
     expect(exitCode).toBe(1);
     expect(io.stdoutText()).toBe("");
-    expect(io.stderrText()).toContain("--port must be a positive integer.");
+    expect(io.stderrText()).toContain("--port must be zero or a positive integer.");
   });
 
   it("processes ready intake exports with the watch command in once mode", async () => {
@@ -498,6 +529,66 @@ describe("runCli", () => {
         },
       },
     });
+  });
+
+  it("defaults watch runs to an automatic synthetic suffix", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentic-ui-cli-watch-suffix-"));
+    tempDirs.push(root);
+    const inbox = join(root, "inbox");
+    const runsDir = join(root, "runs");
+    await writeIntakeHandoff({
+      inbox,
+      records: [
+        {
+          sourceRecordId: "cli-watch-suffix-001",
+          firstName: "Ava",
+          lastName: "Nguyen",
+          dateOfBirth: "1987-03-14",
+          sexOrGender: "female",
+          phone: "312-555-0198",
+          email: "ava.nguyen@example.test",
+          streetAddress: "1200 West Lake Street",
+          city: "Chicago",
+          state: "IL",
+          zip: "60607",
+          insurancePayer: "Aetna",
+          insuranceMemberId: "AET123456",
+          reasonForVisit: "Annual wellness visit",
+          preferredContactMethod: "phone",
+          sourceFormat: "json",
+          rawSourceExcerpt: "cli-watch-suffix-001",
+        },
+      ],
+    });
+    const io = captureIo();
+
+    const exitCode = await runCli(
+      [
+        "node",
+        "agentic-ui",
+        "watch",
+        "--once",
+        "--inbox",
+        inbox,
+        "--targets",
+        "fake",
+        "--runs-dir",
+        runsDir,
+      ],
+      io,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.stderrText()).toBe("");
+    const result = JSON.parse(io.stdoutText()) as { status: string; run?: { runId: string } };
+    expect(result.status).toBe("processed");
+    const normalized = (await readJson(
+      join(runsDir, result.run?.runId ?? "", "input", "normalized-records.json"),
+    )) as Array<{ sourceRecordId: string; lastName: string; email: string; insuranceMemberId: string }>;
+    expect(normalized[0]?.sourceRecordId).toMatch(/^cli-watch-suffix-001-run-\d{14}-[a-f0-9]{5}$/);
+    expect(normalized[0]?.lastName).toMatch(/^Nguyen Run-\d{14}-[a-f0-9]{5}$/);
+    expect(normalized[0]?.email).toMatch(/^ava\.nguyen\+run-\d{14}-[a-f0-9]{5}@example\.test$/);
+    expect(normalized[0]?.insuranceMemberId).toMatch(/^AET123456-RUN-\d{14}-[A-F0-9]{5}-1$/);
   });
 
   it("defaults to AI parsing and fails clearly without an OpenAI API key", async () => {

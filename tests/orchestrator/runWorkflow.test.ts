@@ -470,6 +470,7 @@ function fakeProfile(overrides: Partial<TargetProfile> = {}): TargetProfile {
     baseUrl: "local://dry-run",
     credentials: { username: "", password: "" },
     task: "Validate orchestration and audit output without entering an EMR.",
+    workflowHints: [],
     successCriteria: ["The normalized record is accepted by the dry-run target."],
     forbiddenActions: ["Do not use real patient data."],
     concurrency: 1,

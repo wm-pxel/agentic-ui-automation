@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { defaultIntakeInbox, writeIntakeHandoff } from "../handoff/intakeHandoff.js";
+import { loadSourceRecords } from "../parsing/loadRecords.js";
 
 export type DevAllChildProcess = {
   stdout?: Readable | null;
@@ -15,6 +18,19 @@ export type DevAllSpawnProcess = (
   options: { cwd: string; env: NodeJS.ProcessEnv },
 ) => DevAllChildProcess;
 
+export type DevAllAutoImportInput = {
+  cwd: string;
+  inputPath: string;
+  inbox: string;
+};
+
+export type DevAllAutoImportResult = {
+  readyPath: string;
+  recordCount: number;
+};
+
+export type DevAllAutoImportHandoff = (input: DevAllAutoImportInput) => Promise<DevAllAutoImportResult>;
+
 type DevAllCommand = {
   name: string;
   script: string;
@@ -27,10 +43,22 @@ type DevAllOptions = {
   stdout?: NodeJS.WritableStream;
   stderr?: NodeJS.WritableStream;
   spawnProcess?: DevAllSpawnProcess;
+  autoImportHandoff?: DevAllAutoImportHandoff;
   registerSignalHandler?: (signal: NodeJS.Signals, handler: () => void) => () => void;
 };
 
-type DevAllConfig = Record<string, never>;
+type IntakeTrigger = "watcher" | "auto-import";
+
+type DevAllConfig = {
+  targets?: string;
+  intakeTrigger: IntakeTrigger;
+  autoImportInput: string;
+  viewerPort: number;
+  confidenceThreshold?: number;
+};
+
+const defaultAutoImportInput = "data/demo/intake-records-normalized.json";
+const defaultViewerPort = 4173;
 
 const devAllCommands: DevAllCommand[] = [
   { name: "watch", script: "watch:intake" },
@@ -44,6 +72,7 @@ export async function runDevAll(options: DevAllOptions = {}): Promise<number> {
   const stdout = options.stdout ?? process.stdout;
   const stderr = options.stderr ?? process.stderr;
   const spawnProcess = options.spawnProcess ?? spawnDevCommand;
+  const autoImportHandoff = options.autoImportHandoff ?? defaultAutoImportHandoff;
   const config = parseDevAllArgs(options.args ?? []);
   const children: Array<{ command: DevAllCommand; child: DevAllChildProcess; exited: boolean }> = [];
   const removeSignalHandlers: Array<() => void> = [];
@@ -97,20 +126,158 @@ export async function runDevAll(options: DevAllOptions = {}): Promise<number> {
         settle(exitCode);
       });
     }
+
+    if (config.intakeTrigger === "auto-import") {
+      void autoImportHandoff({
+        cwd,
+        inputPath: config.autoImportInput,
+        inbox: defaultIntakeInbox(),
+      })
+        .then((result) => {
+          stdout.write(`Auto-imported ${result.recordCount} intake records to ${result.readyPath}\n`);
+        })
+        .catch((error) => {
+          stderr.write(`Auto-import failed: ${error instanceof Error ? error.message : String(error)}\n`);
+          settle(1);
+        });
+    }
   });
 }
 
 function parseDevAllArgs(args: string[]): DevAllConfig {
-  for (const arg of args) {
+  const config: DevAllConfig = {
+    intakeTrigger: "watcher",
+    autoImportInput: defaultAutoImportInput,
+    viewerPort: defaultViewerPort,
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--targets") {
+      const targets = args[index + 1];
+      if (!targets || targets.startsWith("--")) {
+        throw new Error("--targets requires a comma-separated target list.");
+      }
+      config.targets = targets;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--targets=")) {
+      const targets = arg.slice("--targets=".length);
+      if (!targets) {
+        throw new Error("--targets requires a comma-separated target list.");
+      }
+      config.targets = targets;
+      continue;
+    }
+
+    if (arg === "--intake-trigger") {
+      const trigger = args[index + 1];
+      if (!trigger || trigger.startsWith("--")) {
+        throw new Error("--intake-trigger requires 'watcher' or 'auto-import'.");
+      }
+      config.intakeTrigger = parseIntakeTrigger(trigger);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--intake-trigger=")) {
+      config.intakeTrigger = parseIntakeTrigger(arg.slice("--intake-trigger=".length));
+      continue;
+    }
+
+    if (arg === "--auto-import-input") {
+      const inputPath = args[index + 1];
+      if (!inputPath || inputPath.startsWith("--")) {
+        throw new Error("--auto-import-input requires a path.");
+      }
+      config.autoImportInput = inputPath;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--auto-import-input=")) {
+      const inputPath = arg.slice("--auto-import-input=".length);
+      if (!inputPath) {
+        throw new Error("--auto-import-input requires a path.");
+      }
+      config.autoImportInput = inputPath;
+      continue;
+    }
+
+    if (arg === "--viewer-port") {
+      const port = args[index + 1];
+      if (!port || port.startsWith("--")) {
+        throw new Error("--viewer-port requires zero or a positive integer.");
+      }
+      config.viewerPort = parseViewerPort(port);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--viewer-port=")) {
+      config.viewerPort = parseViewerPort(arg.slice("--viewer-port=".length));
+      continue;
+    }
+
+    if (arg === "--confidence-threshold") {
+      const threshold = args[index + 1];
+      if (!threshold || threshold.startsWith("--")) {
+        throw new Error("--confidence-threshold requires a number from 0 through 1.");
+      }
+      config.confidenceThreshold = parseConfidenceThreshold(threshold);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--confidence-threshold=")) {
+      config.confidenceThreshold = parseConfidenceThreshold(arg.slice("--confidence-threshold=".length));
+      continue;
+    }
+
     throw new Error(`Unknown dev:all option: ${arg}`);
   }
 
-  return {};
+  return config;
+}
+
+function parseIntakeTrigger(value: string): IntakeTrigger {
+  if (value === "watcher" || value === "auto-import") return value;
+  throw new Error("--intake-trigger must be either 'watcher' or 'auto-import'.");
+}
+
+function parseViewerPort(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error("--viewer-port must be zero or a positive integer.");
+  }
+  return parsed;
+}
+
+function parseConfidenceThreshold(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error("--confidence-threshold must be a number from 0 through 1.");
+  }
+  return parsed;
 }
 
 function npmRunArgs(command: DevAllCommand, config: DevAllConfig): string[] {
-  void config;
-  return ["run", command.script];
+  const args = ["run", command.script];
+  if (command.name === "watch" && config.targets) {
+    args.push("--", "--targets", config.targets);
+  }
+  if (command.name === "watch" && config.confidenceThreshold !== undefined) {
+    if (!args.includes("--")) {
+      args.push("--");
+    }
+    args.push("--confidence-threshold", String(config.confidenceThreshold));
+  }
+  if (command.name === "viewer") {
+    args.push("--", "--port", String(config.viewerPort));
+  }
+  return args;
 }
 
 function spawnDevCommand(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }): DevAllChildProcess {
@@ -119,6 +286,19 @@ function spawnDevCommand(command: string, args: string[], options: { cwd: string
     env: options.env,
     stdio: ["ignore", "pipe", "pipe"],
   });
+}
+
+async function defaultAutoImportHandoff(input: DevAllAutoImportInput): Promise<DevAllAutoImportResult> {
+  const records = await loadSourceRecords(resolve(input.cwd, input.inputPath));
+  const result = await writeIntakeHandoff({
+    records,
+    inbox: input.inbox,
+    format: "json",
+  });
+  return {
+    readyPath: result.readyPath,
+    recordCount: result.recordCount,
+  };
 }
 
 function pipeWithPrefix(

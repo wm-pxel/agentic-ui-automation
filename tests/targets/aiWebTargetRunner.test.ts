@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FileAuditStore } from "../../src/audit/auditStore.js";
 import type { NormalizedIntakeRecord } from "../../src/domain/schema.js";
+import type { AiWebPlan, AiWebPlanInput, AiWebPlanner } from "../../src/targets/aiWebPlanner.js";
 import { StaticAiWebPlanner } from "../../src/targets/aiWebPlanner.js";
 import { AiWebTargetRunner } from "../../src/targets/aiWebTargetRunner.js";
 import type { TargetProfile } from "../../src/targets/profiles.js";
@@ -54,7 +55,7 @@ describe("AiWebTargetRunner", () => {
 
     const result = await runner.runRecord({
       runId: "run-test",
-      profile: profile(),
+      profile: { ...profile(), confidenceThreshold: 0.99 },
       record: record(),
       audit,
     });
@@ -86,6 +87,7 @@ describe("AiWebTargetRunner", () => {
         finalValue: "Ava",
         action: "fill",
         status: "succeeded",
+        confidenceThreshold: 0.99,
         approvalSource: "agent",
         selectedSelector: "#first-name",
         selectorCandidates: ["#first-name"],
@@ -97,6 +99,230 @@ describe("AiWebTargetRunner", () => {
       expect.objectContaining({ actionType: "ai-click", result: "succeeded" }),
       expect.objectContaining({ actionType: "ai-verify", result: "succeeded" }),
     ]);
+  });
+
+  it("passes recent action history to the planner so it can avoid loops", async () => {
+    const page = new FakeRunnerPage();
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-history-");
+    const planner = new CapturingPlanner([
+      {
+        action: {
+          type: "click",
+          elementId: "control-2",
+          purpose: "search",
+          rationale: "Search once before creating the patient.",
+        },
+        confidence: 0.81,
+      },
+      {
+        action: {
+          type: "stop",
+          code: "ui_state_unexpected",
+          message: "Stop after inspecting action history.",
+        },
+        confidence: 1,
+      },
+    ]);
+    const runner = new AiWebTargetRunner({
+      planner,
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(planner.inputs).toHaveLength(2);
+    expect(planner.inputs[0]?.recentActions).toEqual([]);
+    expect(planner.inputs[1]?.recentActions).toEqual([
+      {
+        actionType: "click",
+        target: "search",
+        result: "succeeded",
+      },
+    ]);
+  });
+
+  it("waits instead of stopping when a SPA observation has no controls yet", async () => {
+    const page = new FakeRunnerPage({ bodyText: "", bodyTextAfterWait: "Patient Details Ava Nguyen saved", elements: [] });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-empty-spa-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message: "No observed controls are available yet.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen appears after the SPA finishes loading.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(page.actions).toEqual([["wait", 1000]]);
+    expect(await readEvents(audit)).toEqual([
+      expect.objectContaining({ actionType: "ai-wait", result: "succeeded" }),
+      expect.objectContaining({ actionType: "ai-verify", result: "succeeded" }),
+    ]);
+  });
+
+  it("waits instead of stopping when only sparse shell controls are visible", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "OpenMRS Home Super User",
+      bodyTextAfterWait: "Patient Details Ava Nguyen saved",
+      elements: [fakeElement("button", { "aria-label": "Help" }, ""), fakeElement("button", { "aria-label": "Implementer tools" }, "")],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-shell-spa-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message: "Only help controls are visible and no safe patient-registration action is available.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen appears after the SPA shell finishes loading.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(page.actions).toEqual([["wait", 1000]]);
+  });
+
+  it("clicks visible option controls when the planner selects a non-select element", async () => {
+    const page = new FakeRunnerPage({
+      elements: [fakeElement("li", { id: "registration-desk", onclick: "chooseLocation()" }, "Registration Desk")],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-select-click-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "select",
+            elementId: "control-1",
+            field: "sessionLocation",
+            value: "Registration Desk",
+            rationale: "The visible location option matches the workflow hint.",
+          },
+          confidence: 0.88,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen appears in the saved patient state.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(page.actions).toEqual([["click", "#registration-desk"]]);
+    expect(audit.getReportDetails().fieldMappings).toContainEqual(
+      expect.objectContaining({
+        sourceField: "sessionLocation",
+        action: "select",
+        status: "succeeded",
+        selectedSelector: "#registration-desk",
+      }),
+    );
+  });
+
+  it("uses the observed forward-next control when the planner intends to advance a wizard", async () => {
+    const page = new FakeRunnerPage({
+      elements: [
+        fakeElement("button", { id: "prev-button", class: "confirm" }, ""),
+        fakeElement("button", { id: "next-button", class: "confirm right" }, ""),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-forward-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "click",
+            elementId: "control-1",
+            purpose: "continue to the next step",
+            rationale: "The required fields are complete; use the forward/next control.",
+          },
+          confidence: 0.84,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen appears on the saved patient state.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: profile(),
+      record: record(),
+      audit,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(page.actions).toEqual([["click", "#next-button"]]);
   });
 
   it("blocks forbidden destructive clicks before browser execution", async () => {
@@ -122,6 +348,7 @@ describe("AiWebTargetRunner", () => {
         },
       ]),
       launchBrowser: async () => browser,
+      maxSteps: 1,
     });
 
     const result = await runner.runRecord({
@@ -219,6 +446,7 @@ describe("AiWebTargetRunner", () => {
         },
       ]),
       launchBrowser: async () => browser,
+      maxSteps: 1,
     });
 
     const result = await runner.runRecord({
@@ -244,6 +472,111 @@ describe("AiWebTargetRunner", () => {
         exceptionCode: "verification_failed",
       }),
     ]);
+  });
+
+  it("accepts OpenKairo patient record pages as saved patient states", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Patient Record MRN-M0XPCLB0 New Encounter Ava Nguyen DOB Mar 14 1987 Gender Female",
+      title: "OpenKairo",
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openkairo-verify-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient record.",
+            rationale: "Ava Nguyen is visible on the patient record page.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 1,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openkairo", displayName: "OpenKairo" },
+      record: record(),
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openkairo-demo-001" });
+    expect(await readEvents(audit)).toEqual([expect.objectContaining({ actionType: "ai-verify", result: "succeeded" })]);
+  });
+
+  it("accepts OpenMRS 3 localized patient charts as saved patient states", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Priya Shah Run-20260509022520-3c144 Resumen del paciente Visitas Condiciones Alergias Medicamentos",
+      title: "OpenMRS",
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs3-verify-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient chart.",
+            rationale: "The localized OpenMRS chart page shows the saved patient.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 1,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: {
+        ...record(),
+        firstName: "Priya",
+        lastName: "Shah Run-20260509022520-3c144",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+  });
+
+  it("accepts OpenMRS 2 patient dashboards as saved patient states", async () => {
+    const page = new FakeRunnerPage({
+      bodyText:
+        "Ava Nguyen Run-20260511021216-87e0c Patient ID 100HXG Diagnoses Recent Visits General Actions Start Visit",
+      title: "OpenMRS",
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs2-verify-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient dashboard.",
+            rationale: "The OpenMRS dashboard shows the saved patient.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 1,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: {
+        ...record(),
+        lastName: "Nguyen Run-20260511021216-87e0c",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
   });
 
   it("returns an exception and closes the browser when the planner stops", async () => {
@@ -304,6 +637,7 @@ describe("AiWebTargetRunner", () => {
         },
       ]),
       launchBrowser: async () => browser,
+      maxSteps: 1,
     });
 
     const result = await runner.runRecord({
@@ -338,7 +672,7 @@ describe("AiWebTargetRunner", () => {
     );
   });
 
-  it("records a failed executable action event and closes the browser when a browser action fails", async () => {
+  it("continues planning with fresh observations after a failed executable browser action", async () => {
     const page = new FakeRunnerPage();
     const browser = new FakeRunnerBrowser(page);
     const audit = await createAudit("ai-web-runner-failure-");
@@ -353,8 +687,26 @@ describe("AiWebTargetRunner", () => {
           },
           confidence: 0.8,
         },
+        {
+          action: {
+            type: "click",
+            elementId: "control-2",
+            purpose: "save",
+            rationale: "Retry with the currently observed save button.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the synthetic patient name.",
+            rationale: "Ava Nguyen appears in the saved patient page.",
+          },
+          confidence: 0.9,
+        },
       ]),
       launchBrowser: async () => browser,
+      maxSteps: 3,
     });
 
     const result = await runner.runRecord({
@@ -364,20 +716,21 @@ describe("AiWebTargetRunner", () => {
       audit,
     });
 
-    expect(result).toEqual({
-      status: "exception",
-      exception: expect.objectContaining({
-        code: "ui_state_unexpected",
-        message: "stale element id: control-99",
-        screenshotPath: "screenshots/demo-001/openemr/0001-ai-step-1.png",
-      }),
-    });
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openemr-demo-001" });
     expect(browser.closed).toBe(true);
     expect(await readEvents(audit)).toEqual([
       expect.objectContaining({
         actionType: "ai-click",
         result: "failed: stale element id: control-99",
         exceptionCode: "ui_state_unexpected",
+      }),
+      expect.objectContaining({
+        actionType: "ai-click",
+        result: "succeeded",
+      }),
+      expect.objectContaining({
+        actionType: "ai-verify",
+        result: "succeeded",
       }),
     ]);
   });
@@ -444,10 +797,32 @@ function profile(): TargetProfile {
     baseUrl: "https://example.test/emr",
     credentials: { username: "admin", password: "pass" },
     task: "Create one synthetic patient.",
+    workflowHints: [],
     successCriteria: ["The page shows the synthetic patient name."],
     forbiddenActions: ["Do not delete patients."],
     concurrency: 1,
   };
+}
+
+class CapturingPlanner implements AiWebPlanner {
+  readonly inputs: AiWebPlanInput[] = [];
+  private readonly queuedPlans: AiWebPlan[];
+
+  constructor(plans: AiWebPlan[]) {
+    this.queuedPlans = [...plans];
+  }
+
+  async plan(input: AiWebPlanInput): Promise<AiWebPlan> {
+    this.inputs.push(input);
+    return this.queuedPlans.shift() ?? {
+      action: {
+        type: "stop",
+        code: "ui_state_unexpected",
+        message: "No queued plan.",
+      },
+      confidence: 1,
+    };
+  }
 }
 
 function record(): NormalizedIntakeRecord {
@@ -496,6 +871,7 @@ class FakeRunnerPage {
       bodyText?: string;
       title?: string;
       elements?: FakeElement[];
+      bodyTextAfterWait?: string;
     } = {},
   ) {
     this.document = new FakeDocument(
@@ -519,8 +895,10 @@ class FakeRunnerPage {
     return {
       innerText: async () =>
         selector === "body"
-          ? (this.options.bodyText ??
-            (this.actions.some((action) => Array.isArray(action) && action[0] === "click")
+          ? (this.actions.some((action) => Array.isArray(action) && action[0] === "wait") && this.options.bodyTextAfterWait
+            ? this.options.bodyTextAfterWait
+            : this.options.bodyText ??
+            (this.actions.some((action) => Array.isArray(action) && (action[0] === "click" || action[0] === "wait"))
               ? "Patient Details Ava Nguyen saved"
               : "First Name Save"))
           : "",
@@ -592,8 +970,16 @@ class FakeDocument {
 
   querySelectorAll(selector: string): FakeElement[] {
     if (selector.includes(",")) {
-      const tags = selector.split(",").map((tag) => tag.trim().toUpperCase());
-      return this.elements.filter((element) => tags.includes(element.tagName));
+      const selectors = selector.split(",").map((part) => part.trim());
+      return this.elements.filter((element) =>
+        selectors.some((part) => {
+          if (part.startsWith("[")) {
+            const attributeName = part.match(/^\[([^=\]]+)/)?.[1];
+            return attributeName ? element.getAttribute(attributeName) !== null : false;
+          }
+          return element.tagName === part.toUpperCase();
+        }),
+      );
     }
 
     const id = selector.match(/^#(.+)$/)?.[1];

@@ -2,13 +2,13 @@ import { chromium } from "@playwright/test";
 import type { FileAuditStore } from "../audit/auditStore.js";
 import type { ReportFieldMapping } from "../audit/auditStore.js";
 import type { NormalizedIntakeRecord, ValidationException } from "../domain/schema.js";
-import type { AiWebPlanner } from "./aiWebPlanner.js";
+import type { AiWebPlanner, AiWebRecentAction } from "./aiWebPlanner.js";
 import type { AiWebAction, BrowserExecutableAiWebAction } from "./browserActions.js";
 import { executeBrowserAction } from "./browserActions.js";
 import { createObservationSnapshot } from "./pageObservation.js";
 import type { TargetProfile } from "./profiles.js";
 
-const DEFAULT_MAX_STEPS = 30;
+const DEFAULT_MAX_STEPS = 50;
 
 export type AiWebTargetResult =
   | {
@@ -72,6 +72,7 @@ export class AiWebTargetRunner {
     let latestFieldScreenshotPath: string | undefined;
     const completedFields: string[] = [];
     const skippedFields: string[] = [];
+    const recentActions: AiWebRecentAction[] = [];
 
     try {
       browser = await this.launchBrowser({
@@ -91,11 +92,20 @@ export class AiWebTargetRunner {
           observation,
           completedFields,
           skippedFields,
+          recentActions: [...recentActions],
           stepCount,
         });
         const action = plan.action;
 
         if (action.type === "stop") {
+          if (shouldWaitInsteadOfStopping(action, observation, stepCount, this.maxSteps)) {
+            const waitAction: AiWebAction = { type: "wait", reason: "Observed page has no actionable controls yet." };
+            await executeBrowserAction(page, observation.elementSelectors, waitAction);
+            await writeAiActionEvent(context, waitAction, latestScreenshotPath, "succeeded");
+            rememberRecentAction(recentActions, waitAction, "succeeded");
+            continue;
+          }
+
           await writeAiActionEvent(context, action, latestScreenshotPath, "stopped", action.code);
           const exception = exceptionForStop(action, latestScreenshotPath);
           await context.audit.writeTargetEvidence({
@@ -112,7 +122,6 @@ export class AiWebTargetRunner {
         if (action.type === "verify") {
           const verificationFailure = verificationFailureMessage(context.record, observation);
           if (verificationFailure) {
-            const exception = verificationException(verificationFailure, latestScreenshotPath);
             await writeAiActionEvent(
               context,
               action,
@@ -120,6 +129,12 @@ export class AiWebTargetRunner {
               verificationFailure.eventResult,
               "verification_failed",
             );
+            rememberRecentAction(recentActions, action, verificationFailure.eventResult);
+            if (stepCount < this.maxSteps) {
+              continue;
+            }
+
+            const exception = verificationException(verificationFailure, latestScreenshotPath);
             await context.audit.writeTargetEvidence({
               recordId: context.record.sourceRecordId,
               target: context.profile.name,
@@ -147,6 +162,7 @@ export class AiWebTargetRunner {
         if (action.type === "screenshot") {
           latestScreenshotPath = await captureScreenshot(context, page, `ai-${action.label}`);
           await writeAiActionEvent(context, action, latestScreenshotPath, "captured");
+          rememberRecentAction(recentActions, action, "captured");
           continue;
         }
 
@@ -177,16 +193,21 @@ export class AiWebTargetRunner {
         }
 
         try {
-          await executeBrowserAction(page, observation.elementSelectors, action);
+          await executeBrowserAction(page, observation.elementSelectors, executableActionForObservedControl(action, observation));
         } catch (error) {
           const exception = exceptionFromError(error, latestScreenshotPath);
+          const failedResult = `failed: ${exception.message}`;
           await writeAiActionEvent(
             context,
             action,
             latestScreenshotPath,
-            `failed: ${exception.message}`,
+            failedResult,
             "ui_state_unexpected",
           );
+          rememberRecentAction(recentActions, action, failedResult);
+          if (stepCount < this.maxSteps) {
+            continue;
+          }
           throw error;
         }
 
@@ -204,6 +225,7 @@ export class AiWebTargetRunner {
             action: action.type,
             status: "succeeded",
             agentConfidence: plan.confidence,
+            confidenceThreshold: context.profile.confidenceThreshold,
             agentRationale: action.rationale,
             approvalSource: "agent",
             finalValue: action.value,
@@ -211,8 +233,10 @@ export class AiWebTargetRunner {
           } satisfies ReportFieldMapping;
           await context.audit.writeFieldMapping(mapping);
           await writeAiActionEvent(context, action, latestFieldScreenshotPath, "succeeded");
+          rememberRecentAction(recentActions, action, "succeeded");
         } else {
           await writeAiActionEvent(context, action, latestScreenshotPath, "succeeded");
+          rememberRecentAction(recentActions, action, "succeeded");
         }
       }
 
@@ -248,6 +272,122 @@ export class AiWebTargetRunner {
   }
 }
 
+function shouldWaitInsteadOfStopping(
+  action: Extract<AiWebAction, { type: "stop" }>,
+  observation: { controls: readonly unknown[]; visibleText: string },
+  stepCount: number,
+  maxSteps: number,
+): boolean {
+  if (stepCount >= maxSteps) {
+    return false;
+  }
+
+  if (observation.controls.length === 0 && normalizeForVerification(observation.visibleText).length === 0) {
+    return true;
+  }
+
+  const stopText = normalizeForVerification(action.message);
+  return (
+    observation.controls.length <= 3 &&
+    /\b(no safe|no observable|only help|only .* controls|not currently available)\b/.test(stopText)
+  );
+}
+
+function executableActionForObservedControl(
+  action: BrowserExecutableAiWebAction,
+  observation: { controls: Array<{ elementId: string; tag: string; label?: string; visibleText?: string; role?: string }> },
+): BrowserExecutableAiWebAction {
+  if (action.type === "click") {
+    const forwardAction = forwardNavigationActionForIntent(action, observation.controls);
+    if (forwardAction) {
+      return forwardAction;
+    }
+  }
+
+  if (action.type !== "select") {
+    return action;
+  }
+
+  const control = observation.controls.find((item) => item.elementId === action.elementId);
+  if (control?.tag === "select") {
+    return action;
+  }
+
+  return {
+    type: "click",
+    elementId: action.elementId,
+    purpose: `select ${action.value}`,
+    rationale: action.rationale,
+  };
+}
+
+function forwardNavigationActionForIntent(
+  action: Extract<BrowserExecutableAiWebAction, { type: "click" }>,
+  controls: Array<{ elementId: string; label?: string; visibleText?: string; role?: string }>,
+): Extract<BrowserExecutableAiWebAction, { type: "click" }> | undefined {
+  const intent = normalizeForVerification(`${action.purpose} ${action.rationale}`);
+  if (!/\b(forward|next|continue|proceed|advance)\b/.test(intent)) {
+    return undefined;
+  }
+
+  const selectedControl = controls.find((control) => control.elementId === action.elementId);
+  if (controlTextMatches(selectedControl, /\b(forward next|next button|continue|proceed|advance)\b/)) {
+    return undefined;
+  }
+
+  const forwardControl = controls.find(
+    (control) => control.role === "button" && controlTextMatches(control, /\b(forward next|next button|continue|proceed|advance)\b/),
+  );
+  if (!forwardControl) {
+    return undefined;
+  }
+
+  return {
+    ...action,
+    elementId: forwardControl.elementId,
+  };
+}
+
+function controlTextMatches(
+  control: { label?: string; visibleText?: string } | undefined,
+  pattern: RegExp,
+): boolean {
+  if (!control) {
+    return false;
+  }
+  return pattern.test(normalizeForVerification(`${control.label ?? ""} ${control.visibleText ?? ""}`));
+}
+
+function rememberRecentAction(recentActions: AiWebRecentAction[], action: AiWebAction, result: string): void {
+  recentActions.push({
+    actionType: action.type,
+    target: targetForRecentAction(action),
+    result,
+  });
+
+  if (recentActions.length > 8) {
+    recentActions.splice(0, recentActions.length - 8);
+  }
+}
+
+function targetForRecentAction(action: AiWebAction): string {
+  switch (action.type) {
+    case "fill":
+    case "select":
+      return action.field;
+    case "click":
+      return action.purpose;
+    case "wait":
+      return action.reason;
+    case "screenshot":
+      return action.label;
+    case "verify":
+      return action.criteria;
+    case "stop":
+      return action.message;
+  }
+}
+
 async function captureScreenshot(context: AiWebTargetRunContext, page: AiWebTargetPage, step: string): Promise<string> {
   const bytes = await page.screenshot({ fullPage: true });
   return context.audit.writeScreenshot(context.record.sourceRecordId, context.profile.name, step, bytes);
@@ -278,9 +418,9 @@ function aiTargetRecordId(context: AiWebTargetRunContext): string {
 
 function verificationFailureMessage(
   record: NormalizedIntakeRecord,
-  observation: { currentUrl: string; title: string; visibleText: string },
+  observation: { currentUrl: string; title: string; visibleText: string; controls?: Array<{ label: string; value: string; visibleText: string }> },
 ): { message: string; eventResult: string } | undefined {
-  if (!syntheticPatientNameVisible(record, observation.visibleText)) {
+  if (!syntheticPatientNameVisible(record, verificationEvidenceText(observation))) {
     return {
       message: "AI verification did not find the synthetic patient name in the observed page.",
       eventResult: "failed: synthetic patient name not visible",
@@ -295,6 +435,15 @@ function verificationFailureMessage(
   }
 
   return undefined;
+}
+
+function verificationEvidenceText(observation: {
+  visibleText: string;
+  controls?: Array<{ label: string; value: string; visibleText: string }>;
+}): string {
+  const controlText =
+    observation.controls?.map((control) => [control.label, control.value, control.visibleText].filter(Boolean).join(" ")).join(" ") ?? "";
+  return `${observation.visibleText} ${controlText}`;
 }
 
 function verificationException(
@@ -323,6 +472,22 @@ function savedPatientStateVisible(observation: { currentUrl: string; title: stri
     "patient dashboard",
     "patient summary",
     "patient profile",
+    "patient record",
+    "patient chart",
+    "patient summary",
+    "patient id",
+    "diagnoses",
+    "recent visits",
+    "general actions",
+    "resumen del paciente",
+    "resumen",
+    "visitas",
+    "alergias",
+    "medicamentos",
+    "condiciones",
+    "mrn-",
+    "new encounter",
+    "start first encounter",
     "created",
     "registered",
     "saved",

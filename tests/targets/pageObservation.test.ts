@@ -29,7 +29,7 @@ describe("createObservationSnapshot", () => {
     expect(observation.screenshotPath).toBe("screenshots/demo/openemr/0001-observe.png");
     expect(observation.controls).toEqual([
       { elementId: "control-1", tag: "input", role: "textbox", label: "First Name", value: "Ava", visibleText: "First Name" },
-      { elementId: "control-2", tag: "select", role: "combobox", label: "", value: "Female", visibleText: "" },
+      { elementId: "control-2", tag: "select", role: "combobox", label: "sex", value: "Female", visibleText: "sex" },
       { elementId: "control-3", tag: "button", role: "button", label: "Contact", value: "", visibleText: "Contact" },
       { elementId: "control-4", tag: "a", role: "link", label: "Patient chart", value: "", visibleText: "Open Chart" },
     ]);
@@ -74,6 +74,35 @@ describe("createObservationSnapshot", () => {
     }
   });
 
+  it("uses associated labels as click selectors for radio and checkbox controls", async () => {
+    const page = new FakeObservationPage({
+      url: "https://example.test/location",
+      title: "Choose Location",
+      text: "Outpatient Clinic Confirm",
+      elements: [
+        fakeElement("input", { id: "outpatient", name: "loginLocations", type: "radio", value: "outpatient" }),
+        fakeElement("label", { for: "outpatient" }, "Outpatient Clinic"),
+      ],
+    });
+
+    const observation = await createObservationSnapshot({
+      page,
+      screenshotPath: "screenshots/demo/openmrs/location.png",
+    });
+
+    expect(observation.controls).toEqual([
+      {
+        elementId: "control-1",
+        tag: "input",
+        role: "radio",
+        label: "Outpatient Clinic",
+        value: "outpatient",
+        visibleText: "Outpatient Clinic",
+      },
+    ]);
+    expect(observation.elementSelectors).toEqual(new Map([["control-1", 'label[for="outpatient"]']]));
+  });
+
   it("observes controls with unusual attribute text without throwing", async () => {
     const page = new FakeObservationPage({
       url: "https://example.test/unusual",
@@ -96,6 +125,100 @@ describe("createObservationSnapshot", () => {
       { elementId: "control-2", tag: "button", role: "button", label: 'Submit patient "record"', value: "", visibleText: "Submit" },
     ]);
     expect(Array.from(observation.elementSelectors.values())).toEqual(["#legal\\a name", 'button[aria-label="Submit\\a patient \\"record\\""]']);
+  });
+
+  it("observes clickable non-form elements and input button values", async () => {
+    const page = new FakeObservationPage({
+      url: "https://example.test/login",
+      title: "Login",
+      text: "Registration Desk Log In",
+      elements: [
+        fakeElement("li", { id: "registration-desk", onclick: "chooseLocation()" }, "Registration Desk"),
+        fakeElement("input", { id: "login-button", type: "submit", value: "Log In" }),
+      ],
+    });
+
+    const observation = await createObservationSnapshot({
+      page,
+      screenshotPath: "screenshots/demo/openmrs/login.png",
+    });
+
+    expect(observation.controls).toEqual([
+      {
+        elementId: "control-1",
+        tag: "li",
+        role: "button",
+        label: "Registration Desk",
+        value: "",
+        visibleText: "Registration Desk",
+      },
+      {
+        elementId: "control-2",
+        tag: "input",
+        role: "button",
+        label: "Log In",
+        value: "Log In",
+        visibleText: "Log In",
+      },
+    ]);
+    expect(observation.elementSelectors).toEqual(
+      new Map([
+        ["control-1", "#registration-desk"],
+        ["control-2", "#login-button"],
+      ]),
+    );
+  });
+
+  it("uses semantic navigation labels for icon-only wizard controls", async () => {
+    const page = new FakeObservationPage({
+      url: "https://example.test/register",
+      title: "Register",
+      text: "Gender",
+      elements: [
+        fakeElement("button", { id: "prev-button", class: "confirm" }, " "),
+        fakeElement("button", { id: "next-button", class: "confirm right" }, "\n"),
+      ],
+    });
+
+    const observation = await createObservationSnapshot({
+      page,
+      screenshotPath: "screenshots/demo/openmrs/register.png",
+    });
+
+    expect(observation.controls).toEqual([
+      expect.objectContaining({
+        tag: "button",
+        role: "button",
+        label: "previous back button",
+        visibleText: "previous back button",
+      }),
+      expect.objectContaining({
+        tag: "button",
+        role: "button",
+        label: "forward next button",
+        visibleText: "forward next button",
+      }),
+    ]);
+  });
+
+  it("excludes controls hidden by an ancestor", async () => {
+    const hiddenPanel = fakeElement("div", { hidden: "true" });
+    const hiddenButton = fakeElement("button", { class: "open" }, "Open");
+    hiddenPanel.children = [hiddenButton];
+    hiddenButton.parentElement = hiddenPanel;
+    const page = new FakeObservationPage({
+      url: "https://example.test/matches",
+      title: "Matches",
+      text: "Similar patients found",
+      elements: [hiddenPanel, hiddenButton, fakeElement("button", { id: "create-new" }, "Create New Patient")],
+    });
+
+    const observation = await createObservationSnapshot({
+      page,
+      screenshotPath: "screenshots/demo/openmrs/matches.png",
+    });
+
+    expect(observation.controls.map((control) => control.label)).toEqual(["Create New Patient"]);
   });
 });
 
@@ -168,15 +291,23 @@ class FakeDocument {
   constructor(readonly elements: FakeElement[]) {
     this.body.children = elements;
     for (const element of elements) {
-      element.parentElement = this.body;
+      element.parentElement = element.parentElement ?? this.body;
       element.ownerDocument = this;
     }
   }
 
   querySelectorAll(selector: string): FakeElement[] {
     if (selector.includes(",")) {
-      const tags = selector.split(",").map((tag) => tag.trim().toUpperCase());
-      return this.elements.filter((element) => tags.includes(element.tagName));
+      const selectors = selector.split(",").map((part) => part.trim());
+      return this.elements.filter((element) =>
+        selectors.some((part) => {
+          if (part.startsWith("[")) {
+            const attributeName = part.match(/^\[([^=\]]+)/)?.[1];
+            return attributeName ? element.getAttribute(attributeName) !== null : false;
+          }
+          return element.tagName === part.toUpperCase();
+        }),
+      );
     }
 
     const bodyChild = selector.match(/^body > ([a-z]+):nth-of-type\((\d+)\)$/);
@@ -268,7 +399,12 @@ class FakeElement {
   }
 
   get isControl(): boolean {
-    return ["INPUT", "SELECT", "TEXTAREA", "BUTTON", "A"].includes(this.tagName);
+    return (
+      ["INPUT", "SELECT", "TEXTAREA", "BUTTON", "A"].includes(this.tagName) ||
+      this.getAttribute("onclick") !== null ||
+      this.getAttribute("role") !== null ||
+      this.getAttribute("tabindex") !== null
+    );
   }
 
   getAttribute(name: string): string | null {

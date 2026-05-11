@@ -184,17 +184,18 @@ async function summarizeRun(runsRoot: string, runId: string): Promise<ViewerRunS
   const targetCounts = parseTargetCounts(objectProperty(reportCounts, "targetCounts") ?? objectProperty(runMetadata, "targetCounts"));
   const targets = parseTargetsFromMetadata(runMetadata) ?? orderedTargets(Object.keys(targetCounts));
   const readableTargetLabel = targets.length > 0 ? targetListLabel(targets) : undefined;
+  const timestamp = firstString(
+    stringProperty(runMetadata, "startedAt"),
+    stringProperty(runMetadata, "timestamp"),
+    stringProperty(report, "startedAt"),
+    timestampFromRunId(runId),
+  );
 
   return {
     runId,
-    displayName: [readableTargetLabel, runId].filter(Boolean).join(" - "),
+    displayName: [readableTargetLabel, readableTimestamp(timestamp) ?? runId].filter(Boolean).join(" - "),
     targetLabel: readableTargetLabel,
-    timestamp: firstString(
-      stringProperty(runMetadata, "startedAt"),
-      stringProperty(runMetadata, "timestamp"),
-      stringProperty(report, "startedAt"),
-      timestampFromRunId(runId),
-    ),
+    timestamp,
     status: firstString(stringProperty(report, "status"), stringProperty(runMetadata, "status")),
     totalRecords: firstNumber(numberProperty(report, "totalRecords"), numberProperty(runMetadata, "totalRecords")),
     preflightExceptions: firstNumber(
@@ -325,6 +326,21 @@ function timestampFromRunId(runId: string): string | undefined {
   if (!match) return undefined;
   const [, date, hours, minutes, seconds, milliseconds] = match;
   return `${date}T${hours}:${minutes}:${seconds}.${milliseconds}Z`;
+}
+
+function readableTimestamp(timestamp: string | undefined): string | undefined {
+  if (!timestamp) return undefined;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return undefined;
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(date);
 }
 
 async function readJsonObject(path: string): Promise<Record<string, unknown> | undefined> {

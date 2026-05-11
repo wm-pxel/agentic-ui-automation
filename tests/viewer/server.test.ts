@@ -116,7 +116,7 @@ describe("createViewerServer", () => {
       expect(script).toContain('button.innerHTML = \'<strong></strong><span class="run-id"></span><span class="run-meta"></span>\';');
       expect(script).toContain("button.querySelector(\"strong\").textContent = formatRunTitle(run);");
       expect(script).toContain("button.querySelector(\".run-id\").textContent = run.runId;");
-      expect(script).toContain('return run.displayName || [run.targetLabel, formatRunTimestamp(run)].filter(Boolean).join(" - ") || formatRunId(run.runId);');
+      expect(script).toContain('return [run.targetLabel, formatRunTimestamp(run)].filter(Boolean).join(" - ") || run.displayName || formatRunId(run.runId);');
     } finally {
       await viewer.close();
     }

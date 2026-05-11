@@ -67,7 +67,7 @@ interface BrowserActionPage {
 
 interface BrowserActionLocator {
   fill(value: string, options?: { timeout: number }): Promise<unknown>;
-  selectOption(option: { label: string }, options?: { timeout: number }): Promise<unknown>;
+  selectOption(option: { label?: string; value?: string }, options?: { timeout: number }): Promise<unknown>;
   click(options?: { timeout: number }): Promise<unknown>;
 }
 
@@ -84,7 +84,7 @@ export async function executeBrowserAction(
     }
     case "select": {
       const selector = selectorForElement(elementSelectors, action.elementId);
-      await page.locator(selector).selectOption({ label: action.value }, { timeout: BROWSER_ACTION_TIMEOUT_MS });
+      await selectOptionWithFallbacks(page.locator(selector), action.value);
       return;
     }
     case "click": {
@@ -98,6 +98,48 @@ export async function executeBrowserAction(
   }
 
   throw new Error(`unsupported browser action: ${(action as AiWebAction).type}`);
+}
+
+async function selectOptionWithFallbacks(locator: BrowserActionLocator, value: string): Promise<void> {
+  const candidates = optionCandidates(value);
+  let lastError: unknown;
+
+  for (const candidate of candidates) {
+    try {
+      await locator.selectOption(candidate, { timeout: BROWSER_ACTION_TIMEOUT_MS });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`Could not select option ${value}`);
+}
+
+function optionCandidates(value: string): Array<{ label?: string; value?: string }> {
+  const normalized = value.trim().toLowerCase();
+  const candidates: Array<{ label?: string; value?: string }> = [{ label: value }];
+
+  if (normalized === "female") {
+    candidates.push({ value: "F" }, { label: "F" });
+  } else if (normalized === "male") {
+    candidates.push({ value: "M" }, { label: "M" });
+  }
+
+  candidates.push({ value });
+  return dedupeCandidates(candidates);
+}
+
+function dedupeCandidates(candidates: Array<{ label?: string; value?: string }>): Array<{ label?: string; value?: string }> {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = `${candidate.label ?? ""}\u0000${candidate.value ?? ""}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 function selectorForElement(elementSelectors: Map<string, string>, elementId: string): string {

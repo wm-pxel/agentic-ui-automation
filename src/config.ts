@@ -8,13 +8,20 @@ export const CliRunConfigSchema = z.object({
   parser: z.enum(["openai", "deterministic"]).default("openai"),
   parserModel: z.string().optional(),
   syntheticSuffix: z.string().optional(),
+  confidenceThreshold: z.number().min(0).max(1).optional(),
   openMrs: z.object({
     baseUrl: z.string().optional(),
     username: z.string().optional(),
     password: z.string().optional(),
-    concurrency: z.number().int().min(1).default(2),
+    concurrency: z.number().int().min(1).default(1),
   }),
   openEmr: z.object({
+    baseUrl: z.string().optional(),
+    username: z.string().optional(),
+    password: z.string().optional(),
+    concurrency: z.number().int().min(1).default(1),
+  }),
+  openKairo: z.object({
     baseUrl: z.string().optional(),
     username: z.string().optional(),
     password: z.string().optional(),
@@ -31,8 +38,10 @@ export interface BuildRunConfigOptions {
   parser?: "openai" | "deterministic";
   parserModel?: string;
   syntheticSuffix?: string;
+  confidenceThreshold?: number;
   openMrsConcurrency?: number;
   openEmrConcurrency?: number;
+  openKairoConcurrency?: number;
 }
 
 export function parseTargets(value: string): TargetName[] {
@@ -45,6 +54,7 @@ export function parseTargets(value: string): TargetName[] {
 export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
   const requestedOpenMrsConcurrency = options.openMrsConcurrency ?? numberFromEnv(process.env.OPENMRS_CONCURRENCY);
   const requestedOpenEmrConcurrency = options.openEmrConcurrency ?? numberFromEnv(process.env.OPENEMR_CONCURRENCY);
+  const requestedOpenKairoConcurrency = options.openKairoConcurrency ?? numberFromEnv(process.env.OPENKAIRO_CONCURRENCY);
 
   return CliRunConfigSchema.parse({
     input: options.input,
@@ -53,8 +63,9 @@ export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
     parser: options.parser,
     parserModel: options.parserModel ?? process.env.OPENAI_PARSER_MODEL ?? process.env.OPENAI_MODEL,
     syntheticSuffix: options.syntheticSuffix,
+    confidenceThreshold: options.confidenceThreshold,
     openMrs: {
-      baseUrl: process.env.OPENMRS_BASE_URL ?? "https://o2.openmrs.org/openmrs",
+      baseUrl: process.env.OPENMRS_BASE_URL ?? "https://o2.openmrs.org/openmrs/login.htm",
       username: process.env.OPENMRS_USERNAME ?? "admin",
       password: process.env.OPENMRS_PASSWORD ?? "Admin123",
       concurrency: requestedOpenMrsConcurrency,
@@ -64,6 +75,12 @@ export function buildRunConfig(options: BuildRunConfigOptions): CliRunConfig {
       username: process.env.OPENEMR_USERNAME ?? "admin",
       password: process.env.OPENEMR_PASSWORD ?? "pass",
       concurrency: requestedOpenEmrConcurrency,
+    },
+    openKairo: {
+      baseUrl: process.env.OPENKAIRO_BASE_URL ?? "https://ehr-app-five.vercel.app",
+      username: process.env.OPENKAIRO_USERNAME ?? "reception@demo.com",
+      password: process.env.OPENKAIRO_PASSWORD ?? "Demo123!",
+      concurrency: requestedOpenKairoConcurrency,
     },
   });
 }

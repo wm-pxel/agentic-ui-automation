@@ -481,15 +481,19 @@ function formatCount(value) {
 }
 
 function formatRunTitle(run) {
-  return run.displayName || [run.targetLabel, formatRunTimestamp(run)].filter(Boolean).join(" - ") || formatRunId(run.runId);
+  return [run.targetLabel, formatRunTimestamp(run)].filter(Boolean).join(" - ") || run.displayName || formatRunId(run.runId);
 }
 
 function formatRunTimestamp(run) {
   const date = run.timestamp ? new Date(run.timestamp) : null;
   if (!date || Number.isNaN(date.getTime())) return formatRunId(run.runId);
   return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
   }).format(date);
 }
 

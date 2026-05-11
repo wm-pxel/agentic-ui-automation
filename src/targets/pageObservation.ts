@@ -45,16 +45,16 @@ export async function createObservationSnapshot({
     page.title(),
     page.locator("body").innerText().catch(() => ""),
     page.evaluate(() => {
-      const controls = Array.from(document.querySelectorAll("input, select, textarea, button, a"));
+      const controls = Array.from(
+        document.querySelectorAll("input, select, textarea, button, a, [onclick], [role='button'], [role='link'], [tabindex]"),
+      );
 
       return controls
         .filter((element) => {
           const htmlElement = element as HTMLElement;
-          const style = window.getComputedStyle(htmlElement);
           const rect = htmlElement.getBoundingClientRect();
           return (
-            style.display !== "none" &&
-            style.visibility !== "hidden" &&
+            isElementVisible(htmlElement) &&
             htmlElement.getAttribute("aria-hidden") !== "true" &&
             rect.width > 0 &&
             rect.height > 0
@@ -75,8 +75,8 @@ export async function createObservationSnapshot({
                 tag,
                 role,
                 label,
-                value: "value" in formElement ? formElement.value : "",
-                visibleText: text || label,
+                value: "value" in formElement ? String(formElement.value) : "",
+                visibleText: text || label || buttonValue(element),
               },
             ];
           } catch {
@@ -96,8 +96,10 @@ export async function createObservationSnapshot({
         const title = htmlElement.getAttribute("title");
         const placeholder = htmlElement.getAttribute("placeholder");
         const text = htmlElement.innerText || htmlElement.textContent;
+        const value = buttonValue(element);
+        const descriptor = controlDescriptor(element);
 
-        return normalizedText(explicitLabel || wrappingLabel || ariaLabel || title || placeholder || text || "");
+        return firstNormalizedText([explicitLabel, wrappingLabel, ariaLabel, title, placeholder, text, value, descriptor]);
       }
 
       function labelForId(id: string): string {
@@ -112,10 +114,14 @@ export async function createObservationSnapshot({
       }
 
       function inferredRole(element: Element): string {
+        const htmlElement = element as HTMLElement;
         const tag = element.tagName.toLowerCase();
         const type = (element as HTMLInputElement).type?.toLowerCase();
 
         if (tag === "button") {
+          return "button";
+        }
+        if (htmlElement.getAttribute("onclick")) {
           return "button";
         }
         if (tag === "a") {
@@ -142,6 +148,46 @@ export async function createObservationSnapshot({
         return "";
       }
 
+      function buttonValue(element: Element): string {
+        const tag = element.tagName.toLowerCase();
+        const type = (element as HTMLInputElement).type?.toLowerCase();
+        if (tag !== "input" || (type !== "submit" && type !== "button")) {
+          return "";
+        }
+        return (element as HTMLInputElement).value ?? "";
+      }
+
+      function controlDescriptor(element: Element): string {
+        const htmlElement = element as HTMLElement;
+        const id = htmlElement.id;
+        const className = htmlElement.getAttribute("class") || "";
+        if (id === "next-button" || /\bright\b/.test(className)) {
+          return "forward next button";
+        }
+        if (id === "prev-button") {
+          return "previous back button";
+        }
+
+        const descriptor = id || htmlElement.getAttribute("name") || className || "";
+        return descriptor.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+      }
+
+      function isElementVisible(element: HTMLElement): boolean {
+        let current: HTMLElement | null = element;
+        while (current && current.nodeType === Node.ELEMENT_NODE) {
+          const style = window.getComputedStyle(current);
+          if (
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            current.getAttribute("aria-hidden") === "true"
+          ) {
+            return false;
+          }
+          current = current.parentElement;
+        }
+        return true;
+      }
+
       function elementSelector(element: Element): string {
         const htmlElement = element as HTMLElement;
         const tag = element.tagName.toLowerCase();
@@ -150,8 +196,17 @@ export async function createObservationSnapshot({
         const testId = htmlElement.getAttribute("data-testid");
         const className = htmlElement.getAttribute("class");
         const ariaLabel = htmlElement.getAttribute("aria-label");
+        const type = (element as HTMLInputElement).type?.toLowerCase();
 
         const candidates: string[] = [];
+
+        if (tag === "input" && (type === "radio" || type === "checkbox") && id) {
+          const labelSelector = `label[for="${cssString(id)}"]`;
+          const labels = document.querySelectorAll(labelSelector);
+          if (labels.length === 1) {
+            return labelSelector;
+          }
+        }
 
         if (id) {
           candidates.push(`#${cssIdent(id)}`);
@@ -250,6 +305,16 @@ export async function createObservationSnapshot({
 
       function normalizedText(value: string): string {
         return value.replace(/\s+/g, " ").trim();
+      }
+
+      function firstNormalizedText(values: Array<string | null | undefined>): string {
+        for (const value of values) {
+          const normalized = normalizedText(value ?? "");
+          if (normalized) {
+            return normalized;
+          }
+        }
+        return "";
       }
     }),
   ]);

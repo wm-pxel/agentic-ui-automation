@@ -8,11 +8,47 @@ import {
 } from "../../src/targets/aiWebPlanner.js";
 
 const runnerPlanInput = {
-  profile: {} as never,
-  record: {} as never,
-  observation: {} as never,
+  profile: {
+    name: "openemr",
+    displayName: "OpenEMR",
+    baseUrl: "https://openemr.example.test/openemr",
+    credentials: { username: "admin", password: "pass" },
+    task: "Create one synthetic patient.",
+    workflowHints: ["If Patient Finder reports no matching records, click Add New Patient."],
+    successCriteria: ["A saved patient detail page is visible."],
+    forbiddenActions: ["Do not delete patients."],
+    concurrency: 1,
+  },
+  record: {
+    sourceRecordId: "demo-001",
+    firstName: "Ava",
+    lastName: "Nguyen",
+    dateOfBirth: "1987-03-14",
+    sexOrGender: "female",
+    phone: "+13125550198",
+    email: "ava.nguyen@example.test",
+    streetAddress: "1200 West Lake Street",
+    city: "Chicago",
+    state: "IL",
+    zip: "60607",
+    insurancePayer: "Aetna",
+    insuranceMemberId: "AET123456",
+    reasonForVisit: "Annual wellness visit",
+    preferredContactMethod: "phone",
+    sourceFormat: "json",
+    rawSourceExcerpt: "Ava Nguyen intake",
+  },
+  observation: {
+    currentUrl: "https://openemr.example.test/openemr",
+    title: "OpenEMR",
+    visibleText: "Patient Finder Add New Patient",
+    screenshotPath: "screenshots/demo/openemr/0001-ai-step-1.png",
+    controls: [],
+    elementSelectors: new Map(),
+  },
   completedFields: ["firstName"],
   skippedFields: ["insuranceGroupId"],
+  recentActions: [],
   stepCount: 3,
 } satisfies AiWebPlanInput;
 
@@ -124,6 +160,7 @@ describe("OpenAiAiWebPlanner", () => {
         baseUrl: "https://openmrs.example.test/openmrs",
         credentials: { username: "admin", password: "secret" },
         task: "Create one synthetic patient.",
+        workflowHints: ["If a session location is required, choose Registration Desk before submitting login."],
         successCriteria: ["A saved patient detail page is visible."],
         forbiddenActions: ["Do not delete patients."],
         concurrency: 1,
@@ -166,6 +203,13 @@ describe("OpenAiAiWebPlanner", () => {
       },
       completedFields: ["lastName"],
       skippedFields: ["insuranceGroupId"],
+      recentActions: [
+        {
+          actionType: "click",
+          target: "Search",
+          result: "succeeded",
+        },
+      ],
       stepCount: 4,
     });
 
@@ -202,6 +246,7 @@ describe("OpenAiAiWebPlanner", () => {
         name: "openmrs",
         displayName: "OpenMRS",
         task: "Create one synthetic patient.",
+        workflowHints: ["If a session location is required, choose Registration Desk before submitting login."],
         successCriteria: ["A saved patient detail page is visible."],
         forbiddenActions: ["Do not delete patients."],
       },
@@ -222,6 +267,13 @@ describe("OpenAiAiWebPlanner", () => {
       },
       completedFields: ["lastName"],
       skippedFields: ["insuranceGroupId"],
+      recentActions: [
+        {
+          actionType: "click",
+          target: "Search",
+          result: "succeeded",
+        },
+      ],
       stepCount: 4,
     });
     expect(call.text.format.schema.properties).toHaveProperty("action");
@@ -239,5 +291,29 @@ describe("OpenAiAiWebPlanner", () => {
     });
 
     await expect(planner.plan({} as never)).rejects.toThrow();
+  });
+
+  it("parses the first JSON plan when model output contains trailing text", async () => {
+    const validPlan = {
+      action: {
+        type: "click",
+        elementId: "control-1",
+        purpose: "choose Registration Desk",
+        rationale: "The visible location link matches the target workflow hint.",
+      },
+      confidence: 0.87,
+    };
+    const planner = new OpenAiAiWebPlanner({
+      model: "gpt-5.4-mini",
+      client: {
+        responses: {
+          create: async () => ({
+            output_text: `${JSON.stringify(validPlan)}\n${JSON.stringify({ ignored: true })}`,
+          }),
+        },
+      },
+    });
+
+    await expect(planner.plan(runnerPlanInput)).resolves.toEqual(validPlan);
   });
 });

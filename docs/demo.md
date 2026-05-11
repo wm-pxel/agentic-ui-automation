@@ -36,23 +36,26 @@ set -a
 . ./.env
 set +a
 npm run dev -- run \
-  --input data/demo/intake-records.json \
+  --input data/demo/intake-records-normalized.json \
   --targets openmrs \
   --runs-dir runs \
+  --parser deterministic \
   --synthetic-suffix auto
 ```
 
-Then run OpenEMR with the same intake file and the same non-target workflow
-options:
+Then run OpenKairo with the same intake file and the same non-target workflow
+options. OpenKairo is the recommended second live-demo target because the public
+OpenEMR demo has been too brittle for repeatable patient creation.
 
 ```sh
 set -a
 . ./.env
 set +a
 npm run dev -- run \
-  --input data/demo/intake-records.json \
-  --targets openemr \
+  --input data/demo/intake-records-normalized.json \
+  --targets openkairo \
   --runs-dir runs \
+  --parser deterministic \
   --synthetic-suffix auto
 ```
 
@@ -62,7 +65,7 @@ destination web app selected by `--targets`.
 
 Run `npm run viewer` and compare the two runs. The viewer sidebar, each
 `executive-summary.md`, and each `summary.md` identify the destination target so
-the OpenMRS and OpenEMR runs are easy to distinguish.
+the OpenMRS and OpenKairo runs are easy to distinguish.
 
 ## Desktop Intake Export Demo
 
@@ -146,7 +149,7 @@ direct CLI runs.
 ## OpenMRS Smoke Demo
 
 The OpenMRS smoke run drives the public or configured OpenMRS UI through the
-same generic AI web target runner used for OpenEMR. Public/demo OpenMRS screens
+same generic AI web target runner used for OpenKairo. Public/demo OpenMRS screens
 can drift and credentials can rotate. If the environment is unavailable or the
 UI state changes, the run should stop that target with an environment or
 UI-state exception and still write audit artifacts for review.
@@ -161,15 +164,16 @@ Prerequisites:
   non-fake target profile.
 
 OpenMRS publishes current demo links at `https://openmrs.org/demo/`. The
-OpenMRS target profile points at the OpenMRS 2 Reference Application because
-this demo creates synthetic patient-registration audit artifacts.
+OpenMRS target profile points at the OpenMRS 2 Reference Application demo
+because the current OpenMRS 3 public demo can render a blank SPA home page
+before login.
 
 - Demo page: `https://openmrs.org/demo/`
-- Default app URL: `https://o2.openmrs.org/openmrs`
+- Default app URL: `https://o2.openmrs.org/openmrs/login.htm`
 - Default username: `admin`
 - Default password: `Admin123`
 - Default location: `Registration Desk`
-- Default OpenMRS record concurrency: `2`
+- Default OpenMRS record concurrency: `1`
 
 ```sh
 npx playwright install chromium
@@ -181,7 +185,7 @@ npm run dev -- run \
   --targets openmrs \
   --runs-dir runs \
   --synthetic-suffix auto \
-  --openmrs-concurrency 2
+  --openmrs-concurrency 1
 ```
 
 `data/demo/intake-records.json` intentionally uses varied source shapes and
@@ -217,10 +221,11 @@ OpenMRS target profile to:
 7. Mark the record successful only when the planner verifies the configured
    success criteria for the synthetic patient.
 
-For `data/demo/intake-records.json`, the expected clean OpenMRS target result is:
+For `data/demo/intake-records-normalized.json`, the expected clean OpenMRS
+target result is:
 
 - `preflightExceptions` is `3`.
-- `targetCounts.openmrs.succeeded` is `4`.
+- `targetCounts.openmrs.succeeded` is `3`.
 - `targetCounts.openmrs.exception` is `0`.
 - `exceptions/` only contains the intentional validation exceptions.
 - Each valid record has OpenMRS screenshot evidence captured by the generic
@@ -238,21 +243,21 @@ same input without `--synthetic-suffix`, duplicate patient detection can make
 the run fail correctly. Use `runs/<run-id>/input/normalized-records.json` to see
 the generated names and identifiers to search for during manual validation.
 
-## OpenEMR Smoke Demo
+## OpenKairo Smoke Demo
 
-The OpenEMR target drives the public or configured OpenEMR UI through the same
-generic AI web target runner used for OpenMRS. Public/demo OpenEMR screens can
-drift and credentials can rotate. If the environment is unavailable or the UI
-state changes, the run should stop that target with an environment or UI-state
-exception and still write audit artifacts for review.
+The OpenKairo target drives the public or configured OpenKairo UI through the
+same generic AI web target runner used for OpenMRS. It is the recommended
+second live-demo target when the public OpenEMR demo is not stable enough for
+repeatable patient creation.
 
-OpenEMR publishes current demo links at `https://www.open-emr.org/demo/`.
+OpenKairo publishes the current demo link and credentials at
+`https://www.openkairo.com/`.
 
-- Demo page: `https://www.open-emr.org/demo/`
-- Default app URL: `https://demo.openemr.io/openemr`
-- Default username: `admin`
-- Default password: `pass`
-- Default OpenEMR record concurrency: `1`
+- Demo page: `https://www.openkairo.com/`
+- Default app URL: `https://ehr-app-five.vercel.app`
+- Default username: `reception@demo.com`
+- Default password: `Demo123!`
+- Default OpenKairo record concurrency: `1`
 
 ```sh
 npx playwright install chromium
@@ -261,24 +266,24 @@ set -a
 set +a
 npm run dev -- run \
   --input data/demo/intake-records.json \
-  --targets openemr \
+  --targets openkairo \
   --runs-dir runs \
   --synthetic-suffix auto \
-  --openemr-concurrency 1
+  --openkairo-concurrency 1
 ```
 
 For local smoke checks that should not call OpenAI, use
 `data/demo/intake-records-normalized.json` and add `--parser deterministic`.
 
-For each valid normalized record, the OpenEMR target profile uses the same
+For each valid normalized record, the OpenKairo target profile uses the same
 generic AI web target runner behavior as OpenMRS: observe the page, request one
 schema-bound planner action at a time, execute only bounded browser actions,
 capture ordered `ai-step-*` and `ai-field-*` screenshot evidence, and verify the
 configured success criteria before marking the record successful. The OpenMRS
-and OpenEMR profiles provide URL, credentials, target name, goal, and proof
+and OpenKairo profiles provide URL, credentials, target name, goal, and proof
 criteria; there are no destination-specific UI automation classes.
 
-`summary.md` includes an OpenEMR record review with raw intake input, proof
+`summary.md` includes an OpenKairo record review with raw intake input, proof
 screenshots, AI action evidence, planner rationale and confidence for field
 actions, and
 source-to-target comparisons. Optional fields that are unavailable in the public

@@ -11,6 +11,10 @@ const ENV_KEYS = [
   "OPENEMR_USERNAME",
   "OPENEMR_PASSWORD",
   "OPENEMR_CONCURRENCY",
+  "OPENKAIRO_BASE_URL",
+  "OPENKAIRO_USERNAME",
+  "OPENKAIRO_PASSWORD",
+  "OPENKAIRO_CONCURRENCY",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -34,7 +38,7 @@ afterEach(() => {
 
 describe("parseTargets", () => {
   it("parses comma-separated target names", () => {
-    expect(parseTargets("fake,openmrs,openemr")).toEqual(["fake", "openmrs", "openemr"]);
+    expect(parseTargets("fake,openmrs,openemr,openkairo")).toEqual(["fake", "openmrs", "openemr", "openkairo"]);
   });
 
   it("trims whitespace around target names", () => {
@@ -76,6 +80,16 @@ describe("buildRunConfig", () => {
     expect(config.parser).toBe("deterministic");
   });
 
+  it("copies confidence threshold into the run config", () => {
+    const config = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openmrs",
+      confidenceThreshold: 0.99,
+    });
+
+    expect(config.confidenceThreshold).toBe(0.99);
+  });
+
   it("uses fallback defaults when environment variables are unset", () => {
     const config = buildRunConfig({
       input: "data/demo/intake-records.json",
@@ -85,15 +99,16 @@ describe("buildRunConfig", () => {
     expect(config.runsDir).toBe("runs");
   });
 
-  it("keeps OpenMRS and OpenEMR config available for target profiles", () => {
+  it("keeps OpenMRS, OpenEMR, and OpenKairo config available for target profiles", () => {
     const config = buildRunConfig({
       input: "data/demo/intake-records.json",
-      targets: "openmrs,openemr",
+      targets: "openmrs,openemr,openkairo",
     });
 
-    expect(config.targets).toEqual(["openmrs", "openemr"]);
-    expect(config.openMrs.baseUrl).toBe("https://o2.openmrs.org/openmrs");
+    expect(config.targets).toEqual(["openmrs", "openemr", "openkairo"]);
+    expect(config.openMrs.baseUrl).toBe("https://o2.openmrs.org/openmrs/login.htm");
     expect(config.openEmr.baseUrl).toBe("https://demo.openemr.io/openemr");
+    expect(config.openKairo.baseUrl).toBe("https://ehr-app-five.vercel.app");
   });
 
   it("uses environment defaults when options omit paths", () => {
@@ -157,6 +172,37 @@ describe("buildRunConfig", () => {
     });
   });
 
+  it("copies OpenKairo defaults and environment variables into the config", () => {
+    const defaultConfig = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openkairo",
+    });
+
+    expect(defaultConfig.openKairo).toEqual({
+      baseUrl: "https://ehr-app-five.vercel.app",
+      username: "reception@demo.com",
+      password: "Demo123!",
+      concurrency: 1,
+    });
+
+    process.env.OPENKAIRO_BASE_URL = "https://openkairo.example.test";
+    process.env.OPENKAIRO_USERNAME = "demo@example.test";
+    process.env.OPENKAIRO_PASSWORD = "secret";
+    process.env.OPENKAIRO_CONCURRENCY = "2";
+
+    const envConfig = buildRunConfig({
+      input: "data/demo/intake-records.json",
+      targets: "openkairo",
+    });
+
+    expect(envConfig.openKairo).toEqual({
+      baseUrl: "https://openkairo.example.test",
+      username: "demo@example.test",
+      password: "secret",
+      concurrency: 2,
+    });
+  });
+
   it("uses explicit OpenMRS concurrency before environment defaults", () => {
     process.env.OPENMRS_CONCURRENCY = "3";
 
@@ -169,13 +215,13 @@ describe("buildRunConfig", () => {
     expect(config.openMrs.concurrency).toBe(4);
   });
 
-  it("defaults OpenMRS concurrency to 2", () => {
+  it("defaults OpenMRS concurrency to 1", () => {
     const config = buildRunConfig({
       input: "data/demo/intake-records.json",
       targets: "openmrs",
     });
 
-    expect(config.openMrs.concurrency).toBe(2);
+    expect(config.openMrs.concurrency).toBe(1);
   });
 
 });

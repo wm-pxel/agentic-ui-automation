@@ -37,6 +37,23 @@ describe("executeBrowserAction", () => {
     ]);
   });
 
+  it("falls back to common option values when select labels do not match", async () => {
+    const page = new FakeActionPage({ failSelectLabels: new Set(["Female"]) });
+
+    await executeBrowserAction(page, new Map([["control-1", "select[name=sex]"]]), {
+      type: "select",
+      elementId: "control-1",
+      field: "sexOrGender",
+      value: "Female",
+      rationale: "label match",
+    });
+
+    expect(page.actions).toEqual([
+      ["select", "select[name=sex]", "label", "Female"],
+      ["select", "select[name=sex]", "value", "F"],
+    ]);
+  });
+
   it("rejects stale element ids", async () => {
     await expect(
       executeBrowserAction(new FakeActionPage(), new Map(), {
@@ -70,10 +87,22 @@ describe("executeBrowserAction", () => {
 class FakeActionPage {
   readonly actions: unknown[] = [];
 
+  constructor(private readonly options: { failSelectLabels?: Set<string> } = {}) {}
+
   locator(selector: string) {
     return {
       fill: async (value: string) => this.actions.push(["fill", selector, value]),
-      selectOption: async (option: { label: string }) => this.actions.push(["select", selector, option.label]),
+      selectOption: async (option: { label?: string; value?: string }) => {
+        if (option.label && this.options.failSelectLabels?.has(option.label)) {
+          this.actions.push(["select", selector, "label", option.label]);
+          throw new Error(`label not found: ${option.label}`);
+        }
+        if (option.label) {
+          this.actions.push(["select", selector, option.label]);
+          return;
+        }
+        this.actions.push(["select", selector, "value", option.value]);
+      },
       click: async () => this.actions.push(["click", selector]),
     };
   }

@@ -52,8 +52,10 @@ interface RunCommandOptions {
   parser?: CliRunConfig["parser"];
   parserModel?: string;
   syntheticSuffix?: string;
+  confidenceThreshold?: number;
   openmrsConcurrency?: number;
   openemrConcurrency?: number;
+  openkairoConcurrency?: number;
 }
 
 interface WatchCommandOptions {
@@ -61,8 +63,10 @@ interface WatchCommandOptions {
   targets: string;
   runsDir?: string;
   syntheticSuffix?: string;
+  confidenceThreshold?: number;
   openmrsConcurrency?: number;
   openemrConcurrency?: number;
+  openkairoConcurrency?: number;
   once?: boolean;
 }
 
@@ -131,6 +135,11 @@ function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencie
     .option("--parser-model <model>", "OpenAI model to use for AI source parsing.")
     .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
     .option(
+      "--confidence-threshold <threshold>",
+      "Minimum AI planner confidence for field mapping highlighting.",
+      parseConfidenceThresholdOption,
+    )
+    .option(
       "--openmrs-concurrency <count>",
       "Maximum concurrent OpenMRS records.",
       parsePositiveIntegerOption("--openmrs-concurrency"),
@@ -139,6 +148,11 @@ function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencie
       "--openemr-concurrency <count>",
       "Maximum concurrent OpenEMR records.",
       parsePositiveIntegerOption("--openemr-concurrency"),
+    )
+    .option(
+      "--openkairo-concurrency <count>",
+      "Maximum concurrent OpenKairo records.",
+      parsePositiveIntegerOption("--openkairo-concurrency"),
     )
     .action(async (options: RunCommandOptions) => {
       await runCommand(options, io.stdout, dependencies);
@@ -150,7 +164,16 @@ function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencie
     .option("--inbox <path>", "Folder to watch for *.ready.csv or *.ready.json intake handoff files.")
     .option("--targets <targets>", "Comma-separated target profiles to run.", "openmrs")
     .option("--runs-dir <path>", "Directory where run artifacts are written.")
-    .option("--synthetic-suffix <suffix>", "Suffix valid synthetic records before running targets; use 'auto' to generate one.")
+    .option(
+      "--synthetic-suffix <suffix>",
+      "Suffix valid synthetic records before running targets; use 'auto' to generate one.",
+      "auto",
+    )
+    .option(
+      "--confidence-threshold <threshold>",
+      "Minimum AI planner confidence for field mapping highlighting.",
+      parseConfidenceThresholdOption,
+    )
     .option(
       "--openmrs-concurrency <count>",
       "Maximum concurrent OpenMRS records.",
@@ -160,6 +183,11 @@ function createProgram(io: Required<CliIo>, dependencies: ResolvedCliDependencie
       "--openemr-concurrency <count>",
       "Maximum concurrent OpenEMR records.",
       parsePositiveIntegerOption("--openemr-concurrency"),
+    )
+    .option(
+      "--openkairo-concurrency <count>",
+      "Maximum concurrent OpenKairo records.",
+      parsePositiveIntegerOption("--openkairo-concurrency"),
     )
     .option("--once", "Process currently ready files once and exit.")
     .action(async (options: WatchCommandOptions) => {
@@ -191,6 +219,7 @@ async function runCommand(
     ...options,
     openMrsConcurrency: options.openmrsConcurrency,
     openEmrConcurrency: options.openemrConcurrency,
+    openKairoConcurrency: options.openkairoConcurrency,
   });
   const records = applySyntheticSuffix(await loadRecords(config), resolveSyntheticSuffix(config.syntheticSuffix));
   const profiles = buildTargetProfiles(config);
@@ -216,8 +245,10 @@ async function watchCommand(
     runsDir: options.runsDir,
     parser: "deterministic",
     syntheticSuffix: options.syntheticSuffix,
+    confidenceThreshold: options.confidenceThreshold,
     openMrsConcurrency: options.openmrsConcurrency,
     openEmrConcurrency: options.openemrConcurrency,
+    openKairoConcurrency: options.openkairoConcurrency,
   });
   const inbox = options.inbox ?? defaultIntakeInbox();
   const watcherInput = {
@@ -368,10 +399,18 @@ function parsePositiveIntegerOption(optionName: string): (value: string) => numb
   };
 }
 
+function parseConfidenceThresholdOption(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error("--confidence-threshold must be a number from 0 through 1.");
+  }
+  return parsed;
+}
+
 function parseViewerPort(value: string): number {
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error("--port must be a positive integer.");
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error("--port must be zero or a positive integer.");
   }
   return parsed;
 }

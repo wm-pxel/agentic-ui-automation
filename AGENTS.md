@@ -9,16 +9,16 @@ fixtures, logs, screenshots, audit artifacts, or generated test inputs.
 
 OpenMRS publishes demo links at `https://openmrs.org/demo/`. This repo's
 OpenMRS profile is executed by the generic AI web runner against the OpenMRS 2
-Reference Application registration flow because the workflow creates synthetic
-patient-registration audit artifacts.
+Reference Application demo flow because the current OpenMRS 3 public demo can
+render a blank SPA home page before login.
 
-- Default app URL: `https://o2.openmrs.org/openmrs`
+- Default app URL: `https://o2.openmrs.org/openmrs/login.htm`
 - Default username: `admin`
 - Default password: `Admin123`
 - Default location: `Registration Desk`
-- Default OpenMRS record concurrency: `2`
+- Default OpenMRS record concurrency: `1`
 
-If the O2 demo is broken, stale, or returns unexpected UI/database errors during
+If the OpenMRS demo is broken, stale, or returns unexpected UI/database errors during
 automation testing, verify the current links and credentials on
 `https://openmrs.org/demo/` before assuming the profile or runner is broken.
 

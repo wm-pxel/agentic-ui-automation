@@ -15,6 +15,10 @@ const SYSTEM_INSTRUCTIONS = [
   "Return one JSON plan only. The plan must match the provided schema.",
   "Use only observed control elementId values when filling, selecting, or clicking.",
   "Prefer filling missing normalized record fields, selecting visible options by label, clicking navigation/save controls, waiting for transitions, taking proof screenshots, or verifying success criteria.",
+  "Use target workflow hints as guidance, but still choose actions only from the currently observed controls.",
+  "Use recent action history to avoid repeating the same non-progress action.",
+  "Before clicking a login, submit, continue, or save control, fill or select visible required fields that are blank and relevant to the task.",
+  "Do not fill or select fields that are already represented in completedFields unless the visible value is wrong.",
   "Never plan deletion, admin setting changes, exports of unrelated records, or use of real patient data.",
   "If no observed action is safe or useful, return a stop action with a concise message.",
 ].join(" ");
@@ -34,6 +38,7 @@ export interface AiWebPlanInput {
   observation: PageObservation;
   completedFields: readonly string[];
   skippedFields: readonly string[];
+  recentActions: readonly AiWebRecentAction[];
   stepCount: number;
 }
 
@@ -41,9 +46,15 @@ export interface AiWebPlanner {
   plan(input: AiWebPlanInput): Promise<AiWebPlan>;
 }
 
+export interface AiWebRecentAction {
+  actionType: AiWebAction["type"];
+  target: string;
+  result: string;
+}
+
 export interface OpenAiAiWebPlannerClient {
   responses: {
-    create(body: ResponseCreateParamsNonStreaming): Promise<{ output_text: string }>;
+    create(body: ResponseCreateParamsNonStreaming): Promise<{ output_text: string; output_parsed?: unknown }>;
   };
 }
 
@@ -126,8 +137,70 @@ export class OpenAiAiWebPlanner implements AiWebPlanner {
       stream: false,
     });
 
-    return validateAiWebPlan(JSON.parse(response.output_text) as unknown);
+    return validateAiWebPlan(planFromResponse(response));
   }
+}
+
+function planFromResponse(response: { output_text: string; output_parsed?: unknown }): unknown {
+  if (response.output_parsed) {
+    return response.output_parsed;
+  }
+
+  return parseFirstJsonValue(response.output_text);
+}
+
+function parseFirstJsonValue(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    const jsonText = firstJsonObjectText(value);
+    return JSON.parse(jsonText) as unknown;
+  }
+}
+
+function firstJsonObjectText(value: string): string {
+  const start = value.indexOf("{");
+  if (start < 0) {
+    throw new SyntaxError("AI planner response did not contain a JSON object.");
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < value.length; index += 1) {
+    const character = value[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (character === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (character === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return value.slice(start, index + 1);
+      }
+    }
+  }
+
+  throw new SyntaxError("AI planner response did not contain a complete JSON object.");
 }
 
 function buildPlannerPrompt(input: AiWebPlanInput): Record<string, unknown> {
@@ -138,6 +211,7 @@ function buildPlannerPrompt(input: AiWebPlanInput): Record<string, unknown> {
       baseUrl: input.profile.baseUrl,
       credentials: input.profile.credentials,
       task: input.profile.task,
+      workflowHints: input.profile.workflowHints,
       successCriteria: input.profile.successCriteria,
       forbiddenActions: input.profile.forbiddenActions,
     },
@@ -151,6 +225,7 @@ function buildPlannerPrompt(input: AiWebPlanInput): Record<string, unknown> {
     },
     completedFields: input.completedFields,
     skippedFields: input.skippedFields,
+    recentActions: input.recentActions,
     stepCount: input.stepCount,
     allowedActionTypes: ["fill", "select", "click", "wait", "screenshot", "verify", "stop"],
   };
