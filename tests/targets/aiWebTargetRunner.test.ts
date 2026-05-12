@@ -1132,6 +1132,210 @@ describe("AiWebTargetRunner", () => {
     expect(page.actions).toEqual([["click", "#next-button"]]);
   });
 
+  it("continues the OpenMRS relationship step when the planner says the next action may safely advance", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Who is the patient related to? Person Name Relationship Type Review patient(s)",
+      bodyTextAfterClick: "Patient Details Taylor Morgan Patient ID 100HXG General Actions Show Contact Info",
+      elements: [
+        fakeElement("select", { id: "relationship-type" }, "Select Relationship Type"),
+        fakeElement("input", { id: "person-name", placeholder: "Person Name", value: "" }),
+        fakeElement("button", { id: "next-button", class: "right", "aria-label": ">" }, ""),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs-relationship-safe-advance-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "Current registration step shows relationship controls only, with no visible fields for the remaining mapped intake data or a safe save/confirm control yet. Continue only if the next action advances to a step with relevant patient fields.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the saved patient dashboard.",
+            rationale: "Taylor Morgan appears on the patient dashboard.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: {
+        ...record(),
+        firstName: "Taylor",
+        lastName: "Morgan",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+    expect(page.actions).toEqual([["click", "#next-button"]]);
+  });
+
+  it("continues the OpenMRS relationship entry screen when remaining fields have no visible controls", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Relationship entry screen Person Name Relationship Type Review patient(s)",
+      bodyTextAfterClick: "Patient Details Taylor Morgan Patient ID 100HXG General Actions Show Contact Info",
+      elements: [
+        fakeElement("select", { id: "relationship-type" }, "Select Relationship Type"),
+        fakeElement("input", { id: "person-name", placeholder: "Person Name", value: "" }),
+        fakeElement("button", { id: "next-button", class: "right", "aria-label": ">" }, ""),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs-relationship-no-visible-controls-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "The current step is a relationship entry screen with no visible controls for the remaining required intake fields or a clear safe path to complete patient registration.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the saved patient dashboard.",
+            rationale: "Taylor Morgan appears on the patient dashboard.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: {
+        ...record(),
+        firstName: "Taylor",
+        lastName: "Morgan",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+    expect(page.actions).toEqual([["click", "#next-button"]]);
+  });
+
+  it("continues the OpenMRS relationship step when only optional relationship controls are visible", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Relationship Person Name Relationship Type Review patient(s)",
+      bodyTextAfterClick: "Patient Details Taylor Morgan Patient ID 100HXG General Actions Show Contact Info",
+      elements: [
+        fakeElement("select", { id: "relationship-type" }, "Select Relationship Type"),
+        fakeElement("input", { id: "person-name", placeholder: "Person Name", value: "" }),
+        fakeElement("button", { id: "next-button", class: "right", "aria-label": ">" }, ""),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs-optional-relationship-controls-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "The flow is on a relationship step with only optional relationship controls visible, and no safe observed control to continue patient registration or enter pending intake fields.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the saved patient dashboard.",
+            rationale: "Taylor Morgan appears on the patient dashboard.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: {
+        ...record(),
+        firstName: "Taylor",
+        lastName: "Morgan",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+    expect(page.actions).toEqual([["click", "#next-button"]]);
+  });
+
+  it("continues the OpenMRS relationship page when the planner cannot see a patient-creation action", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "Who is the patient related to? Person Name Relationship Type Review patient(s)",
+      bodyTextAfterClick: "Patient Details Taylor Morgan Patient ID 100HXG General Actions Show Contact Info",
+      elements: [
+        fakeElement("select", { id: "relationship-type" }, "Select Relationship Type"),
+        fakeElement("input", { id: "person-name", placeholder: "Person Name", value: "" }),
+        fakeElement("button", { id: "next-button", class: "right", "aria-label": ">" }, ""),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs-relationship-no-patient-creation-action-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "The current step appears to be the relationship page, but no safe patient-creation action is visible without additional context or a confirmed patient identity selection.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the saved patient dashboard.",
+            rationale: "Taylor Morgan appears on the patient dashboard.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: {
+        ...record(),
+        firstName: "Taylor",
+        lastName: "Morgan",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+    expect(page.actions).toEqual([["click", "#next-button"]]);
+  });
+
   it("does not continue a generic required-control stop just because a forward button is visible", async () => {
     const page = new FakeRunnerPage({
       bodyText: "Insurance Information Forward",
@@ -1624,6 +1828,60 @@ describe("AiWebTargetRunner", () => {
         sourceField: "password",
       }),
     );
+  });
+
+  it("submits the OpenMRS login form when the planner stops after location selection", async () => {
+    const page = new FakeRunnerPage({
+      bodyText: "LOGIN Username Password Location for this session Registration Desk Log In",
+      bodyTextAfterClick: "Patient Details Taylor Morgan Patient ID 100HXG General Actions",
+      elements: [
+        fakeElement("label", { for: "username" }, "Username"),
+        fakeElement("input", { id: "username", value: "admin" }),
+        fakeElement("label", { for: "password" }, "Password"),
+        fakeElement("input", { id: "password", value: "pass", type: "password" }),
+        fakeElement("li", { id: "registration-desk", onclick: "chooseLocation()", class: "selected" }, "Registration Desk"),
+        fakeElement("button", { id: "login-button" }, "Log In"),
+      ],
+    });
+    const browser = new FakeRunnerBrowser(page);
+    const audit = await createAudit("ai-web-runner-openmrs-login-stop-submit-");
+    const runner = new AiWebTargetRunner({
+      planner: new StaticAiWebPlanner([
+        {
+          action: {
+            type: "stop",
+            code: "ui_state_unexpected",
+            message:
+              "Login/session transition appears incomplete or the observed page is still the login screen despite prior successful login actions. Need a fresh page observation before choosing the next registration control.",
+          },
+          confidence: 0.9,
+        },
+        {
+          action: {
+            type: "verify",
+            criteria: "The page shows the saved patient dashboard.",
+            rationale: "Taylor Morgan appears on the patient dashboard.",
+          },
+          confidence: 0.9,
+        },
+      ]),
+      launchBrowser: async () => browser,
+      maxSteps: 2,
+    });
+
+    const result = await runner.runRecord({
+      runId: "run-test",
+      profile: { ...profile(), name: "openmrs", displayName: "OpenMRS" },
+      record: {
+        ...record(),
+        firstName: "Taylor",
+        lastName: "Morgan",
+      },
+      audit,
+    });
+
+    expect(result).toEqual({ status: "succeeded", targetRecordId: "ai-openmrs-demo-001" });
+    expect(page.actions).toEqual([["click", "#login-button"]]);
   });
 
   it("rejects verification on an unsaved patient form even when the patient name is visible", async () => {

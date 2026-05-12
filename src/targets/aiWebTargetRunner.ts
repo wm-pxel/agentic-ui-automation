@@ -160,6 +160,14 @@ export class AiWebTargetRunner {
             continue;
           }
 
+          const loginSubmitAction = loginSubmitInsteadOfStoppingAction(action, observation);
+          if (loginSubmitAction) {
+            await executeBrowserAction(page, observation.elementSelectors, loginSubmitAction);
+            await writeAiActionEvent(context, loginSubmitAction, latestScreenshotPath, "succeeded");
+            rememberRecentAction(recentActions, loginSubmitAction, "succeeded");
+            continue;
+          }
+
           const reopenAction = reopenOpenKairoNewPatientAction(action, observation, context.profile);
           if (reopenAction) {
             completedFields.length = 0;
@@ -624,8 +632,50 @@ function unsupportedDestinationFieldsStopMessage(stopText: string): boolean {
     );
   const optionalRelationshipStepMessage =
     /\b(relationship|related|relatives?)\b/.test(stopText) &&
-    /\b(no visible control|only person name|relationship selector|continue patient registration safely)\b/.test(stopText);
+    /\b(no safe observed control|no safe [\w-]+ action is visible|no visible controls?|no visible fields|only optional relationship controls|only person name|relationship controls only|relationship selector|continue patient registration safely|safe path to complete|next action advances)\b/.test(
+      stopText,
+    );
   return unsupportedRemainingFieldMessage || optionalRelationshipStepMessage;
+}
+
+function loginSubmitInsteadOfStoppingAction(
+  action: Extract<AiWebAction, { type: "stop" }>,
+  observation: {
+    visibleText: string;
+    controls: Array<{ elementId: string; label?: string; value?: string; visibleText?: string; role?: string }>;
+  },
+): Extract<AiWebAction, { type: "click" }> | undefined {
+  if (action.code !== "ui_state_unexpected") {
+    return undefined;
+  }
+
+  const stopText = normalizeForVerification(action.message);
+  const pageText = normalizeForVerification(
+    `${observation.visibleText} ${observation.controls.map((control) => `${control.label ?? ""} ${control.visibleText ?? ""}`).join(" ")}`,
+  );
+  if (!/\b(login|log in|session transition)\b/.test(stopText) || !/\b(login|log in|location for this session)\b/.test(pageText)) {
+    return undefined;
+  }
+
+  const usernameControl = observation.controls.find((control) => credentialControlMatches(control, /\b(username|user name|email|e mail)\b/));
+  const passwordControl = observation.controls.find((control) => credentialControlMatches(control, /\b(password|passcode)\b/));
+  if (!usernameControl?.value?.trim() || !passwordControl?.value?.trim()) {
+    return undefined;
+  }
+
+  const loginControl = observation.controls.find(
+    (control) => control.role === "button" && controlTextMatches(control, /\b(log in|login|sign in|signin)\b/),
+  );
+  if (!loginControl) {
+    return undefined;
+  }
+
+  return {
+    type: "click",
+    elementId: loginControl.elementId,
+    purpose: "submit completed login form",
+    rationale: "The login credentials are filled and the destination still shows the login page, so submitting the visible login button is the safe progress action.",
+  };
 }
 
 function shouldWaitInsteadOfClickingTransientOpenKairoClose(

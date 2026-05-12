@@ -76,3 +76,36 @@ npm run typecheck
 npm test
 git diff --check
 ```
+
+For changes that affect demo workflow behavior, watcher handoff, Electron
+intake export, target profiles, AI web target navigation, or viewer demo
+readiness, also verify the full E2E path with both live destination targets:
+
+1. Start the full watcher/Electron/viewer stack in watcher mode:
+
+   ```sh
+   set -a
+   . ./.env
+   set +a
+   npm run dev:all -- --targets openmrs,openkairo --intake-trigger watcher --confidence-threshold .97
+   ```
+
+2. In the Electron intake app, create one synthetic/demo patient, export only
+   that patient, and let the watcher trigger the run from the exported handoff
+   file. Do not replace this with a direct `run --input ...` smoke when the
+   request is demo-readiness or E2E verification.
+3. Inspect the generated `run.json`, `exceptions/`, `events.jsonl`,
+   `summary.md`, and `executive-summary.md`. Both OpenMRS and OpenKairo target
+   counts should show `succeeded: 1`, `exception: 0`, and the viewer should
+   render the completed run cleanly.
+
+If the requested demo path is target-by-target, run the same watcher/Electron
+flow separately for OpenMRS first and OpenKairo second:
+
+```sh
+npm run dev:all -- --targets openmrs --intake-trigger watcher --confidence-threshold .97
+npm run dev:all -- --targets openkairo --intake-trigger watcher --confidence-threshold .97
+```
+
+Do not treat a simultaneous `openmrs,openkairo` run as a substitute for an
+explicit sequential verification request.
